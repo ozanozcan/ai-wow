@@ -10,7 +10,7 @@ inventory: 15 skills · 7 subagents · 1 command · 3 hooks · 1 board package
 Operating manual for an agent working inside a repo that has this harness installed,
 or installing it. Companion (rationale, prose): `HOW-TO-USE.human.md`.
 
-Read §0 and §1 before acting. §2–§4 are lookup. §5–§8 are procedures with VERIFY
+Read §0 and §1 before acting. §2–§4 are lookup. §5–§9 are procedures with VERIFY
 conditions — do not proceed past a failed VERIFY; report and stop.
 
 ---
@@ -100,8 +100,8 @@ flowchart LR
 | 0 skills, no error emitted | `~/.agents/skills` absent — `reconcile_skills()` returns early | Create the symlink, re-run `ai-sync` |
 | skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 15 |
 | both absent | link step never ran | `ai-sync` |
-| `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§8), re-run |
-| hooks registered but never fire | `bash` or `python3` unresolvable | §8 — verify from Git Bash |
+| `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§9); if policy forbids, §8a copy mode |
+| hooks registered but never fire | `bash` or `python3` unresolvable | §9 — verify from Git Bash |
 
 `ai-sync` pipeline: `import → link → reconcile skills → render → git add -A → commit → push`.
 
@@ -181,6 +181,7 @@ Routing is advisory. Recommend or invoke; never block on it.
 | 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
 | 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 15` |
 | 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
+| 6 | if step 3 reported symlink denial | switch to §8a copy mode — do not abandon the install |
 
 Step 2 is the one that fails silently. Never report a successful install without the
 count from step 4.
@@ -272,7 +273,71 @@ n/a in the report):
 
 ---
 
-## 8. PROCEDURE — Windows install delta
+## 8. EDITOR SURFACES — VS Code, Cursor, CLI
+
+**All Claude Code surfaces read the same `~/.claude`.** There is no VS Code-specific
+config format, no workspace setting, and nothing to place in `.vscode/`. If the CLI
+sees the harness, so does the extension.
+
+```mermaid
+flowchart TD
+  H["~/.claude"] --> CLI["Claude Code CLI"]
+  H --> VSC["VS Code extension"]
+  H --> JB["JetBrains extension"]
+  CUR["~/.cursor"] --> C["Cursor"]
+  P[".claude/ in the open folder"] -.->|"layers on top"| VSC
+```
+
+Two editor-specific facts that do matter:
+
+| Fact | Consequence |
+|---|---|
+| The integrated terminal's default shell runs the hooks | On Windows it must be **Git Bash**, or hooks may not fire. Nothing else is affected |
+| A project `.claude/` layers over `~/.claude` | Do not register hooks there — I8 (double execution) |
+
+Do **not** tell a user to add VS Code settings for this harness. There are none.
+
+## 8a. PROCEDURE — machines that forbid symlinks
+
+Corporate Windows builds can pin Developer Mode off by group policy. `ai-sync`
+handles this: `can_symlink()` probes once, before anything is deleted, and falls
+back to mirroring.
+
+```mermaid
+flowchart TD
+  A["ai-sync"] --> B{"can_symlink()"}
+  B -->|true| C["ensure_symlink<br/>editor dir IS the repo"]
+  B -->|false| D["ensure_copy<br/>mirror repo into editor"]
+  D --> E["~/.agents/skills, ~/.claude/skills,<br/>~/.cursor/skills all mirrored"]
+```
+
+Force it explicitly when you want deterministic behaviour rather than
+capability-dependent behaviour:
+
+```bash
+python3 bin/ai-sync --copy          # one run
+# or, permanently, in local.config.json:
+# { "link_mode": "copy" }
+```
+
+**VERIFY:** `ai-sync status` prints `link mode: copy (no symlink privilege)` and each
+category reads `copied (in sync)`.
+
+**Behavioural difference you must communicate.** In symlink mode the editor
+directory *is* the repo, so edits either side are the same file. In copy mode they
+are not:
+
+| Edited in the editor | Recovered on next `ai-sync`? |
+|---|---|
+| Subagent (`agents/*.md`) | Yes — the import step pulls it back |
+| Slash command (`commands/*.md`) | Yes |
+| Hook script (`hooks/*.sh`) | Yes |
+| **Skill (`skills/<name>/SKILL.md`)** | **No — it is overwritten** |
+
+In copy mode, instruct the user to edit skills in the repo and re-run `ai-sync`.
+Never edit a skill in the mirrored copy.
+
+## 9. PROCEDURE — Windows install delta
 
 ```mermaid
 flowchart TD
@@ -297,9 +362,11 @@ Python came from the Microsoft Store. Verify from **Git Bash**, not `cmd`.
 Hooks are optional and nothing in the core depends on them. **Never let a hook
 failure block the install** — report it and continue.
 
+If Developer Mode cannot be enabled, do not stop: fall back to §8a copy mode.
+
 ---
 
-## 9. REPORTING RULES
+## 10. REPORTING RULES
 
 - Report VERIFY outcomes with the actual observed value ("`shared skills: 15`"), not
   "verified".

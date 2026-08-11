@@ -12,6 +12,7 @@ Usage:
   ai-sync status       # show current link / render state, no changes
   ai-sync check-managed  # exit nonzero if managed workflow docs drifted
   ai-sync --from-hook  # quiet mode for the sessionEnd hook (never errors)
+  ai-sync --copy       # mirror files instead of symlinking (locked-down machines)
 
 Skills live in this repo (skills/); ~/.agents/skills is a symlink to it, so the
 `skills` CLI keeps working and skill edits are committed like everything else.
@@ -25,6 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -82,6 +84,8 @@ WORKFLOW_FRONTS_DIR = WORKFLOW_CORE_DIR / "fronts"
 
 QUIET = False
 FROM_HOOK = False
+FORCE_COPY = False
+_CAN_SYMLINK: bool | None = None
 _backup_dir: Path | None = None
 
 
@@ -176,6 +180,73 @@ def do_import() -> None:
 # link: replace tool dirs with symlinks into the repo
 # ---------------------------------------------------------------------------
 
+def can_symlink() -> bool:
+    """Probe once whether this machine lets us create symlinks.
+
+    Windows denies symlink creation to normal users unless Developer Mode is on,
+    and corporate policy can pin that off. Probing first matters: ensure_symlink
+    removes the existing directory *before* creating the link, so discovering the
+    denial afterwards would leave the tool directory empty.
+    """
+    global _CAN_SYMLINK
+    if _CAN_SYMLINK is not None:
+        return _CAN_SYMLINK
+    if local_config().get("link_mode") == "copy" or FORCE_COPY:
+        _CAN_SYMLINK = False
+        return _CAN_SYMLINK
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            os.symlink(Path(d), Path(d) / "probe")
+        _CAN_SYMLINK = True
+    except (OSError, NotImplementedError, AttributeError):
+        _CAN_SYMLINK = False
+    return _CAN_SYMLINK
+
+
+def _trees_equal(a: Path, b: Path) -> bool:
+    def snap(root: Path) -> dict[str, bytes]:
+        out: dict[str, bytes] = {}
+        for p in root.rglob("*"):
+            if p.is_file() and "__pycache__" not in p.parts:
+                out[p.relative_to(root).as_posix()] = p.read_bytes()
+        return out
+
+    try:
+        return snap(a) == snap(b)
+    except OSError:
+        return False
+
+
+def ensure_copy(link: Path, target: Path) -> str:
+    """Symlink-free fallback: mirror target into link. Idempotent."""
+    if not target.exists():
+        return "skip (no target)"
+    if link.is_symlink():  # stale link from a machine that could make them
+        backup(link)
+        link.unlink()
+    if target.is_dir():
+        if link.is_dir() and _trees_equal(target, link):
+            return "ok"
+        if link.exists():
+            backup(link)
+            shutil.rmtree(link)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(target, link, ignore=shutil.ignore_patterns("__pycache__"))
+    else:
+        if link.is_file() and link.read_bytes() == target.read_bytes():
+            return "ok"
+        if link.exists():
+            backup(link)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, link)
+    return "copied"
+
+
+def ensure_linked(link: Path, target: Path) -> str:
+    """Share target at link by the best mechanism this machine allows."""
+    return ensure_symlink(link, target) if can_symlink() else ensure_copy(link, target)
+
+
 def ensure_symlink(link: Path, target: Path) -> str:
     if not target.exists():
         return "skip (no target)"
@@ -201,11 +272,11 @@ def ensure_symlink(link: Path, target: Path) -> str:
 def do_link() -> None:
     for name, canonical in LINK_DIRS.items():
         for tool in (CLAUDE, CURSOR):
-            res = ensure_symlink(tool / name, canonical)
+            res = ensure_linked(tool / name, canonical)
             if res != "ok":
                 log(f"  {tool.name}/{name}: {res}")
     for link, canonical in LINK_FILES.items():
-        res = ensure_symlink(link, canonical)
+        res = ensure_linked(link, canonical)
         if res != "ok":
             log(f"  {link.parent.name}/{link.name}: {res}")
 
@@ -215,6 +286,14 @@ def do_link() -> None:
 # ---------------------------------------------------------------------------
 
 def reconcile_skills() -> None:
+    if not can_symlink():
+        # No symlinks available: mirror the repo's skills straight into each tool.
+        # ~/.agents/skills is mirrored too, so the `skills` CLI still resolves.
+        for dest in (AGENTS_SKILLS, CLAUDE / "skills", CURSOR / "skills"):
+            res = ensure_copy(dest, REPO / "skills")
+            if res != "ok":
+                log(f"  {dest.parent.name}/{dest.name}: {res}")
+        return
     if not AGENTS_SKILLS.is_dir():
         return
     canonical = {p.name for p in AGENTS_SKILLS.iterdir() if p.is_dir()}
@@ -552,11 +631,14 @@ def do_commit() -> None:
 
 def do_status() -> int:
     print(f"repo: {REPO}")
+    print(f"  link mode: {'symlink' if can_symlink() else 'copy (no symlink privilege)'}")
     for name, canonical in LINK_DIRS.items():
         for tool in (CLAUDE, CURSOR):
             link = tool / name
             if link.is_symlink() and link.resolve() == canonical.resolve():
                 state = "linked"
+            elif not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
+                state = "copied (in sync)"
             elif link.exists():
                 state = "NOT linked (real dir)"
             else:
@@ -565,6 +647,8 @@ def do_status() -> int:
     for link, canonical in LINK_FILES.items():
         if link.is_symlink() and link.resolve() == canonical.resolve():
             state = "linked"
+        elif not can_symlink() and link.is_file() and link.read_bytes() == canonical.read_bytes():
+            state = "copied (in sync)"
         elif link.exists():
             state = "NOT linked (real file)"
         else:
@@ -627,9 +711,11 @@ def sync() -> int:
 
 
 def main(argv: list[str]) -> int:
-    global QUIET, FROM_HOOK
+    global QUIET, FROM_HOOK, FORCE_COPY
     args = [a for a in argv if not a.startswith("-")]
     flags = {a for a in argv if a.startswith("-")}
+    if "--copy" in flags:
+        FORCE_COPY = True
     if "--from-hook" in flags:
         QUIET = True
         FROM_HOOK = True

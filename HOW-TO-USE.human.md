@@ -19,8 +19,9 @@ arranged the way they are.
 7. [Orchestrating multi-step work](#7-orchestrating-multi-step-work)
 8. [Session lifecycle](#8-session-lifecycle)
 9. [Extending it](#9-extending-it)
-10. [Appendix A — Windows](#appendix-a--windows)
-11. [Appendix B — troubleshooting](#appendix-b--troubleshooting)
+10. [Appendix A — VS Code, and locked-down machines](#appendix-a--vs-code-and-locked-down-machines)
+11. [Appendix B — Windows](#appendix-b--windows)
+12. [Appendix C — troubleshooting](#appendix-c--troubleshooting)
 
 ---
 
@@ -180,7 +181,9 @@ render pointed at your own projects, copy `local.config.example.json` to
 
 Absent or empty is a valid state. That feature simply doesn't run.
 
-Windows needs three extra things — see [Appendix A](#appendix-a--windows).
+VS Code needs nothing extra — see [Appendix A](#appendix-a--vs-code-and-locked-down-machines),
+which also covers machines that forbid symlinks. Windows needs three extra things:
+[Appendix B](#appendix-b--windows).
 
 ---
 
@@ -448,7 +451,100 @@ Adopting the harness in a new repo is a separate checklist:
 
 ---
 
-## Appendix A — Windows
+## Appendix A — VS Code, and locked-down machines
+
+### Does it work in VS Code?
+
+Yes, and there is nothing extra to configure. The Claude Code VS Code extension runs
+the same engine as the CLI and reads the same user directory:
+
+```mermaid
+flowchart TD
+  H["~/.claude<br/>agents · commands · skills<br/>settings.json · CLAUDE.md"]
+  H --> A["Claude Code CLI"]
+  H --> B["VS Code extension"]
+  H --> C["JetBrains extension"]
+  D["~/.cursor"] --> E["Cursor"]
+```
+
+So the install is the same install. Once `ai-sync status` is clean, open any folder
+in VS Code and the skills, subagents and `/diagnose` are there. There is no
+VS Code-specific config file, no workspace setting, and nothing to add to
+`.vscode/`.
+
+Two things *are* different in the editor rather than the terminal:
+
+- **The integrated terminal's shell decides whether hooks work.** Hook scripts are
+  bash. On Windows, set the default profile to **Git Bash** — Command Palette →
+  *Terminal: Select Default Profile* → Git Bash. With PowerShell as the default the
+  hooks may not run, though nothing else is affected.
+- **Per-project config still applies.** A `.claude/` directory in the opened folder
+  layers on top of `~/.claude`. Keep hook registration out of it — see the warning
+  in [§9](#9-extending-it).
+
+### When the machine won't allow symlinks
+
+This is the realistic failure on a corporate Windows build: **Developer Mode can be
+disabled by group policy**, and you can't turn it on. The whole design is symlinks,
+so that would normally be fatal.
+
+It isn't. `ai-sync` probes the machine's capability once and falls back to mirroring
+files:
+
+```mermaid
+flowchart TD
+  S["ai-sync"] --> P{"can this machine<br/>create symlinks?"}
+  P -->|yes| L["symlink mode<br/>editor dir IS the repo"]
+  P -->|no| C["copy mode<br/>files mirrored into the editor"]
+  L --> R1["edits in either place<br/>are the same file"]
+  C --> R2["edit in the repo,<br/>re-run ai-sync to push out"]
+```
+
+The probe happens **before** anything is removed, which matters: the link step
+deletes the existing directory before creating the link, so discovering the denial
+afterwards would leave you with an empty `~/.claude/agents`.
+
+You can also force it, which is worth doing if you want predictable behaviour rather
+than capability-dependent behaviour:
+
+```bash
+python3 ~/agent-harness/bin/ai-sync --copy
+```
+
+…or make it permanent in `local.config.json`:
+
+```json
+{ "link_mode": "copy" }
+```
+
+`ai-sync status` always tells you which mode is active:
+
+```
+link mode: copy (no symlink privilege)
+.claude/agents    copied (in sync)
+```
+
+**The one behavioural difference:** in symlink mode, editing a skill from inside the
+editor edits the repo. In copy mode it doesn't — the editor has a copy. Edit in the
+repo and re-run `ai-sync` to push changes out. Subagent and command edits made in
+the editor *are* recovered, because the import step pulls them back before copying
+out again; skills are not. Treat the repo as the place you edit.
+
+### Other corporate-environment friction
+
+| Thing | Effect | What to do |
+|---|---|---|
+| Extension installs blocked | No Claude Code at all | Needs IT; nothing here helps |
+| Proxy / TLS inspection | Sign-in or model calls fail | Standard corporate proxy env vars |
+| Antivirus scanning `bash` | Hooks slow or blocked | Skip hooks; they're optional |
+| No admin rights | Can't install Python system-wide | Per-user Python install is fine |
+| Roaming profile | `~/.claude` syncs across machines | Prefer copy mode; symlinks travel badly |
+
+Only the first is a genuine blocker. Everything else has a way through.
+
+---
+
+## Appendix B — Windows
 
 The harness was written on macOS. The portable parts are genuinely portable; three
 things need attention.
@@ -486,14 +582,16 @@ cooperate, delete the `hooks` key from `settings.json` and run `ai-sync` by hand
 
 ---
 
-## Appendix B — troubleshooting
+## Appendix C — troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | No skills at all, no error | `~/.agents/skills` missing | Create it — `ai-sync` won't |
 | Skills missing, subagents present | Skill farm not reconciled | Re-run `ai-sync`; `status` should show 15 |
+| Symlink creation denied (corporate policy) | Developer Mode locked off | `ai-sync --copy` — Appendix A |
+| Skill edit in the editor vanished | Copy mode: the editor holds a copy | Edit in the repo, re-run `ai-sync` |
 | "privilege not held" on Windows | Developer Mode off | Enable it, re-run |
-| Hooks never fire | `bash` or `python3` unresolvable | Appendix A step 3 |
+| Hooks never fire | `bash` or `python3` unresolvable | Appendix B step 3 |
 | `status` exits 1 on managed-doc drift | `local.config.json` points at a repo that moved | Fix the path, or drop the entry |
 | `taskman` refuses to run | No `.taskman.toml` in the tree | Add one at the project root |
 | `taskman` can't connect | No Postgres, or no `TASKMAN_DATABASE_URL` | Start one; set the URL |
