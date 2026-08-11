@@ -568,7 +568,7 @@ def test_prose_dump_in_decisions_cell_fails():
     )
     errs = _mod.check_index_decisions_pointer_only("A", cell)
     assert errs
-    assert any("pointers only" in e.lower() or "pointer" in e.lower() for e in errs)
+    assert any("pointers only" in e.lower() for e in errs)
     assert any("lane A" in e for e in errs)
 
 
