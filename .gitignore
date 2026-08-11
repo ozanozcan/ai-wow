@@ -1,0 +1,9 @@
+# Machine-specific config — never committed, this is what keeps the repo publishable
+local.config.json
+
+.backups/
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+taskman/.venv/

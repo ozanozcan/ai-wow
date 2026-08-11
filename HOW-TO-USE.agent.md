@@ -1,0 +1,309 @@
+---
+doc: how-to-use
+audience: agent
+companion: HOW-TO-USE.human.md
+inventory: 15 skills · 7 subagents · 1 command · 3 hooks · 1 board package
+---
+
+# AGENT REFERENCE — this harness
+
+Operating manual for an agent working inside a repo that has this harness installed,
+or installing it. Companion (rationale, prose): `HOW-TO-USE.human.md`.
+
+Read §0 and §1 before acting. §2–§4 are lookup. §5–§8 are procedures with VERIFY
+conditions — do not proceed past a failed VERIFY; report and stop.
+
+---
+
+## 0. DECISION TREE — what to do with a request
+
+```mermaid
+flowchart TD
+  Q["incoming request"]
+  Q --> A{"is it a build,<br/>fix, or refactor?"}
+  A -->|no| B{"is it a question<br/>about the harness?"}
+  B -->|yes| B1["answer from §2–§4;<br/>do not invoke anything"]
+  B -->|no| B2["ordinary work;<br/>routing table §4 still applies"]
+  A -->|yes| C{"more than ~3 todos<br/>with dependencies?"}
+  C -->|yes| C1["/mow plan — §7"]
+  C -->|no| D{"tests exist for<br/>what you're changing?"}
+  D -->|no| D1["test-coverage, then tdd"]
+  D -->|yes| D2["tdd — red first"]
+  C1 --> E["review pipeline §4.3"]
+  D1 --> E
+  D2 --> E
+```
+
+**Never skip the red step.** A test that has never failed proves nothing.
+
+---
+
+## 1. INVARIANTS
+
+Violating any of these corrupts state or silently voids a guarantee.
+
+| # | Invariant | Consequence if broken |
+|---|---|---|
+| I1 | Reviewers review; they never build | The gate approves its own work |
+| I2 | `tdd-builder` never commits | Unreviewed code reaches history |
+| I3 | Lanes in one wave own **disjoint file sets** | Parallel agents overwrite each other |
+| I4 | taskman needs `.taskman.toml` in cwd or an ancestor | It stops rather than guess — this is correct, do not work around it |
+| I5 | `task set -t` **replaces** the tag list | Silent tag loss; `task show` first |
+| I6 | A decision task must not carry a dispatch-brief `source_ref` | End-of-run sweep marks it `done`, claiming an unanswered question was answered |
+| I7 | Only a `done` blocker clears `recommend next` | A task blocked by a `disabled` decision is hidden permanently |
+| I8 | Hook registration lives only in `hooks.def.json` | Two registrations = everything runs twice |
+| I9 | `disabled` ≠ `done` | `done` on work that never happened is unrecoverable misinformation |
+| I10 | taskman requires Postgres (`ARRAY`, `JSONB`) | Never propose SQLite |
+
+---
+
+## 2. MECHANISM SELECTION
+
+```mermaid
+flowchart LR
+  N["need"]
+  N --> G{"must it happen<br/>every time?"}
+  G -->|yes| H["HOOK<br/>hooks.def.json"]
+  G -->|no| I{"needs an isolated<br/>context?"}
+  I -->|yes| J["SUBAGENT<br/>Agent tool"]
+  I -->|no| K["SKILL<br/>Skill tool"]
+```
+
+| Mechanism | Context | Cost | Fires |
+|---|---|---|---|
+| Skill | the calling agent's own | ~free | when relevant |
+| Subagent | fresh, isolated, own tools | full spin-up | on explicit call |
+| Hook | none (shell) | negligible | on lifecycle event |
+
+Do not spawn a subagent where a skill suffices.
+
+---
+
+## 3. DELIVERY CHAIN — for diagnosing "X is missing"
+
+```mermaid
+flowchart LR
+  R1["repo/agents"] -->|symlink| T1["~/.claude/agents"]
+  R2["repo/commands"] -->|symlink| T2["~/.claude/commands"]
+  R3["repo/hooks"] -->|symlink| T3["~/.claude/hooks"]
+  R4["repo/global/CLAUDE.md"] -->|symlink| T4["~/.claude/CLAUDE.md"]
+  R5["repo/skills"] -->|"MANUAL symlink"| AG["~/.agents/skills"]
+  AG -->|"farm, ai-sync"| T5["~/.claude/skills/*"]
+  R6["hooks.def.json"] -->|render| T6["settings.json"]
+  R7["mcp.json"] -->|render| T7["mcp config"]
+```
+
+**Diagnosis table.** Match the symptom, do not guess:
+
+| Symptom | Root cause | Action |
+|---|---|---|
+| 0 skills, no error emitted | `~/.agents/skills` absent — `reconcile_skills()` returns early | Create the symlink, re-run `ai-sync` |
+| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 15 |
+| both absent | link step never ran | `ai-sync` |
+| `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§8), re-run |
+| hooks registered but never fire | `bash` or `python3` unresolvable | §8 — verify from Git Bash |
+
+`ai-sync` pipeline: `import → link → reconcile skills → render → git add -A → commit → push`.
+
+> **Machine-specific paths belong in `local.config.json` (gitignored), never in tracked
+> files.** Shape: `{"managed_repos": ["~/projects/x"]}`. Absent/empty is valid and the
+> dependent features no-op. Never commit a real path into `bin/ai-sync`.
+
+---
+
+## 4. CAPABILITY LOOKUP
+
+### 4.1 Subagents
+
+| Agent | Role | Tools | Hard boundary |
+|---|---|---|---|
+| `backend-reviewer` | review | Read Grep Glob Bash | FastAPI/SQLAlchemy async; never edits |
+| `django-reviewer` | review | Read Grep Glob Bash | Django/DRF; never edits |
+| `frontend-reviewer` | review | Read Grep Glob Bash | Correctness only — aesthetics go to `ui-designer` |
+| `llm-sec-review` | review | Read Grep Glob Bash | Model-adjacent only; general appsec elsewhere |
+| `tdd-builder` | build | Read Edit Write Bash Glob Grep Skill Agent | Never commits; always ends with `## Verification` |
+| `ui-designer` | build | all | Stack-specific; another stack needs its own |
+| `teacher` | build | Read Write Edit Bash Glob Grep Web* | Durable learning only |
+
+### 4.2 Skills and their scope limits
+
+| Skill | Refuses / limited to |
+|---|---|
+| `tdd` | — (default for any build or fix) |
+| `test-coverage` | reads existing tests first to match conventions |
+| `adversarial-tester` | **requires a named module**; refuses whole-repo runs |
+| `parallel-debug` | **2+ unrelated** failures; not one shared cause |
+| `complexity-audit` | backend perf: N+1, O(n²), missing indexes |
+| `improve-codebase-architecture` | deepening; reads the project's domain language |
+| `impeccable` | visual work; not mechanical markup swaps |
+| `imprint` | auto-runs after any UI change → `ui-registry.md` |
+| `playwright-cli` | browser automation |
+| `mow` | needs taskman + Postgres |
+| `grill-with-docs` | pre-build; one question at a time, write back each answer |
+| `ship-check` | end gate |
+| `checkpoint` / `pick-up-where-i-left-off` | continuity; board half needs taskman |
+| `wrap-up` | needs taskman + Postgres |
+
+**Runs on a bare clone with no config:** everything except `mow`, `wrap-up`, and the
+board-sync half of the continuity skills.
+
+### 4.3 Routing and the review pipeline
+
+```mermaid
+flowchart TD
+  W["work type"]
+  W --> U["UI"] --> U1["impeccable → imprint"]
+  W --> BE["backend diff"] --> BE1["stack reviewer"]
+  W --> LLM["prompts · tools · RAG"] --> LLM1["llm-sec-review<br/>PLUS stack reviewer"]
+  W --> BUG["bug"] --> BUG1["tdd regression test;<br/>unclear → /diagnose"]
+  W --> PERF["slow query"] --> PERF1["complexity-audit"]
+  W --> THIN["thin tests"] --> THIN1["test-coverage;<br/>pure logic → adversarial-tester"]
+  W --> DONE["declared done"] --> DONE1["ship-check"]
+```
+
+Pipeline order is load-bearing:
+
+```mermaid
+flowchart LR
+  A["build"] --> B["stack reviewer"] --> C["llm-sec-review"] --> D["frontend-reviewer"] --> E["simplify"] --> F["ship-check"]
+```
+
+Routing is advisory. Recommend or invoke; never block on it.
+
+---
+
+## 5. PROCEDURE — install
+
+| # | Step | VERIFY |
+|---|---|---|
+| 1 | `git clone <repo> ~/agent-harness` | `bin/ai-sync` exists |
+| 2 | `mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills` | directory lists **15** entries — **FAIL → STOP** |
+| 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
+| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 15` |
+| 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
+
+Step 2 is the one that fails silently. Never report a successful install without the
+count from step 4.
+
+`ai-sync status` exits 1 when managed-doc drift exists. **That exit code is not an
+install failure** — judge on the four VERIFY lines.
+
+---
+
+## 6. PROCEDURE — taskman
+
+Preconditions, both required: `.taskman.toml` in cwd or an ancestor (I4), and a
+reachable Postgres (I10).
+
+URL resolution:
+
+```mermaid
+flowchart LR
+  A["TASKMAN_DATABASE_URL"] -->|unset| B["DATABASE_URL<br/>+asyncpg rewritten to +psycopg"]
+  B -->|unset| C["built-in default"]
+```
+
+Command surface: `db` `init-db` `feature` `pbi` `task` `requirement` `decision`
+`capture` `board` `session` `harvest` `plan` `recommend` `wrapup`.
+
+### Decision-task protocol
+
+```mermaid
+flowchart TD
+  S["sharp question,<br/>unanswered, blocking work"]
+  S --> T["task add '<the question>'<br/>-t kind:decision"]
+  T --> L["task link BUILD --blocked-by DECISION"]
+  L --> W{"answered?"}
+  W -->|yes| Y1["task set --notes 'Answer: …'"]
+  Y1 --> Y2["decision add … --why …"]
+  Y2 --> Y3["task move --status done"]
+  Y3 --> Y4["write into plan.md<br/>'## Decisions locked'"]
+  W -->|"out of scope"| N1["-t …,scope:out"]
+  N1 --> N2["task move --status disabled"]
+  N2 --> N3["retire dependent tasks (I7)"]
+```
+
+All four "answered" steps are required: board records *that*, log records *why*,
+plan records *what*. A question you cannot yet phrase precisely is **fog, not a board
+row** — it belongs under `## Not yet specified` in the plan.
+
+Applies here: **I5** (read tags before replacing), **I6** (no brief `source_ref`),
+**I7** (disabled blockers hide dependents), **I9** (`disabled` ≠ `done`).
+
+---
+
+## 7. PROCEDURE — mow
+
+Mode dispatch, **first match wins**: `go`|`dispatch` → go · `ready` → ready ·
+`list` → list · otherwise → plan.
+
+```mermaid
+flowchart TD
+  P["/mow plan"] -->|"writes briefs + wave map,<br/>imports board rows"| G1{"import exit 0?"}
+  G1 -->|no| STOP["REFUSE hand-off"]
+  G1 -->|yes| RDY["/mow ready"]
+  RDY -->|"grill, write back each answer"| G2{"write-back done?"}
+  G2 -->|no| STOP2["REFUSE go"]
+  G2 -->|yes| GO["/mow go"]
+  GO --> PRE{"preflight passes?"}
+  PRE -->|no| STOP3["STOP"]
+  PRE -->|yes| WAVE["fan out wave by wave"]
+  WAVE --> RV["review gate between waves"]
+  RV --> INT["Integrate → ship-check"]
+```
+
+**I3 is the hard rule** — same-wave lanes own disjoint file sets. Thin briefs are
+refused, not dispatched.
+
+Mandatory auto-invocations (skip only on explicit operator instruction or a written
+n/a in the report):
+
+| Point | Invoke |
+|---|---|
+| ready, before go | `grill-with-docs`, one Q at a time, write back before the next |
+| go, before wave 1 | preflight: grill → hydrate → thin-brief → overlap |
+| lane start | `tdd` **before** production code |
+| lane mid-build | `parallel-debug` on >1 unrelated failure |
+| lane mid-build, UI | project `ui-designer` + `impeccable` |
+| lane verification, UI | `imprint` |
+| lane verification, new logic | `test-coverage` |
+| lane verification, pure logic | `adversarial-tester` |
+| Integrate | `ship-check` as auto-gate |
+
+---
+
+## 8. PROCEDURE — Windows install delta
+
+```mermaid
+flowchart TD
+  A{"Developer Mode = 0x1?"} -->|no| A1["STOP — symlinks cannot be created"]
+  A -->|yes| B["create ~/.agents/skills (PowerShell)"]
+  B --> C{"15 skills listed?"}
+  C -->|no| C1["STOP"]
+  C -->|yes| D["ai-sync + status"]
+  D --> E{"hooks wanted?"}
+  E -->|no| DONE["done — tier 1 complete"]
+  E -->|yes| F{"python3 resolves<br/>in Git Bash?"}
+  F -->|no| F1["install shim, or drop the hooks key"]
+  F -->|yes| DONE
+```
+
+Check Developer Mode:
+`reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense` → `0x1`.
+
+Hook scripts are bash and invoke `python3` literally; a shim is required unless
+Python came from the Microsoft Store. Verify from **Git Bash**, not `cmd`.
+
+Hooks are optional and nothing in the core depends on them. **Never let a hook
+failure block the install** — report it and continue.
+
+---
+
+## 9. REPORTING RULES
+
+- Report VERIFY outcomes with the actual observed value ("`shared skills: 15`"), not
+  "verified".
+- If a step was skipped, say which and why.
+- If a check could not run, say so — do not infer a pass from an adjacent success.
+- Distinguish **CONFIRMED** (you ran it and saw the result) from **PLAUSIBLE** (it
+  follows from what you read).

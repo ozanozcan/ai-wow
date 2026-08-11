@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to local.config.json (gitignored) and edit. Absent or empty is fine — the managed-doc render and project-hook validation simply no-op.",
+  "managed_repos": [
+    "~/projects/demo-api",
+    "~/projects/web-app"
+  ]
+}

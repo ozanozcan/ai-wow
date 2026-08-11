@@ -1,0 +1,29 @@
+{
+  "_comment": "Neutral hook registration. ai-sync renders this into ~/.claude/settings.json (Claude schema) and ~/.cursor/hooks.json (Cursor schema). 'script' resolves to each tool's hooks/ dir; 'command' is raw (BIN/ -> this repo's bin/).",
+  "hooks": [
+    {
+      "id": "guard-destructive",
+      "script": "guard-destructive.sh",
+      "claude": { "event": "PreToolUse", "matcher": "Bash" },
+      "cursor": { "event": "beforeShellExecution", "failClosed": false }
+    },
+    {
+      "id": "session-start-marker",
+      "script": "session-start-marker.sh",
+      "claude": { "event": "SessionStart" },
+      "cursor": { "event": "sessionStart", "failClosed": false }
+    },
+    {
+      "id": "archive-session",
+      "script": "archive-session.sh",
+      "claude": { "event": "SessionEnd" },
+      "cursor": { "event": "sessionEnd", "failClosed": false }
+    },
+    {
+      "id": "ai-sync",
+      "command": "python3 BIN/ai-sync --from-hook",
+      "claude": { "event": "SessionEnd" },
+      "cursor": { "event": "sessionEnd", "failClosed": false }
+    }
+  ]
+}

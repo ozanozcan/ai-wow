@@ -1,0 +1,34 @@
+[project]
+name = "taskman"
+version = "1.0.0"
+description = "Durable Feature→PBI→Task board + living spec + mow orchestration gates (canonical home: dotfiles-ai)"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.18",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "sqlalchemy>=2.0",
+]
+
+[project.scripts]
+taskman = "taskman.cli:main"
+mow-preflight = "taskman.mow.preflight:main"
+mow-hydrate-specs = "taskman.mow.hydrate_specs:main"
+mow-plan-import = "taskman.mow.plan_import:main"
+mow-check-grill-writeback = "taskman.mow.check_grill_writeback:main"
+mow-set-registry-status = "taskman.mow.set_registry_status:main"
+wrapup-reconcile = "taskman.mow.wrapup_reconcile:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["taskman"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

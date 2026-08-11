@@ -1,0 +1,3 @@
+[project]
+slug = "taskman-tests"
+name = "taskman package test project"

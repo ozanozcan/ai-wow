@@ -1,0 +1,658 @@
+#!/usr/bin/env python3
+"""ai-sync — keep Claude Code and Cursor AI config in sync from one source of truth.
+
+This repo (~/agent-harness) is the canonical store. Portable content (subagents,
+slash commands, hook scripts) is symlinked into both ~/.claude and ~/.cursor so
+there is zero drift. Non-portable config (hook registration, MCP servers) is
+*rendered* into each tool's own schema from a single neutral definition.
+
+Usage:
+  ai-sync              # import new content, relink, render, commit
+  ai-sync import       # same as default (explicit)
+  ai-sync status       # show current link / render state, no changes
+  ai-sync check-managed  # exit nonzero if managed workflow docs drifted
+  ai-sync --from-hook  # quiet mode for the sessionEnd hook (never errors)
+
+Skills live in this repo (skills/); ~/.agents/skills is a symlink to it, so the
+`skills` CLI keeps working and skill edits are committed like everything else.
+ai-sync still reconciles the per-skill farms and backs up the lock file.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+HOME = Path.home()
+CLAUDE = HOME / ".claude"
+CURSOR = HOME / ".cursor"
+AGENTS_SKILLS = HOME / ".agents" / "skills"
+CLAUDE_JSON = HOME / ".claude.json"
+
+# Categories that are file-collections shared via a symlinked directory.
+# (target dir name under each tool) -> (canonical dir under REPO)
+LINK_DIRS = {
+    "agents": REPO / "agents",
+    "commands": REPO / "commands",
+    "hooks": REPO / "hooks",
+}
+
+# Single files shared via a symlink rather than a whole directory.
+# (path under the tool) -> (canonical file under REPO)
+LINK_FILES = {
+    CLAUDE / "CLAUDE.md": REPO / "global" / "CLAUDE.md",
+}
+
+# Machine-specific settings live OUTSIDE the repo so this tree stays publishable.
+# local.config.json (gitignored) next to this repo's root:
+#   {"managed_repos": ["~/projects/demo-api", "~/projects/web-app"]}
+# Absent or empty -> no consuming repos, and the managed-doc render / project-hook
+# validation simply no-op. Nothing else in ai-sync depends on it.
+LOCAL_CONFIG = REPO / "local.config.json"
+
+
+def local_config() -> dict:
+    try:
+        return json.loads(LOCAL_CONFIG.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def managed_repos() -> list[Path]:
+    """Consuming repos that get project-hook validation + managed doc renders."""
+    return [
+        Path(p).expanduser()
+        for p in local_config().get("managed_repos", [])
+    ]
+
+MANAGED_DOCS = (
+    "work-loop.md",
+    "mow-compact-template.md",
+    "taskman-dispatch-bridge.md",
+)
+
+WORKFLOW_CORE_DIR = REPO / "docs" / "workflow"
+WORKFLOW_FRONTS_DIR = WORKFLOW_CORE_DIR / "fronts"
+
+QUIET = False
+FROM_HOOK = False
+_backup_dir: Path | None = None
+
+
+def log(msg: str) -> None:
+    if not QUIET:
+        print(msg)
+
+
+def backup_dir() -> Path:
+    """Lazily create a timestamped backup folder for anything we overwrite."""
+    global _backup_dir
+    if _backup_dir is None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        _backup_dir = REPO / ".backups" / ts
+        _backup_dir.mkdir(parents=True, exist_ok=True)
+    return _backup_dir
+
+
+def backup(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    dest = backup_dir() / path.name
+    i = 1
+    while dest.exists():
+        dest = backup_dir() / f"{path.name}.{i}"
+        i += 1
+    if path.is_symlink():
+        dest.write_text(f"symlink -> {os.readlink(path)}\n")
+    elif path.is_dir():
+        shutil.copytree(path, dest)
+    else:
+        shutil.copy2(path, dest)
+
+
+def points_into_repo(path: Path) -> bool:
+    """True if path is a symlink resolving into REPO (so it's already canonical)."""
+    try:
+        return path.is_symlink() and str(path.resolve()).startswith(str(REPO))
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# import: pull live content into the canonical repo (union of both tools)
+# ---------------------------------------------------------------------------
+
+def _copy_md(src_dir: Path, dst_dir: Path) -> int:
+    n = 0
+    if not src_dir.is_dir() or points_into_repo(src_dir):
+        return 0
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for f in sorted(src_dir.glob("*.md")):
+        if f.is_symlink():
+            continue
+        dst = dst_dir / f.name
+        if not dst.exists() or f.read_bytes() != dst.read_bytes():
+            shutil.copy2(f, dst)
+            n += 1
+    return n
+
+
+def _copy_scripts(src_dir: Path, dst_dir: Path) -> int:
+    n = 0
+    if not src_dir.is_dir() or points_into_repo(src_dir):
+        return 0
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for f in sorted(src_dir.glob("*.sh")):
+        if f.is_symlink():
+            continue
+        dst = dst_dir / f.name
+        if not dst.exists() or f.read_bytes() != dst.read_bytes():
+            shutil.copy2(f, dst)
+            os.chmod(dst, 0o755)
+            n += 1
+    return n
+
+
+def do_import() -> None:
+    """Union live content from both tools into the repo. Idempotent."""
+    a = _copy_md(CLAUDE / "agents", REPO / "agents") + _copy_md(CURSOR / "agents", REPO / "agents")
+    c = _copy_md(CLAUDE / "commands", REPO / "commands") + _copy_md(CURSOR / "commands", REPO / "commands")
+    h = _copy_scripts(CLAUDE / "hooks", REPO / "hooks") + _copy_scripts(CURSOR / "hooks", REPO / "hooks")
+    if a or c or h:
+        log(f"  imported: {a} agent(s), {c} command(s), {h} hook script(s)")
+    # Back up the skills lock file so the skill set is restorable.
+    lock = HOME / ".agents" / ".skill-lock.json"
+    if lock.is_file():
+        shutil.copy2(lock, REPO / "skills.lock.json")
+
+
+# ---------------------------------------------------------------------------
+# link: replace tool dirs with symlinks into the repo
+# ---------------------------------------------------------------------------
+
+def ensure_symlink(link: Path, target: Path) -> str:
+    if not target.exists():
+        return "skip (no target)"
+    if link.is_symlink():
+        try:
+            if link.resolve() == target.resolve():
+                return "ok"
+        except OSError:
+            pass
+        backup(link)
+        link.unlink()
+    elif link.exists():
+        backup(link)
+        if link.is_dir():
+            shutil.rmtree(link)
+        else:
+            link.unlink()
+    link.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(target, link)
+    return "linked"
+
+
+def do_link() -> None:
+    for name, canonical in LINK_DIRS.items():
+        for tool in (CLAUDE, CURSOR):
+            res = ensure_symlink(tool / name, canonical)
+            if res != "ok":
+                log(f"  {tool.name}/{name}: {res}")
+    for link, canonical in LINK_FILES.items():
+        res = ensure_symlink(link, canonical)
+        if res != "ok":
+            log(f"  {link.parent.name}/{link.name}: {res}")
+
+
+# ---------------------------------------------------------------------------
+# skills: reconcile the symlink farms so both tools expose the same set
+# ---------------------------------------------------------------------------
+
+def reconcile_skills() -> None:
+    if not AGENTS_SKILLS.is_dir():
+        return
+    canonical = {p.name for p in AGENTS_SKILLS.iterdir() if p.is_dir()}
+    for tool in (CLAUDE, CURSOR):
+        farm = tool / "skills"
+        if farm.is_symlink() or (farm.exists() and not farm.is_dir()):
+            continue
+        farm.mkdir(parents=True, exist_ok=True)
+        # Add missing skill symlinks.
+        for name in canonical:
+            link = farm / name
+            if not link.exists() and not link.is_symlink():
+                os.symlink(AGENTS_SKILLS / name, link)
+                log(f"  {tool.name}/skills: +{name}")
+        # Prune dangling symlinks that point into ~/.agents/skills but no longer exist.
+        for link in farm.iterdir():
+            if link.is_symlink():
+                tgt = Path(os.readlink(link))
+                if str(tgt).startswith(str(AGENTS_SKILLS)) and not link.resolve().exists():
+                    link.unlink()
+                    log(f"  {tool.name}/skills: -{link.name} (dangling)")
+
+
+# ---------------------------------------------------------------------------
+# render: hook registration + MCP into each tool's own schema
+# ---------------------------------------------------------------------------
+
+def load_json(path: Path, default):
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def write_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def hook_defs() -> list[dict]:
+    return load_json(REPO / "hooks.def.json", {"hooks": []}).get("hooks", [])
+
+
+def _cmd_for(defn: dict, tool: str) -> str:
+    raw = defn.get("command")
+    if raw:
+        # POSIX separators: hook commands are executed by a shell (git-bash on
+        # Windows), where a backslash is an escape character, not a path separator.
+        return raw.replace("BIN/", f"{(REPO / 'bin').as_posix()}/")
+    script = defn["script"]
+    if tool == "claude":
+        return f"bash ~/.claude/hooks/{script}"
+    return f"{HOME.as_posix()}/.cursor/hooks/{script}"
+
+
+def render_claude_hooks(defs: list[dict]) -> dict:
+    groups: dict[tuple, list] = {}
+    for d in defs:
+        c = d["claude"]
+        key = (c["event"], c.get("matcher"))
+        groups.setdefault(key, []).append({"type": "command", "command": _cmd_for(d, "claude")})
+    out: dict[str, list] = {}
+    for (event, matcher), entries in groups.items():
+        grp: dict = {}
+        if matcher:
+            grp["matcher"] = matcher
+        grp["hooks"] = entries
+        out.setdefault(event, []).append(grp)
+    return out
+
+
+def render_cursor_hooks(defs: list[dict]) -> dict:
+    out: dict[str, list] = {}
+    for d in defs:
+        cu = d["cursor"]
+        entry: dict = {"command": _cmd_for(d, "cursor")}
+        if "matcher" in cu:
+            entry["matcher"] = cu["matcher"]
+        if "failClosed" in cu:
+            entry["failClosed"] = cu["failClosed"]
+        out.setdefault(cu["event"], []).append(entry)
+    return {"version": 1, "hooks": out}
+
+
+def do_render_hooks() -> None:
+    defs = hook_defs()
+    if not defs:
+        return
+    # Claude: merge hooks block, preserve every other setting.
+    settings_path = CLAUDE / "settings.json"
+    settings = load_json(settings_path, {})
+    new_hooks = render_claude_hooks(defs)
+    if settings.get("hooks") != new_hooks:
+        backup(settings_path)
+        settings["hooks"] = new_hooks
+        write_json(settings_path, settings)
+        log("  rendered ~/.claude/settings.json hooks")
+    # Cursor: dedicated file, render whole thing.
+    cursor_path = CURSOR / "hooks.json"
+    new_cursor = render_cursor_hooks(defs)
+    if load_json(cursor_path, None) != new_cursor:
+        backup(cursor_path)
+        write_json(cursor_path, new_cursor)
+        log("  rendered ~/.cursor/hooks.json")
+
+
+def do_render_mcp() -> None:
+    canonical = load_json(REPO / "mcp.json", {"mcpServers": {}})
+    servers = canonical.get("mcpServers", {})
+    # Cursor: dedicated file.
+    cursor_path = CURSOR / "mcp.json"
+    desired = {"mcpServers": servers}
+    if load_json(cursor_path, None) != desired:
+        backup(cursor_path)
+        write_json(cursor_path, desired)
+        log("  rendered ~/.cursor/mcp.json")
+    # Claude: only touch the big live file when we actually have servers.
+    if servers:
+        d = load_json(CLAUDE_JSON, {})
+        if d.get("mcpServers") != servers:
+            backup(CLAUDE_JSON)
+            d["mcpServers"] = servers
+            write_json(CLAUDE_JSON, d)
+            log("  updated ~/.claude.json mcpServers")
+
+
+# ---------------------------------------------------------------------------
+# project-hook duplicate registration (d#849 / req #434)
+# ---------------------------------------------------------------------------
+
+def _owned_hook_needles() -> list[tuple[str, str]]:
+    """(id, needle) pairs — needle matched against project hook command strings."""
+    out: list[tuple[str, str]] = []
+    for d in hook_defs():
+        hid = d["id"]
+        if "script" in d:
+            out.append((hid, d["script"]))
+        else:
+            # command-based entries (e.g. ai-sync)
+            out.append((hid, hid))
+    return out
+
+
+def _command_owns_needle(command: str, needle: str) -> bool:
+    """True if command references the owned script/id as a path basename or token."""
+    if not command:
+        return False
+    # Path-ish: .../archive-session.sh or scripts/archive-session.sh
+    for token in re.split(r"[\s\"']+", command):
+        if not token:
+            continue
+        base = Path(token).name
+        if base == needle or token == needle:
+            return True
+        # bare id appearing as a path segment (ai-sync binary)
+        if needle in token.split("/") and Path(token).name.startswith(needle):
+            return True
+    return False
+
+
+def _iter_project_hook_commands(repo: Path) -> list[tuple[Path, str]]:
+    """Yield (hooks_file, command) for known project-level hook registration files."""
+    found: list[tuple[Path, str]] = []
+    cursor_path = repo / ".cursor" / "hooks.json"
+    cursor = load_json(cursor_path, None)
+    if isinstance(cursor, dict):
+        for entries in (cursor.get("hooks") or {}).values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, dict) and "command" in entry:
+                    found.append((cursor_path, entry["command"]))
+
+    claude_path = repo / ".claude" / "settings.json"
+    claude = load_json(claude_path, None)
+    if isinstance(claude, dict):
+        for groups in (claude.get("hooks") or {}).values():
+            if not isinstance(groups, list):
+                continue
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                for hook in group.get("hooks") or []:
+                    if isinstance(hook, dict) and "command" in hook:
+                        found.append((claude_path, hook["command"]))
+    return found
+
+
+def find_duplicate_hook_registrations() -> list[str]:
+    """Return human-readable violations: project file re-registers hooks.def.json ids."""
+    needles = _owned_hook_needles()
+    violations: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for repo in managed_repos():
+        if not repo.is_dir():
+            continue
+        for hooks_file, command in _iter_project_hook_commands(repo):
+            for hid, needle in needles:
+                if not _command_owns_needle(command, needle):
+                    continue
+                key = (str(hooks_file), hid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                violations.append(f"{hooks_file}: duplicate registration of hooks.def.json id '{hid}'")
+    return violations
+
+
+def report_duplicate_hooks(violations: list[str]) -> None:
+    for v in violations:
+        # Always print violations (even in --from-hook / QUIET) so the operator sees them.
+        print(f"ai-sync: {v}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# managed workflow docs (d#848 / req #435)
+# ---------------------------------------------------------------------------
+
+def _repo_slug(repo: Path) -> str | None:
+    toml = repo / ".taskman.toml"
+    if not toml.is_file():
+        return None
+    m = re.search(r'(?m)^slug\s*=\s*"([^"]+)"', toml.read_text())
+    return m.group(1) if m else None
+
+
+def _managed_header(doc: str, slug: str | None, front_path: Path | None) -> str:
+    front_field = str(front_path) if front_path and front_path.is_file() else "none"
+    core = WORKFLOW_CORE_DIR / doc
+    return (
+        "<!-- ai-sync managed copy — do not hand-edit; edits fail the drift gate. "
+        f"Core: {core} · Front: {front_field} -->"
+    )
+
+
+def render_managed_doc(repo: Path, doc: str) -> str | None:
+    """Assemble managed header + optional front + canonical body. None if core missing."""
+    core_path = WORKFLOW_CORE_DIR / doc
+    if not core_path.is_file():
+        return None
+    slug = _repo_slug(repo)
+    front_path = (WORKFLOW_FRONTS_DIR / slug / doc) if slug else None
+    front_text = ""
+    if front_path and front_path.is_file():
+        front_text = front_path.read_text()
+    header = _managed_header(doc, slug, front_path if front_text else None)
+    body = core_path.read_text()
+    parts = [header.rstrip("\n")]
+    if front_text:
+        parts.append(front_text.rstrip("\n"))
+    parts.append(body.rstrip("\n"))
+    return "\n\n".join(parts) + "\n"
+
+
+def managed_doc_path(repo: Path, doc: str) -> Path:
+    return repo / "docs" / "workflow" / doc
+
+
+def do_render_managed_docs() -> None:
+    """Render managed workflow docs into each consuming repo. Idempotent."""
+    for repo in managed_repos():
+        if not repo.is_dir():
+            continue
+        for doc in MANAGED_DOCS:
+            rendered = render_managed_doc(repo, doc)
+            if rendered is None:
+                continue
+            dest = managed_doc_path(repo, doc)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.is_file() and dest.read_text() == rendered:
+                continue
+            dest.write_text(rendered)
+            log(f"  rendered {dest}")
+
+
+def find_managed_doc_drift() -> list[str]:
+    """Return violations where on-disk managed copy != current render."""
+    violations: list[str] = []
+    for repo in managed_repos():
+        if not repo.is_dir():
+            continue
+        for doc in MANAGED_DOCS:
+            rendered = render_managed_doc(repo, doc)
+            if rendered is None:
+                continue
+            dest = managed_doc_path(repo, doc)
+            if not dest.is_file():
+                violations.append(f"{dest}: missing managed copy (expected render of {doc})")
+                continue
+            if dest.read_text() != rendered:
+                violations.append(f"{dest}: managed-doc drift (body/front/header != current render)")
+    return violations
+
+
+def report_managed_drift(violations: list[str]) -> None:
+    for v in violations:
+        print(f"ai-sync: {v}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# git
+# ---------------------------------------------------------------------------
+
+def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    # Commit without requiring a configured global identity (don't mutate config).
+    env.setdefault("GIT_AUTHOR_NAME", "ai-sync")
+    env.setdefault("GIT_AUTHOR_EMAIL", "ai-sync@local")
+    env.setdefault("GIT_COMMITTER_NAME", "ai-sync")
+    env.setdefault("GIT_COMMITTER_EMAIL", "ai-sync@local")
+    return subprocess.run(
+        ["git", "-C", str(REPO), *args],
+        capture_output=True, text=True, env=env, check=check,
+    )
+
+
+def do_commit() -> None:
+    git("add", "-A")
+    status = git("status", "--porcelain").stdout.strip()
+    if not status:
+        log("  git: clean, nothing to commit")
+        return
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    git("commit", "-q", "-m", f"sync: {ts}")
+    log(f"  git: committed ({len(status.splitlines())} change(s))")
+    # Backup: push if a remote exists; never fail (offline, hook mode, etc.).
+    if git("remote", check=False).stdout.strip():
+        pushed = git("push", "-q", check=False)
+        log("  git: pushed" if pushed.returncode == 0 else "  git: push failed (skipped)")
+
+
+# ---------------------------------------------------------------------------
+# status / checks
+# ---------------------------------------------------------------------------
+
+def do_status() -> int:
+    print(f"repo: {REPO}")
+    for name, canonical in LINK_DIRS.items():
+        for tool in (CLAUDE, CURSOR):
+            link = tool / name
+            if link.is_symlink() and link.resolve() == canonical.resolve():
+                state = "linked"
+            elif link.exists():
+                state = "NOT linked (real dir)"
+            else:
+                state = "missing"
+            print(f"  {tool.name}/{name:9} {state}")
+    for link, canonical in LINK_FILES.items():
+        if link.is_symlink() and link.resolve() == canonical.resolve():
+            state = "linked"
+        elif link.exists():
+            state = "NOT linked (real file)"
+        else:
+            state = "missing"
+        print(f"  {link.parent.name}/{link.name:9} {state}")
+    print(f"  claude/settings.json hooks: {'present' if load_json(CLAUDE/'settings.json',{}).get('hooks') else 'none'}")
+    print(f"  cursor/hooks.json:          {'present' if (CURSOR/'hooks.json').exists() else 'none'}")
+    n = len([p for p in AGENTS_SKILLS.iterdir() if p.is_dir()]) if AGENTS_SKILLS.is_dir() else 0
+    print(f"  shared skills (~/.agents):  {n}")
+
+    dupes = find_duplicate_hook_registrations()
+    drift = find_managed_doc_drift()
+    if dupes:
+        print(f"  duplicate hook registrations: {len(dupes)}")
+        report_duplicate_hooks(dupes)
+    else:
+        print("  duplicate hook registrations: none")
+    if drift:
+        print(f"  managed-doc drift: {len(drift)}")
+        report_managed_drift(drift)
+    else:
+        print("  managed-doc drift: none")
+    return 1 if (dupes or drift) else 0
+
+
+def do_check_managed() -> int:
+    drift = find_managed_doc_drift()
+    if drift:
+        report_managed_drift(drift)
+        return 1
+    log("managed-doc drift: none")
+    return 0
+
+
+def collect_gate_violations() -> list[str]:
+    return find_duplicate_hook_registrations() + find_managed_doc_drift()
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+def sync() -> int:
+    log("ai-sync:")
+    do_import()
+    do_link()
+    reconcile_skills()
+    do_render_hooks()
+    do_render_mcp()
+    do_render_managed_docs()
+    do_commit()
+    log("done.")
+    dupes = find_duplicate_hook_registrations()
+    drift = find_managed_doc_drift()
+    if dupes or drift:
+        report_duplicate_hooks(dupes)
+        report_managed_drift(drift)
+        return 0 if FROM_HOOK else 1
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    global QUIET, FROM_HOOK
+    args = [a for a in argv if not a.startswith("-")]
+    flags = {a for a in argv if a.startswith("-")}
+    if "--from-hook" in flags:
+        QUIET = True
+        FROM_HOOK = True
+        try:
+            sys.stdin.read()
+        except Exception:
+            pass
+    cmd = args[0] if args else "sync"
+    try:
+        if cmd == "status":
+            rc = do_status()
+            return 0 if FROM_HOOK else rc
+        if cmd == "check-managed":
+            rc = do_check_managed()
+            return 0 if FROM_HOOK else rc
+        # sync / import
+        return sync()
+    except Exception as exc:  # never let the hook break a session
+        if FROM_HOOK or QUIET:
+            return 0
+        print(f"ai-sync error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
