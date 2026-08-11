@@ -165,7 +165,7 @@ should be:
 .claude/commands  linked
 .claude/hooks     linked
 .claude/CLAUDE.md linked
-shared skills (~/.agents):  15
+shared skills (~/.agents):  14
 ```
 
 Anything `ai-sync` overwrites is copied to `.backups/<timestamp>/` first, so a wrong
@@ -208,7 +208,7 @@ Two invariants make this work: **reviewers never build**, and **`tdd-builder` ne
 commits**. If the thing that writes the code is also the thing that approves it, the
 review gate means nothing.
 
-**Fifteen skills**, in four families:
+**Fourteen skills**, in four families:
 
 ```mermaid
 flowchart TD
@@ -217,7 +217,7 @@ flowchart TD
     B4["parallel-debug"]; B5["complexity-audit"]; B6["improve-codebase-architecture"]
   end
   subgraph UI["ui"]
-    U1["impeccable"]; U2["imprint"]; U3["playwright-cli"]
+    U1["impeccable †"]; U2["imprint"]; U3["playwright-cli"]
   end
   subgraph ORCH["orchestration"]
     O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]
@@ -226,6 +226,18 @@ flowchart TD
     C1["checkpoint"]; C2["pick-up-where-i-left-off"]; C3["wrap-up"]
   end
 ```
+
+**† `impeccable` is not bundled with this repo.** It is Apache-2.0 and about 99
+files — the bulk of the original harness — so it is better taken fresh from its own
+source than vendored here. One command adds it:
+
+```bash
+npx skills add pbakaus/impeccable
+```
+
+Everything else works without it; you lose the UI-craft handoff, and `ui-designer`
+carries visual work alone. Full detail and the other three upstreams:
+[`THIRD-PARTY.md`](THIRD-PARTY.md).
 
 ### Routing
 
@@ -236,7 +248,7 @@ Reach for the specialist rather than asking the generalist to try harder.
 | Building a feature, or fixing a bug | `tdd` — write the failing test first |
 | A backend diff ready to commit | the stack reviewer subagent |
 | Prompts, tools, agents, RAG | `llm-sec-review` **in addition to** the stack reviewer |
-| A page, screen, component, mobile layout | `impeccable` while building, `imprint` after |
+| A page, screen, component, mobile layout | `impeccable` † while building, `imprint` after |
 | A slow endpoint or a new list query | `complexity-audit` |
 | New logic with thin tests | `test-coverage`; pure logic → `adversarial-tester` |
 | Two or more *unrelated* test failures | `parallel-debug` |

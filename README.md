@@ -20,7 +20,7 @@ python3 ~/agent-harness/bin/ai-sync status
 
 | | Count | |
 |---|---|---|
-| **Skills** | 15 | Procedures an agent loads into its own context on demand |
+| **Skills** | 14 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 7 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
 | **Hooks** | 3 | Guarantees that fire on lifecycle events, not on the agent's judgment |
@@ -28,6 +28,18 @@ python3 ~/agent-harness/bin/ai-sync status
 
 Everything except the board runs on a bare clone: **no configuration, no API keys,
 no database.**
+
+### One optional extra
+
+`impeccable` — the UI design skill — is referenced throughout the docs but is **not
+bundled**: it is Apache-2.0 and roughly 99 files, better taken from its own source
+than vendored here.
+
+```bash
+npx skills add pbakaus/impeccable
+```
+
+Nothing else depends on it. See [`THIRD-PARTY.md`](THIRD-PARTY.md).
 
 ---
 
@@ -101,7 +113,7 @@ before fan-out, not discovered afterwards.
 
 | Path | What |
 |---|---|
-| `skills/` | 15 skills, each `<name>/SKILL.md` |
+| `skills/` | 14 skills, each `<name>/SKILL.md` |
 | `agents/` | 7 subagent definitions |
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
@@ -144,3 +156,18 @@ TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman
 | [`templates/BOOTSTRAP.md`](templates/BOOTSTRAP.md) | Adopting the harness in a new repo |
 | [`docs/workflow/work-loop.md`](docs/workflow/work-loop.md) | The operator's idea → board → build loop |
 | [`taskman/taskman/README.md`](taskman/taskman/README.md) | The board package in depth |
+| [`THIRD-PARTY.md`](THIRD-PARTY.md) | Which skills came from elsewhere, and under what terms |
+
+---
+
+## License
+
+[MIT](LICENSE) for everything original to this repository — the eleven original
+skills, the seven subagents, `taskman`, `ai-sync`, and the docs.
+
+Three bundled skills come from other projects and keep their own licenses:
+`tdd` and `grill-with-docs` from [mattpocock/skills](https://github.com/mattpocock/skills)
+(MIT), and `playwright-cli` from
+[microsoft/playwright-cli](https://github.com/microsoft/playwright-cli) (Apache-2.0).
+All three are unmodified; each carries its upstream license text in its own folder.
+Details in [`THIRD-PARTY.md`](THIRD-PARTY.md).

@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 15 skills · 7 subagents · 1 command · 3 hooks · 1 board package
+inventory: 14 skills · 7 subagents · 1 command · 3 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -98,7 +98,7 @@ flowchart LR
 | Symptom | Root cause | Action |
 |---|---|---|
 | 0 skills, no error emitted | `~/.agents/skills` absent — `reconcile_skills()` returns early | Create the symlink, re-run `ai-sync` |
-| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 15 |
+| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 14 |
 | both absent | link step never ran | `ai-sync` |
 | `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§9); if policy forbids, §8a copy mode |
 | hooks registered but never fire | `bash` or `python3` unresolvable | §9 — verify from Git Bash |
@@ -135,7 +135,7 @@ flowchart LR
 | `parallel-debug` | **2+ unrelated** failures; not one shared cause |
 | `complexity-audit` | backend perf: N+1, O(n²), missing indexes |
 | `improve-codebase-architecture` | deepening; reads the project's domain language |
-| `impeccable` | visual work; not mechanical markup swaps |
+| `impeccable` † | visual work; not mechanical markup swaps |
 | `imprint` | auto-runs after any UI change → `ui-registry.md` |
 | `playwright-cli` | browser automation |
 | `mow` | needs taskman + Postgres |
@@ -147,12 +147,16 @@ flowchart LR
 **Runs on a bare clone with no config:** everything except `mow`, `wrap-up`, and the
 board-sync half of the continuity skills.
 
+**† `impeccable` is not bundled** (Apache-2.0, ~99 files — see `THIRD-PARTY.md`).
+Install with `npx skills add pbakaus/impeccable`. If it is absent, do not fabricate
+its behaviour: say so and fall back to `ui-designer` alone.
+
 ### 4.3 Routing and the review pipeline
 
 ```mermaid
 flowchart TD
   W["work type"]
-  W --> U["UI"] --> U1["impeccable → imprint"]
+  W --> U["UI"] --> U1["impeccable † → imprint"]
   W --> BE["backend diff"] --> BE1["stack reviewer"]
   W --> LLM["prompts · tools · RAG"] --> LLM1["llm-sec-review<br/>PLUS stack reviewer"]
   W --> BUG["bug"] --> BUG1["tdd regression test;<br/>unclear → /diagnose"]
@@ -177,9 +181,9 @@ Routing is advisory. Recommend or invoke; never block on it.
 | # | Step | VERIFY |
 |---|---|---|
 | 1 | `git clone <repo> ~/agent-harness` | `bin/ai-sync` exists |
-| 2 | `mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills` | directory lists **15** entries — **FAIL → STOP** |
+| 2 | `mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills` | directory lists **14** entries — **FAIL → STOP** |
 | 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
-| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 15` |
+| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 14` |
 | 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
 | 6 | if step 3 reported symlink denial | switch to §8a copy mode — do not abandon the install |
 
@@ -265,7 +269,7 @@ n/a in the report):
 | go, before wave 1 | preflight: grill → hydrate → thin-brief → overlap |
 | lane start | `tdd` **before** production code |
 | lane mid-build | `parallel-debug` on >1 unrelated failure |
-| lane mid-build, UI | project `ui-designer` + `impeccable` |
+| lane mid-build, UI | project `ui-designer` + `impeccable` † |
 | lane verification, UI | `imprint` |
 | lane verification, new logic | `test-coverage` |
 | lane verification, pure logic | `adversarial-tester` |
@@ -343,7 +347,7 @@ Never edit a skill in the mirrored copy.
 flowchart TD
   A{"Developer Mode = 0x1?"} -->|no| A1["STOP — symlinks cannot be created"]
   A -->|yes| B["create ~/.agents/skills (PowerShell)"]
-  B --> C{"15 skills listed?"}
+  B --> C{"14 skills listed?"}
   C -->|no| C1["STOP"]
   C -->|yes| D["ai-sync + status"]
   D --> E{"hooks wanted?"}
@@ -368,7 +372,7 @@ If Developer Mode cannot be enabled, do not stop: fall back to §8a copy mode.
 
 ## 10. REPORTING RULES
 
-- Report VERIFY outcomes with the actual observed value ("`shared skills: 15`"), not
+- Report VERIFY outcomes with the actual observed value ("`shared skills: 14`"), not
   "verified".
 - If a step was skipped, say which and why.
 - If a check could not run, say so — do not infer a pass from an adjacent success.
