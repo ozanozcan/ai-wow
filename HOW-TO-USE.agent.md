@@ -20,13 +20,13 @@ conditions — do not proceed past a failed VERIFY; report and stop.
 ```mermaid
 flowchart TD
   Q["incoming request"]
-  Q --> A{"is it a build,<br/>fix, or refactor?"}
-  A -->|no| B{"is it a question<br/>about the harness?"}
-  B -->|yes| B1["answer from §2–§4;<br/>do not invoke anything"]
-  B -->|no| B2["ordinary work;<br/>routing table §4 still applies"]
-  A -->|yes| C{"more than ~3 todos<br/>with dependencies?"}
+  Q --> A{"is it a build, <br/>fix, or refactor?"}
+  A -->|no| B{"is it a question <br/>about the harness?"}
+  B -->|yes| B1["answer from §2–§4; <br/>do not invoke anything"]
+  B -->|no| B2["ordinary work; <br/>routing table §4 still applies"]
+  A -->|yes| C{"more than ~3 todos <br/>with dependencies?"}
   C -->|yes| C1["/mow plan — §7"]
-  C -->|no| D{"tests exist for<br/>what you're changing?"}
+  C -->|no| D{"tests exist for <br/>what you're changing?"}
   D -->|no| D1["test-coverage, then tdd"]
   D -->|yes| D2["tdd — red first"]
   C1 --> E["review pipeline §4.3"]
@@ -62,11 +62,11 @@ Violating any of these corrupts state or silently voids a guarantee.
 ```mermaid
 flowchart LR
   N["need"]
-  N --> G{"must it happen<br/>every time?"}
-  G -->|yes| H["HOOK<br/>hooks.def.json"]
-  G -->|no| I{"needs an isolated<br/>context?"}
-  I -->|yes| J["SUBAGENT<br/>Agent tool"]
-  I -->|no| K["SKILL<br/>Skill tool"]
+  N --> G{"must it happen <br/>every time?"}
+  G -->|yes| H["HOOK <br/>hooks.def.json"]
+  G -->|no| I{"needs an isolated <br/>context?"}
+  I -->|yes| J["SUBAGENT <br/>Agent tool"]
+  I -->|no| K["SKILL <br/>Skill tool"]
 ```
 
 | Mechanism | Context | Cost | Fires |
@@ -158,10 +158,10 @@ flowchart TD
   W["work type"]
   W --> U["UI"] --> U1["impeccable † → imprint"]
   W --> BE["backend diff"] --> BE1["stack reviewer"]
-  W --> LLM["prompts · tools · RAG"] --> LLM1["llm-sec-review<br/>PLUS stack reviewer"]
-  W --> BUG["bug"] --> BUG1["tdd regression test;<br/>unclear → /diagnose"]
+  W --> LLM["prompts · tools · RAG"] --> LLM1["llm-sec-review <br/>PLUS stack reviewer"]
+  W --> BUG["bug"] --> BUG1["tdd regression test; <br/>unclear → /diagnose"]
   W --> PERF["slow query"] --> PERF1["complexity-audit"]
-  W --> THIN["thin tests"] --> THIN1["test-coverage;<br/>pure logic → adversarial-tester"]
+  W --> THIN["thin tests"] --> THIN1["test-coverage; <br/>pure logic → adversarial-tester"]
   W --> DONE["declared done"] --> DONE1["ship-check"]
 ```
 
@@ -177,6 +177,13 @@ Routing is advisory. Recommend or invoke; never block on it.
 ---
 
 ## 5. PROCEDURE — install
+
+**If the repo is private,** step 1 needs credentials. On a machine the operator does
+not fully control, **do not run `gh auth login`** — that authorises the whole account.
+Direct them to a fine-grained token scoped to this repository only, `Contents:
+Read-only` (read/write only if they will push back), pasted as the password at the
+`git clone` prompt. Revoking it on GitHub cuts that machine off without affecting
+anything else. Never ask for, echo, or store the token value.
 
 | # | Step | VERIFY |
 |---|---|---|
@@ -204,7 +211,7 @@ URL resolution:
 
 ```mermaid
 flowchart LR
-  A["TASKMAN_DATABASE_URL"] -->|unset| B["DATABASE_URL<br/>+asyncpg rewritten to +psycopg"]
+  A["TASKMAN_DATABASE_URL"] -->|unset| B["DATABASE_URL <br/>+asyncpg rewritten to +psycopg"]
   B -->|unset| C["built-in default"]
 ```
 
@@ -215,14 +222,14 @@ Command surface: `db` `init-db` `feature` `pbi` `task` `requirement` `decision`
 
 ```mermaid
 flowchart TD
-  S["sharp question,<br/>unanswered, blocking work"]
-  S --> T["task add '<the question>'<br/>-t kind:decision"]
+  S["sharp question, <br/>unanswered, blocking work"]
+  S --> T["task add '<the question>' <br/>-t kind:decision"]
   T --> L["task link BUILD --blocked-by DECISION"]
   L --> W{"answered?"}
   W -->|yes| Y1["task set --notes 'Answer: …'"]
   Y1 --> Y2["decision add … --why …"]
   Y2 --> Y3["task move --status done"]
-  Y3 --> Y4["write into plan.md<br/>'## Decisions locked'"]
+  Y3 --> Y4["write into plan.md <br/>'## Decisions locked'"]
   W -->|"out of scope"| N1["-t …,scope:out"]
   N1 --> N2["task move --status disabled"]
   N2 --> N3["retire dependent tasks (I7)"]
@@ -244,7 +251,7 @@ Mode dispatch, **first match wins**: `go`|`dispatch` → go · `ready` → ready
 
 ```mermaid
 flowchart TD
-  P["/mow plan"] -->|"writes briefs + wave map,<br/>imports board rows"| G1{"import exit 0?"}
+  P["/mow plan"] -->|"writes briefs + wave map, <br/>imports board rows"| G1{"import exit 0?"}
   G1 -->|no| STOP["REFUSE hand-off"]
   G1 -->|yes| RDY["/mow ready"]
   RDY -->|"grill, write back each answer"| G2{"write-back done?"}
@@ -310,9 +317,9 @@ back to mirroring.
 ```mermaid
 flowchart TD
   A["ai-sync"] --> B{"can_symlink()"}
-  B -->|true| C["ensure_symlink<br/>editor dir IS the repo"]
-  B -->|false| D["ensure_copy<br/>mirror repo into editor"]
-  D --> E["~/.agents/skills, ~/.claude/skills,<br/>~/.cursor/skills all mirrored"]
+  B -->|true| C["ensure_symlink <br/>editor dir IS the repo"]
+  B -->|false| D["ensure_copy <br/>mirror repo into editor"]
+  D --> E["~/.agents/skills, ~/.claude/skills, <br/>~/.cursor/skills all mirrored"]
 ```
 
 Force it explicitly when you want deterministic behaviour rather than
@@ -352,7 +359,7 @@ flowchart TD
   C -->|yes| D["ai-sync + status"]
   D --> E{"hooks wanted?"}
   E -->|no| DONE["done — tier 1 complete"]
-  E -->|yes| F{"python3 resolves<br/>in Git Bash?"}
+  E -->|yes| F{"python3 resolves <br/>in Git Bash?"}
   F -->|no| F1["install shim, or drop the hooks key"]
   F -->|yes| DONE
 ```

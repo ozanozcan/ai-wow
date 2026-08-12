@@ -36,12 +36,12 @@ Three problems it solves, in order of how much they hurt:
 
 ```mermaid
 flowchart TD
-  P1["Agents forget your standards<br/>every new conversation"]
-  P2["Chat context dies;<br/>decisions die with it"]
-  P3["Config drifts between<br/>machines and editors"]
+  P1["Agents forget your standards <br/>every new conversation"]
+  P2["Chat context dies; <br/>decisions die with it"]
+  P3["Config drifts between <br/>machines and editors"]
 
-  S1["Skills + subagents<br/>procedures that load on demand"]
-  S2["taskman<br/>a board that outlives the chat"]
+  S1["Skills + subagents <br/>procedures that load on demand"]
+  S2["taskman <br/>a board that outlives the chat"]
   S3["One repo + one sync script"]
 
   P1 --> S1
@@ -62,15 +62,15 @@ looking at explains most of its behaviour.
 ```mermaid
 flowchart LR
   subgraph SK["SKILL"]
-    SK1["loads into the<br/>running agent's context"]
+    SK1["loads into the <br/>running agent's context"]
     SK2["fires when relevant"]
   end
   subgraph SA["SUBAGENT"]
-    SA1["own fresh context,<br/>own tool list"]
+    SA1["own fresh context, <br/>own tool list"]
     SA2["starts cold, reports back"]
   end
   subgraph HK["HOOK"]
-    HK1["shell script run<br/>by the harness"]
+    HK1["shell script run <br/>by the harness"]
     HK2["fires every time"]
   end
 ```
@@ -96,14 +96,14 @@ One repo is the source of truth. Two delivery mechanisms, chosen per category.
 flowchart LR
   subgraph REPO["this repo — canonical"]
     direction TB
-    A["skills/ · agents/<br/>commands/ · hooks/<br/>global/CLAUDE.md"]
-    B["hooks.def.json<br/>mcp.json"]
+    A["skills/ · agents/ <br/>commands/ · hooks/ <br/>global/CLAUDE.md"]
+    B["hooks.def.json <br/>mcp.json"]
   end
 
   A -->|"symlink"| C["~/.claude"]
   A -->|"symlink"| D["~/.cursor"]
-  B -->|"render to<br/>Claude schema"| C
-  B -->|"render to<br/>Cursor schema"| D
+  B -->|"render to <br/>Claude schema"| C
+  B -->|"render to <br/>Cursor schema"| D
 
   C -.->|"your edits land here"| A
   D -.->|"your edits land here"| A
@@ -121,8 +121,8 @@ Skills take one extra hop, and it's the hop that breaks:
 ```mermaid
 flowchart LR
   R["repo/skills/"] -->|"symlink you create by hand"| AG["~/.agents/skills"]
-  AG -->|"per-skill links<br/>ai-sync maintains"| CC["~/.claude/skills/*"]
-  AG -->|"per-skill links<br/>ai-sync maintains"| CU["~/.cursor/skills/*"]
+  AG -->|"per-skill links <br/>ai-sync maintains"| CC["~/.claude/skills/*"]
+  AG -->|"per-skill links <br/>ai-sync maintains"| CU["~/.cursor/skills/*"]
 ```
 
 `ai-sync` maintains the second arrow but **not the first**. If `~/.agents/skills`
@@ -133,7 +133,7 @@ error message. Make that link before the first sync.
 
 ```mermaid
 flowchart LR
-  I["import"] --> L["link"] --> S["reconcile<br/>skills"] --> R["render"] --> G["commit"]
+  I["import"] --> L["link"] --> S["reconcile <br/>skills"] --> R["render"] --> G["commit"]
 ```
 
 - **import** — pull anything you created inside an editor into the repo
@@ -184,6 +184,44 @@ Absent or empty is a valid state. That feature simply doesn't run.
 VS Code needs nothing extra — see [Appendix A](#appendix-a--vs-code-and-locked-down-machines),
 which also covers machines that forbid symlinks. Windows needs three extra things:
 [Appendix B](#appendix-b--windows).
+
+### If this repo is private
+
+`git clone` only works anonymously on a public repo. For a private one the machine has
+to authenticate, and on a machine you don't fully control — a work laptop, a shared
+box — *how* it authenticates matters.
+
+**Don't sign a whole account in.** `gh auth login` stores credentials for your entire
+GitHub account. Use a **fine-grained personal access token scoped to this one
+repository** instead:
+
+GitHub → Settings → Developer settings → Personal access tokens → Fine-grained →
+**Only select repositories** → this repo → Repository permissions →
+**Contents: Read-only** (Read and write only if you intend to push back) → set a short
+expiry.
+
+Then plain `git` is enough — no `gh` needed:
+
+```bash
+git clone https://github.com/<you>/<repo>.git ~/ai-wow
+```
+
+It prompts for a username and a password; paste the **token** as the password. The
+platform credential helper caches it after that.
+
+```mermaid
+flowchart TD
+  A["private repo"] --> B{"machine you<br/>fully control?"}
+  B -->|yes| C["gh auth login<br/>or SSH key"]
+  B -->|no| D["fine-grained token,<br/>this repo only, short expiry"]
+  D --> E["revoke from GitHub<br/>to cut access instantly"]
+```
+
+The reason to prefer the token: revoking it on GitHub removes that machine's access
+immediately, without touching anything else you own.
+
+If the network blocks GitHub entirely, the repo is small enough (~2 MB) to move as an
+archive — you just lose the sync path back.
 
 ---
 
@@ -286,12 +324,12 @@ Adopt it when you have work spanning more sessions than you can hold in your hea
 
 ```mermaid
 flowchart TD
-  F["Feature<br/>a capability"]
-  R["Requirement<br/>SHALL + given/when/then"]
-  P["PBI<br/>one unit of work"]
-  T["Task<br/>what an agent executes"]
-  D["Decision<br/>why we chose it"]
-  C["Capture<br/>a session note"]
+  F["Feature <br/>a capability"]
+  R["Requirement <br/>SHALL + given/when/then"]
+  P["PBI <br/>one unit of work"]
+  T["Task <br/>what an agent executes"]
+  D["Decision <br/>why we chose it"]
+  C["Capture <br/>a session note"]
 
   F --> P --> T
   F -.->|"living spec"| R
@@ -339,10 +377,10 @@ it. It's an ordinary task tagged `kind:decision` where **the title is the questi
 
 ```mermaid
 flowchart LR
-  Q["decision task<br/>title = the question"]
+  Q["decision task <br/>title = the question"]
   B["build task"]
   B -->|"blocked-by"| Q
-  Q -->|"answered → done"| U["build task<br/>recommended again"]
+  Q -->|"answered → done"| U["build task <br/>recommended again"]
 ```
 
 Resolving takes three commands and one file edit, and all four matter: record the
@@ -366,7 +404,7 @@ already too long, or start each todo fresh and lose every decision you made.
 flowchart TD
   T["think · grill · plan"]
   MP["/mow plan"]
-  DB["dispatch/ briefs<br/>+ wave map"]
+  DB["dispatch/ briefs <br/>+ wave map"]
   BD[("board")]
   ML["/mow list"]
   MR["/mow ready"]
@@ -392,12 +430,12 @@ flowchart TD
 ```mermaid
 flowchart TD
   subgraph W1["wave 1 — parallel"]
-    L1["lane A<br/>owns api/*"]
-    L2["lane B<br/>owns ui/*"]
+    L1["lane A <br/>owns api/*"]
+    L2["lane B <br/>owns ui/*"]
   end
   RG["review gate"]
   subgraph W2["wave 2"]
-    L3["lane C<br/>depends on A"]
+    L3["lane C <br/>depends on A"]
   end
   L1 --> RG
   L2 --> RG
@@ -424,7 +462,7 @@ sequenceDiagram
   Harness-->>You: destructive command? ask first
   You->>Harness: /wrap-up
   Harness->>Repo: evidence gate
-  Note over Harness,Repo: exits nonzero until every changed file<br/>is attributed and no task is left in_progress
+  Note over Harness,Repo: exits nonzero until every changed file <br/>is attributed and no task is left in_progress
   Harness->>Repo: session report + board sync
   You->>Harness: close session
   Harness->>Repo: archive transcript, ai-sync
@@ -472,7 +510,7 @@ the same engine as the CLI and reads the same user directory:
 
 ```mermaid
 flowchart TD
-  H["~/.claude<br/>agents · commands · skills<br/>settings.json · CLAUDE.md"]
+  H["~/.claude <br/>agents · commands · skills <br/>settings.json · CLAUDE.md"]
   H --> A["Claude Code CLI"]
   H --> B["VS Code extension"]
   H --> C["JetBrains extension"]
@@ -505,11 +543,11 @@ files:
 
 ```mermaid
 flowchart TD
-  S["ai-sync"] --> P{"can this machine<br/>create symlinks?"}
-  P -->|yes| L["symlink mode<br/>editor dir IS the repo"]
-  P -->|no| C["copy mode<br/>files mirrored into the editor"]
-  L --> R1["edits in either place<br/>are the same file"]
-  C --> R2["edit in the repo,<br/>re-run ai-sync to push out"]
+  S["ai-sync"] --> P{"can this machine <br/>create symlinks?"}
+  P -->|yes| L["symlink mode <br/>editor dir IS the repo"]
+  P -->|no| C["copy mode <br/>files mirrored into the editor"]
+  L --> R1["edits in either place <br/>are the same file"]
+  C --> R2["edit in the repo, <br/>re-run ai-sync to push out"]
 ```
 
 The probe happens **before** anything is removed, which matters: the link step
@@ -564,11 +602,11 @@ things need attention.
 ```mermaid
 flowchart TD
   D{"Developer Mode on?"}
-  D -->|no| DF["symlinks fail<br/>→ empty harness"]
-  D -->|yes| S{"~/.agents/skills<br/>created?"}
-  S -->|no| SF["zero skills,<br/>no error message"]
-  S -->|yes| P{"python3 resolves<br/>in Git Bash?"}
-  P -->|no| PF["hooks silently no-op<br/>(everything else fine)"]
+  D -->|no| DF["symlinks fail <br/>→ empty harness"]
+  D -->|yes| S{"~/.agents/skills <br/>created?"}
+  S -->|no| SF["zero skills, <br/>no error message"]
+  S -->|yes| P{"python3 resolves <br/>in Git Bash?"}
+  P -->|no| PF["hooks silently no-op <br/>(everything else fine)"]
   P -->|yes| OK["fully working"]
 ```
 

@@ -61,7 +61,7 @@ editor, so those are **rendered** from one neutral definition instead.
 flowchart LR
   subgraph REPO["ai-wow — canonical"]
     direction TB
-    A["skills/ · agents/ · commands/<br/>hooks/ · global/CLAUDE.md"]
+    A["skills/ · agents/ · commands/ <br/>hooks/ · global/CLAUDE.md"]
     B["hooks.def.json · mcp.json"]
   end
   A -->|"symlink"| C["~/.claude"]
