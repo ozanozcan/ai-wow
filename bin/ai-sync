@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ai-sync — keep Claude Code and Cursor AI config in sync from one source of truth.
 
-This repo (~/agent-harness) is the canonical store. Portable content (subagents,
+This repo (~/ai-wow) is the canonical store. Portable content (subagents,
 slash commands, hook scripts) is symlinked into both ~/.claude and ~/.cursor so
 there is zero drift. Non-portable config (hook registration, MCP servers) is
 *rendered* into each tool's own schema from a single neutral definition.

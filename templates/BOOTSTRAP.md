@@ -14,18 +14,18 @@ without reading anything from another project's repo.
 
 2. **Install the canonical taskman package** as an editable path dependency:
    ```bash
-   uv add --dev --editable ~/agent-harness/taskman
+   uv add --dev --editable ~/ai-wow/taskman
    ```
    The mow harness gates (preflight, hydrate-specs, grill-writeback check, registry status) and
    their tests ship inside the package — nothing is copied from a sibling repo. After your first
    `/mow plan`, run preflight against that dispatch folder and confirm exit 0.
 
 3. **Render the workflow docs.** Create the repo's front-section files under
-   `~/agent-harness/docs/workflow/fronts/<repo-slug>/` (format contract:
-   `~/agent-harness/docs/workflow/front-section-format.md`), then run the ai-sync doc render to
+   `~/ai-wow/docs/workflow/fronts/<repo-slug>/` (format contract:
+   `~/ai-wow/docs/workflow/front-section-format.md`), then run the ai-sync doc render to
    write managed copies of `work-loop.md`, `mow-compact-template.md`, and
    `taskman-dispatch-bridge.md` into `<new-repo>/docs/workflow/`. Hand-edits to rendered copies
-   fail the drift gate — edit the core or the front file in dotfiles-ai and re-render instead.
+   fail the drift gate — edit the core or the front file in ai-wow and re-render instead.
 
 4. **Wire the taskman toolkit map.** Add a `[toolkit]` stanza to the repo's `.taskman.toml`,
    projecting the same tag → skill/agent rows chosen in step 1's P1 table:
@@ -56,7 +56,7 @@ without reading anything from another project's repo.
 
 ## Global layer (no per-repo copy)
 
-The **`mow` skill** (`~/agent-harness/skills/mow/SKILL.md`, symlinked to `~/.agents/skills/mow`, Claude Code, and Cursor) already includes Pi practices (preflight gate, compact-template harvest, `## Git rules` in brief template) and Claude Code worktree isolation (§2a merge-back). The workflow-doc cores live in `~/agent-harness/docs/workflow/` and reach repos only via the ai-sync render (step 3). New repos need only the package dependency, the rendered docs, and protocols.md — no per-repo script copies and no second skill edit.
+The **`mow` skill** (`~/ai-wow/skills/mow/SKILL.md`, symlinked to `~/.agents/skills/mow`, Claude Code, and Cursor) already includes Pi practices (preflight gate, compact-template harvest, `## Git rules` in brief template) and Claude Code worktree isolation (§2a merge-back). The workflow-doc cores live in `~/ai-wow/docs/workflow/` and reach repos only via the ai-sync render (step 3). New repos need only the package dependency, the rendered docs, and protocols.md — no per-repo script copies and no second skill edit.
 
 ## Worked examples
 

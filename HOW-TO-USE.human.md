@@ -151,10 +151,10 @@ flowchart LR
 ## 4. Install
 
 ```bash
-git clone <this-repo> ~/agent-harness
-mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills
-python3 ~/agent-harness/bin/ai-sync
-python3 ~/agent-harness/bin/ai-sync status
+git clone <this-repo> ~/ai-wow
+mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills
+python3 ~/ai-wow/bin/ai-sync
+python3 ~/ai-wow/bin/ai-sync status
 ```
 
 `status` is the thing to trust — it reports what is actually linked rather than what
@@ -520,7 +520,7 @@ You can also force it, which is worth doing if you want predictable behaviour ra
 than capability-dependent behaviour:
 
 ```bash
-python3 ~/agent-harness/bin/ai-sync --copy
+python3 ~/ai-wow/bin/ai-sync --copy
 ```
 
 …or make it permanent in `local.config.json`:
@@ -580,7 +580,7 @@ symlink creation for normal users otherwise, and the entire design is symlinks.
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents"
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.agents\skills" `
-         -Target "$env:USERPROFILE\agent-harness\skills"
+         -Target "$env:USERPROFILE\ai-wow\skills"
 ```
 
 **3. `python3`.** The hook scripts are bash and call `python3` by that exact name.

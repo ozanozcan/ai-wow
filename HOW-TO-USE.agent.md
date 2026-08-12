@@ -180,8 +180,8 @@ Routing is advisory. Recommend or invoke; never block on it.
 
 | # | Step | VERIFY |
 |---|---|---|
-| 1 | `git clone <repo> ~/agent-harness` | `bin/ai-sync` exists |
-| 2 | `mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills` | directory lists **14** entries — **FAIL → STOP** |
+| 1 | `git clone <repo> ~/ai-wow` | `bin/ai-sync` exists |
+| 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **14** entries — **FAIL → STOP** |
 | 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
 | 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 14` |
 | 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |

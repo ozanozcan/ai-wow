@@ -1,7 +1,7 @@
 [project]
 name = "taskman"
 version = "1.0.0"
-description = "Durable Feature→PBI→Task board + living spec + mow orchestration gates (canonical home: dotfiles-ai)"
+description = "Durable Feature→PBI→Task board + living spec + mow orchestration gates (canonical home: ai-wow)"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18",

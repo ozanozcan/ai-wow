@@ -1,14 +1,21 @@
-# agent-harness
+# ai-wow
 
-**A portable configuration layer for AI coding agents.** Skills, subagents, slash
+### *AI — Way of Working*
+
+**A portable way of working with AI coding agents.** Skills, subagents, slash
 commands, lifecycle hooks, and a durable task board — versioned in one repo, synced
 into Claude Code and Cursor by one script, identical on every machine.
 
+A team has a way of working: standards everyone follows, specialists you hand things
+to, and checks that run whether or not anyone remembers them. Agents don't inherit
+any of that by default — every conversation starts from nothing. This is that way of
+working, made portable and enforced.
+
 ```bash
-git clone <this-repo> ~/agent-harness
-mkdir -p ~/.agents && ln -s ~/agent-harness/skills ~/.agents/skills
-python3 ~/agent-harness/bin/ai-sync
-python3 ~/agent-harness/bin/ai-sync status
+git clone <this-repo> ~/ai-wow
+mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills
+python3 ~/ai-wow/bin/ai-sync
+python3 ~/ai-wow/bin/ai-sync status
 ```
 
 > **Start here:** [`HOW-TO-USE.human.md`](HOW-TO-USE.human.md) if you're a person ·
@@ -52,7 +59,7 @@ editor, so those are **rendered** from one neutral definition instead.
 
 ```mermaid
 flowchart LR
-  subgraph REPO["agent-harness — canonical"]
+  subgraph REPO["ai-wow — canonical"]
     direction TB
     A["skills/ · agents/ · commands/<br/>hooks/ · global/CLAUDE.md"]
     B["hooks.def.json · mcp.json"]

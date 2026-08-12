@@ -400,7 +400,7 @@ Confirm: no two same-wave lanes share a file. <list any risk>
 
 5. Report Feature/Task/Requirement ids to the user. Do not leave "run import yourself" as the primary next step.
 
-**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from Django SSR (or sibling) after first ship; the dotfiles skill is global, scripts are per-repo.
+**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. The mow skill itself is global (it lives in ai-wow and is symlinked into both tools); any per-repo scripts stay per-repo.
 
 ---
 
