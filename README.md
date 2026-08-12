@@ -27,7 +27,7 @@ python3 ~/ai-wow/bin/ai-sync status
 
 | | Count | |
 |---|---|---|
-| **Skills** | 14 | Procedures an agent loads into its own context on demand |
+| **Skills** | 15 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 7 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
 | **Hooks** | 3 | Guarantees that fire on lifecycle events, not on the agent's judgment |
@@ -120,7 +120,7 @@ before fan-out, not discovered afterwards.
 
 | Path | What |
 |---|---|
-| `skills/` | 14 skills, each `<name>/SKILL.md` |
+| `skills/` | 15 skills, each `<name>/SKILL.md` |
 | `agents/` | 7 subagent definitions |
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |

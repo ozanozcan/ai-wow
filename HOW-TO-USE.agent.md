@@ -138,6 +138,7 @@ flowchart LR
 | `impeccable` † | visual work; not mechanical markup swaps |
 | `imprint` | auto-runs after any UI change → `ui-registry.md` |
 | `playwright-cli` | browser automation |
+| `bs` | idea stage, before `grill-with-docs`; every session ends pursue/reject/park, never chat-only |
 | `mow` | needs taskman + Postgres |
 | `grill-with-docs` | pre-build; one question at a time, write back each answer |
 | `ship-check` | end gate |

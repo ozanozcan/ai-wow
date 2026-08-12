@@ -246,7 +246,7 @@ Two invariants make this work: **reviewers never build**, and **`tdd-builder` ne
 commits**. If the thing that writes the code is also the thing that approves it, the
 review gate means nothing.
 
-**Fourteen skills**, in four families:
+**Fifteen skills**, in four families:
 
 ```mermaid
 flowchart TD
@@ -258,7 +258,7 @@ flowchart TD
     U1["impeccable †"]; U2["imprint"]; U3["playwright-cli"]
   end
   subgraph ORCH["orchestration"]
-    O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]
+    O0["bs"]; O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]
   end
   subgraph CONT["continuity"]
     C1["checkpoint"]; C2["pick-up-where-i-left-off"]; C3["wrap-up"]

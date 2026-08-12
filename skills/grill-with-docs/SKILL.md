@@ -52,7 +52,8 @@ Write-back target is the **mow package on disk**, not only CONTEXT/ADR:
 1. After each accepted answer → patch `docs/plans/<stem>/plan.md` (`## Decisions locked` / `## Grill write-back`).
 2. Patch every affected `docs/plans/<stem>/dispatch/NN-*.md` brief (Context, Acceptance, Do NOT, Goal). Kill hedges the answer superseded.
 3. Taskman `decision add` / `requirement add|modify` when the repo has taskman.
-4. Only after the full grill: help mow set INDEX `Grill checkpoint: done` **and** `Grill write-back:` (see mow skill ready mode). Never claim the grill is done if plan/briefs were not updated.
+4. For a **ui-tagged lane**, offer once to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML at the project's target viewport — and point that lane's Acceptance at it when the operator approves. Operator may decline; it is an option, never a gate (see mow skill ready mode).
+5. Only after the full grill: help mow set INDEX `Grill checkpoint: done` **and** `Grill write-back:` (see mow skill ready mode). Never claim the grill is done if plan/briefs were not updated.
 
 Standalone `/grill-with-docs` (no mow stem): still update CONTEXT.md / ADRs per below; if a plan path was named in the invoke, treat it like the mow case.
 

@@ -179,6 +179,8 @@ Classify every todo, then group:
 - **Final wave (alone, last):** any todo that *documents / summarizes / verifies the result of the others* (e.g. a master doc, a final test pass). It depends on everything.
 - **Foreground-only / AFK no (do not background):** destructive ops, anything outside the repo (home dir, global config), git history rewrites, or anything `guard-destructive.sh` would block. Mark these `needs-review` and **AFK: no**.
 
+**Tracer bullet (new subsystems):** when the plan introduces a subsystem that does not exist yet, prefer wave 1 as the thinnest slice that runs end to end — one path through every layer it touches — even when that under-parallelizes the wave. Widen in wave 2, once the seams are real instead of assumed. For work inside an existing subsystem, shape waves for parallelism as usual.
+
 **Hard rule:** lanes that run in the same wave MUST have disjoint file-sets. On Claude Code, `isolation: "worktree"` (see Runtime resolution / go §2a) makes cross-lane corruption structurally impossible for backgrounded AFK-yes `code-edit` lanes — disjoint file-sets is now merge-conflict avoidance, not the only thing standing between two lanes and a shared tree. On any runtime without that isolation (Cursor, or a manually-pasted lane without the worktree setup from go §3), subagents still share one real working tree, so the rule remains load-bearing there.
 
 ### 4. Assign a role per lane
@@ -229,6 +231,8 @@ For **each** todo brief, all of these MUST be true:
 | `## QA contract` | matches the todo's flavor per step 4b (code todos always have ≥1 runnable check) | missing on a code todo, or checks the lane can't actually run |
 | **Decisions / Specs pointers** (INDEX cell + brief header line) | ids that change this lane’s Do/Don’t/Acceptance, or `-` if none; pointers only (no pasted prose); captures only if they are the design artifact; **every id in the INDEX cell MUST also be cited** (e.g. `d#812`) inside this brief’s `## Acceptance check` or `## Do NOT` — preflight refuses fan-out on uncited pointers | dumping full decision/capture text into INDEX; tagging every historically related id; omitting ids that the lane’s Acceptance cites; pointing at an id without a citing line in Acceptance/Do NOT |
 
+**`## Signatures` is optional and deliberately absent from this table.** When two lanes meet at a seam — one builds what the other calls — writing the signatures (bodies omitted) into the producing lane's brief settles the interface before either starts. A lane without one is not a thin brief, and this gate gains no row for it.
+
 **Hard refuse:** if any brief fails, **or** the Operator summary (What we'll do / What you'll have at the end) cannot be filled with concrete observables, do **not** write the folder. List the failing todo-ids / missing summary pieces, ask the user (or go back to harvest/plan), then re-gate. Never "ship a stub and fix later" — import will freeze the stub.
 
 **Import consequence:** after a good plan pass, `taskman plan from-decisions <dispatch-dir>` should be able to fill Feature+Tasks (files, deps, role, acceptance, context) without the importer inventing content. If you would not trust import to round-trip a brief, it is too thin.
@@ -270,6 +274,20 @@ Every `plan.md` carries both. They record what the plan cannot yet see, and what
 
 These sections are **required to write, never gated on**. Do not add a preflight or write-back check for them — a missing doc section must never refuse a legitimate `/mow go`.
 
+#### Optional `plan.md` section: `## Product`
+
+For **product-facing** stems — ui tags, or any end-user-visible surface — offer this block once at plan time and let the operator decide. It is the "who is this for and how would we know it worked" frame that a lane map alone never carries.
+
+```markdown
+## Product
+
+- **Problem:** <the user's problem in their words, not the implementation's>
+- **Success metric:** <the observable that tells you it worked — a behavior, not "shipped">
+- **Announcement draft:** <what you'd tell the user shipped, and why they'd care>
+```
+
+**Trigger is operator-confirmed, never automatic.** Ask once ("this stem looks product-facing — want a `## Product` block?"); on a decline, or on an infra / tooling / refactor stem, write nothing and move on. **Advisory only:** never a preflight gate, never a thin-brief row, and never backfilled into existing plans.
+
 **Cross-plan guardrail (before write):** read `docs/plans/INDEX.md` (create empty table if missing). For every other `planned`|`running`|`paused` stem, read that dispatch's INDEX `Files owned` column. If any path overlaps a lane in this plan, **do not write** — report conflicts and ask the user to narrow scope or ship/pause the other run first.
 
 **Registry (after write):** add or update the row for `<stem>` in `docs/plans/INDEX.md` → `Status: planned`, bump `Updated`, set `Title` from the plan name, `Feature` from taskman id if known.
@@ -291,6 +309,10 @@ Each **brief** must be runnable by a blind agent — no reference to "this chat"
 
 ## Files in scope
 - <paths this lane owns; nothing outside this list>
+
+## Signatures (optional — omit unless the lane needs it)
+- <function / model / endpoint signatures this lane must expose, bodies omitted>
+- <seam notes: what an adjacent lane will call, and what it may assume>
 
 ## Depends on
 - <todo-ids that must finish first, or "none">
@@ -461,6 +483,8 @@ Otherwise follow the **`grill-with-docs`** procedure against this stem's `plan.m
    ```
    If the grill found nothing to change: `**Grill write-back:** no changes — plan held <YYYY-MM-DD>`.
    Re-run `python scripts/mow_hydrate_specs.py docs/plans/<stem>` so `hydrated-specs.md` matches final pointers (skip if all cells are `-`).
+
+**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (e.g. 390px for a mobile-first app). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
 
 **Hard refuse:** never mark `done` after a grill that only summarized decisions in chat. `/mow go` lanes read **disk** (plan + briefs), not this conversation.
 
