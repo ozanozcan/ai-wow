@@ -53,9 +53,10 @@ LINK_FILES = {
 
 # Machine-specific settings live OUTSIDE the repo so this tree stays publishable.
 # local.config.json (gitignored) next to this repo's root:
-#   {"managed_repos": ["~/projects/demo-api", "~/projects/web-app"]}
-# Absent or empty -> no consuming repos, and the managed-doc render / project-hook
-# validation simply no-op. Nothing else in ai-sync depends on it.
+#   {"managed_repos": ["~/projects/demo-api", "~/projects/web-app"],
+#    "link_mode": "copy", "push": false}
+# Absent or empty -> defaults: no managed repos (render/validation no-op),
+# auto-detected link mode, and push enabled.
 LOCAL_CONFIG = REPO / "local.config.json"
 
 
@@ -620,6 +621,10 @@ def do_commit() -> None:
     git("commit", "-q", "-m", f"sync: {ts}")
     log(f"  git: committed ({len(status.splitlines())} change(s))")
     # Backup: push if a remote exists; never fail (offline, hook mode, etc.).
+    # local.config.json {"push": false} keeps commits local (locked-down machines).
+    if local_config().get("push", True) is False:
+        log("  git: push disabled (local.config.json)")
+        return
     if git("remote", check=False).stdout.strip():
         pushed = git("push", "-q", check=False)
         log("  git: pushed" if pushed.returncode == 0 else "  git: push failed (skipped)")

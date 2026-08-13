@@ -44,8 +44,8 @@ without reading anything from another project's repo.
    Migrations are explicit: the CLI warns when the DB is behind the package head but never
    auto-migrates. The repo carries no alembic tree of its own.
 
-6. **Confirm reviewer agents exist for the stack.** Before citing `agent:django-reviewer` /
-   `agent:backend-reviewer` / `agent:frontend-reviewer` etc. in protocols.md, verify that agent
+6. **Confirm reviewer agents exist for the stack.** Before citing `agent:backend-reviewer` /
+   `agent:frontend-reviewer` etc. in protocols.md, verify that agent
    is actually defined in this environment (`.claude/agents/*.md` or equivalent) — a protocols.md
    that names a reviewer that doesn't exist will silently no-op at review-gate time.
 
@@ -62,7 +62,7 @@ The **`mow` skill** (`~/ai-wow/skills/mow/SKILL.md`, symlinked to `~/.agents/ski
 
 Two shapes this template has been filled in for, as a sense of the deltas each stack needs:
 
-- **A Django SSR app** — Django/DRF stack deltas in P1/P2/P3/P4; reviewer is `django-reviewer`;
+- **A Django SSR app** — Django/DRF stack deltas in P1/P2/P3/P4; reviewer was a project-supplied `django-reviewer` (no longer bundled globally);
   UI lane is Django templates + Tailwind + htmx, so P1 points at the project's own
   `ui-designer`, never the global Next.js one.
 - **A FastAPI + SQLAlchemy service** — async stack deltas in the same four sections; reviewer is

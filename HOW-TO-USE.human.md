@@ -144,7 +144,9 @@ flowchart LR
 
 > ⚠️ **`ai-sync` commits with `git add -A` and pushes without asking.** It is
 > registered as a session-end hook, so this happens on its own. Never leave anything
-> private in the working tree.
+> private in the working tree. On a machine that must never push to an external
+> remote — a corporate laptop — set `{ "push": false }` in `local.config.json`:
+> commits still happen (local history is the backup), the push is skipped.
 
 ---
 
@@ -230,12 +232,11 @@ archive — you just lose the sync path back.
 Everything in this section runs on a bare clone. No database, no API key, no project
 config. This is most of the value.
 
-**Seven subagents.** Each gets its own context window and a restricted tool list.
+**Six subagents.** Each gets its own context window and a restricted tool list.
 
 | Subagent | Reviews or builds | Use when |
 |---|---|---|
 | `backend-reviewer` | reviews | A FastAPI / SQLAlchemy async diff is ready to commit |
-| `django-reviewer` | reviews | Same, on Django/DRF |
 | `frontend-reviewer` | reviews | A React / Next.js diff — correctness, not looks |
 | `llm-sec-review` | reviews | The diff touches prompts, tool-calling, agents or RAG |
 | `ui-designer` | builds | Any visual work; it is the design authority |

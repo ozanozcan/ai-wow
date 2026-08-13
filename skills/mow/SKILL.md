@@ -123,7 +123,7 @@ Source: docs/plans/<stem>/dispatch/INDEX.md
 ### Lanes
 | Lane | Todos (order) | PBI / Feature | Role | AFK | Review flags | Decisions / Specs | Brief |
 |---|---|---|---|---|---|---|---|
-| A | … | #52 / #65 | code-edit | yes | django | d `#12` · req `#3` | 01-….md |
+| A | … | #52 / #65 | code-edit | yes | backend | d `#12` · req `#3` | 01-….md |
 | D | … | #55 / #65 | code-edit | no | - | `-` | 0N-….md |
 
 ### How to run
@@ -194,7 +194,7 @@ Write **semantic roles** — not runtime-specific `subagent_type` strings. Go mo
 | Read-only research / "find where X is" | `explore` | |
 | UI / design authoring | `ui-design` | a not-yet-created subagent can't build itself — bootstrap with `code-edit` |
 | LLM/agent security review (prompts, tools, model endpoints) | `llm-sec-review` | |
-| Stack-specific review (if project has the agent) | `backend-review`, `django-review`, `frontend-review` | only when the todo is narrowly scoped to that stack |
+| Stack-specific review (if project has the agent) | `backend-review`, `frontend-review` | only when the todo is narrowly scoped to that stack |
 
 **Review is usually not a todo.** Per-wave diff review happens automatically in go mode (see **Review wave** below) — only create a review *lane* when the plan explicitly demands a standalone audit.
 
@@ -376,11 +376,11 @@ Each wave ends with a **review gate** (see go mode) before the next starts.
 ## Lanes
 | Lane | Todos (in order) | PBI / Feature | Files owned | Role | Review flags | AFK | Background | Decisions / Specs | Brief |
 |---|---|---|---|---|---|---|---|---|---|
-| A | ... | #52 / #65 | ... | code-edit | django | yes | yes | d `#12` · req `#3` | 01-....md |
+| A | ... | #52 / #65 | ... | code-edit | backend | yes | yes | d `#12` · req `#3` | 01-....md |
 
 `PBI / Feature`: per-todo PBI id / Feature id (see Orchestration map section above for source) — `-` if untracked.
 
-`Review flags`: which reviewers the wave gate must run for this lane's changes — from the repo's `docs/agents/protocols.md` P2 (e.g. `django`, `llm`, `frontend`), or `-` for none (docs/chore).
+`Review flags`: which reviewers the wave gate must run for this lane's changes — from the repo's `docs/agents/protocols.md` P2 (e.g. `backend`, `llm`, `frontend`), or `-` for none (docs/chore).
 
 `AFK` / `Background`: `yes` = safe to fan out under `/mow go` without the user watching; `no` = foreground / needs-review.
 
@@ -511,7 +511,6 @@ Do **not** fan out from ready — go owns execution.
 | `llm-sec-review` | `llm-sec-review` | `llm-sec-review` |
 | `ui-design` | `ui-designer` | `ui-designer` |
 | `backend-review` | `backend-reviewer` | `backend-reviewer` |
-| `django-review` | `django-reviewer` | `django-reviewer` |
 | `frontend-review` | `frontend-reviewer` | `frontend-reviewer` |
 
 If a role has no mapping in the current runtime, fall back to `code-edit` / `general-purpose` / `generalPurpose` and note the downgrade in the go summary.

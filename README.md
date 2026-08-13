@@ -28,7 +28,7 @@ python3 ~/ai-wow/bin/ai-sync status
 | | Count | |
 |---|---|---|
 | **Skills** | 15 | Procedures an agent loads into its own context on demand |
-| **Subagents** | 7 | Specialists with isolated context and restricted tools |
+| **Subagents** | 6 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
 | **Hooks** | 3 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
@@ -82,7 +82,8 @@ registered as a session-end hook so it happens on its own.
 
 > [!WARNING]
 > `ai-sync` commits with `git add -A` and pushes without prompting. Keep secrets out
-> of the working tree.
+> of the working tree. On machines that must never push (a corporate laptop), set
+> `{ "push": false }` in `local.config.json` — commits stay local.
 
 ---
 
@@ -121,7 +122,7 @@ before fan-out, not discovered afterwards.
 | Path | What |
 |---|---|
 | `skills/` | 15 skills, each `<name>/SKILL.md` |
-| `agents/` | 7 subagent definitions |
+| `agents/` | 6 subagent definitions |
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
@@ -170,7 +171,7 @@ TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman
 ## License
 
 [MIT](LICENSE) for everything original to this repository — the eleven original
-skills, the seven subagents, `taskman`, `ai-sync`, and the docs.
+skills, the six subagents, `taskman`, `ai-sync`, and the docs.
 
 Three bundled skills come from other projects and keep their own licenses:
 `tdd` and `grill-with-docs` from [mattpocock/skills](https://github.com/mattpocock/skills)

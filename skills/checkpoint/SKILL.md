@@ -98,7 +98,7 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
    ## Agent briefing
    - **Decisions made**: [choices and rationale]
    - **Dead ends**: [what was tried and failed — do not retry]
-   - **Suggested skills**: [e.g. diagnose, django-reviewer, grill-with-docs]
+   - **Suggested skills**: [e.g. diagnose, backend-reviewer, grill-with-docs]
    - **Artifacts**: [paths or URLs only — do not paste bodies]
    - **Do not**: [scope traps, anti-patterns]
    ```

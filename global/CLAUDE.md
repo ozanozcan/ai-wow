@@ -56,7 +56,7 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 | Task smells like | Reach for |
 |---|---|
 | UI — page, screen, template, component, styling, mobile | impeccable skill while building; imprint after; mobile-width screenshot for QA |
-| Backend diff ready to commit | stack reviewer subagent (django-reviewer / backend-reviewer / frontend-reviewer) |
+| Backend diff ready to commit | stack reviewer subagent (backend-reviewer / frontend-reviewer) |
 | Prompts, tool-calling, agents, RAG, model endpoints | llm-sec-review subagent alongside the stack reviewer |
 | Auth, payments, uploads, secrets, settings | suggest /security-review before commit |
 | Bug fix | regression test first (tdd skill); gnarly/unclear bug → /diagnose |

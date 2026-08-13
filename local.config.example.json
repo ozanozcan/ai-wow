@@ -1,7 +1,8 @@
 {
-  "_comment": "Copy to local.config.json (gitignored) and edit. Absent or empty is fine — the managed-doc render and project-hook validation simply no-op.",
+  "_comment": "Copy to local.config.json (gitignored) and edit. Absent or empty is fine — the managed-doc render and project-hook validation simply no-op. Set push to false on machines that must never push (e.g. a corporate laptop); commits stay local.",
   "managed_repos": [
     "~/projects/demo-api",
     "~/projects/web-app"
-  ]
+  ],
+  "push": true
 }

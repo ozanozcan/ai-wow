@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 14 skills · 7 subagents · 1 command · 3 hooks · 1 board package
+inventory: 14 skills · 6 subagents · 1 command · 3 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -106,8 +106,10 @@ flowchart LR
 `ai-sync` pipeline: `import → link → reconcile skills → render → git add -A → commit → push`.
 
 > **Machine-specific paths belong in `local.config.json` (gitignored), never in tracked
-> files.** Shape: `{"managed_repos": ["~/projects/x"]}`. Absent/empty is valid and the
-> dependent features no-op. Never commit a real path into `bin/ai-sync`.
+> files.** Shape: `{"managed_repos": ["~/projects/x"], "link_mode": "copy", "push": false}`.
+> Absent/empty is valid and the dependent features no-op. `"push": false` keeps
+> `ai-sync` commits local (never pushed) — required posture on corporate machines.
+> Never commit a real path into `bin/ai-sync`.
 
 ---
 
@@ -118,7 +120,6 @@ flowchart LR
 | Agent | Role | Tools | Hard boundary |
 |---|---|---|---|
 | `backend-reviewer` | review | Read Grep Glob Bash | FastAPI/SQLAlchemy async; never edits |
-| `django-reviewer` | review | Read Grep Glob Bash | Django/DRF; never edits |
 | `frontend-reviewer` | review | Read Grep Glob Bash | Correctness only — aesthetics go to `ui-designer` |
 | `llm-sec-review` | review | Read Grep Glob Bash | Model-adjacent only; general appsec elsewhere |
 | `tdd-builder` | build | Read Edit Write Bash Glob Grep Skill Agent | Never commits; always ends with `## Verification` |
