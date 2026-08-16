@@ -54,6 +54,35 @@ without reading anything from another project's repo.
    and confirm it returns nothing — the new repo's protocols.md should read as this repo's own
    document, not a copy with leftover foreign terms.
 
+## UI bootstrap (frontend repos only)
+
+Do these once per repo with a UI surface, in order — this is what makes the anti-slop
+machinery (impeccable / imprint / ui lanes) actually fire instead of no-oping. Full audit
+rationale: `docs/brainstorms/ui-anti-slop-pipeline.md`.
+
+1. **`$impeccable init`** (existing UI: `$impeccable document`) → `PRODUCT.md` + `DESIGN.md`.
+   Without PRODUCT.md every impeccable run detours into setup; without DESIGN.md each
+   session re-derives the visual system — the root cause of AI-generic drift.
+   Requires impeccable installed (`npx skills add pbakaus/impeccable`).
+2. **`/imprint audit`** → confirmed baseline in repo-root `ui-registry.md` before any
+   capture. On an existing untracked UI, skipping the audit codifies today's inconsistency.
+3. **One token file** as the only color/spacing/radius source, named in DESIGN.md and
+   `ui-registry.md`; fix or ticket the hardcoded hexes the audit surfaces.
+4. **Project ui-designer agent:** `cp templates/ui-designer.template.md <repo>/.claude/agents/ui-designer.md`
+   and fill every placeholder (stack, token file path, fonts, target viewport). Mandatory on
+   non-Next stacks — the global agent is Next.js/shadcn-only. The template's anti-slop bans
+   stay verbatim; they are also the fallback when impeccable is absent.
+5. **`$impeccable hooks on`** — the design-detector PostEdit hook, the only always-on
+   anti-slop gate (everything else fires only when an agent invokes a skill).
+6. **Commit a font decision** in DESIGN.md — pairing axis or single family; Inter-by-default
+   is itself a tell.
+7. **Fill the protocols.md P1 `ui` row with real values** — actual target viewport(s) and
+   reviewer names; placeholders make the screenshot QA contract silently no-op. P2's
+   design-review row (impeccable `critique`) applies to ui-tagged stems.
+8. **Prove the screenshot loop** — one successful screenshot at the target viewport via
+   playwright-cli (or the repo's equivalent), committed as evidence. A QA contract that says
+   "screenshot attached" in a repo where the browser can't run is a dead gate.
+
 ## Global layer (no per-repo copy)
 
 The **`mow` skill** (`~/ai-wow/skills/mow/SKILL.md`, symlinked to `~/.agents/skills/mow`, Claude Code, and Cursor) already includes Pi practices (preflight gate, compact-template harvest, `## Git rules` in brief template) and Claude Code worktree isolation (§2a merge-back). The workflow-doc cores live in `~/ai-wow/docs/workflow/` and reach repos only via the ai-sync render (step 3). New repos need only the package dependency, the rendered docs, and protocols.md — no per-repo script copies and no second skill edit.

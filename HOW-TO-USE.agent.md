@@ -151,7 +151,9 @@ board-sync half of the continuity skills.
 
 **† `impeccable` is not bundled** (Apache-2.0, ~99 files — see `THIRD-PARTY.md`).
 Install with `npx skills add pbakaus/impeccable`. If it is absent, do not fabricate
-its behaviour: say so and fall back to `ui-designer` alone.
+its behaviour: say so and fall back to the project's own `ui-designer` agent
+(bootstrapped from `templates/ui-designer.template.md`, which carries the anti-slop
+ban list for exactly this case) — or the global `ui-designer` on Next.js stacks.
 
 ### 4.3 Routing and the review pipeline
 

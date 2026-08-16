@@ -91,8 +91,11 @@ After a wave's lanes report done and **before the next wave starts**, the orches
 | `<stack-reviewer>` (the repo's backend reviewer agent) | any lane touched backend files | combined wave diff |
 | `llm-sec-review` | any lane tagged `llm` (prompts, tools, model endpoints) | combined wave diff |
 | `<frontend-reviewer>` | any lane touched frontend code | combined wave diff |
+| `skill:impeccable` `critique` (design review) | any lane tagged `ui` | the wave's changed screens/templates — rendered where possible, not just the diff |
 
 Rules:
+
+- **Design review is a separate question from correctness.** `<frontend-reviewer>` explicitly excludes aesthetics, so the impeccable `critique` row is the only reviewer asking "does this look AI-made / does it match `ui-registry.md`?". When impeccable is not installed, run ship-check's design-consistency pass on the wave's UI diff instead — do not skip the question.
 
 - Reviewers run **in parallel, in isolated contexts**, on the diff — never the lane's own context.
 - **Critical findings block the next wave.** Fix (new lane or orchestrator foreground) → re-review the fix.
