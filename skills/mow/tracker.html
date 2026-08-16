@@ -65,6 +65,21 @@
   .board { position: relative; }
   .board > svg { position: absolute; inset: 0; overflow: visible; }
 
+  /* ---------- several runs on one page ---------- */
+  .run { margin-top: 26px; }
+  .run-title {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 6px;
+  }
+  h2.run-title { font-size: 15px; }
+  .run-title .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--pending); flex: none; align-self: center; }
+  .run-title .dot.s-done { background: var(--done); }
+  .run-title .dot.s-running { background: var(--running); }
+  .run-title .dot.s-issues { background: var(--issues); }
+  .run-title .dot.s-error { background: var(--error); }
+  .run-title .stem { font-size: 13px; font-weight: 300; color: var(--ink); }
+  .run-title .run-stats { font-size: 12px; font-weight: 300; color: var(--ink); font-variant-numeric: tabular-nums; }
+
   /* ---------- wave panels: the lanes of one wave sit on their own plate ---------- */
   .wave-panel { fill: color-mix(in oklch, var(--surface), transparent 22%); stroke: var(--line); stroke-width: 1.5; }
   .wave-tag {
@@ -341,22 +356,36 @@ const app = document.getElementById("app");
 let lastOk = null;
 let lastPayload = "";
 let lastData = null;
+let lastRuns = null;
 
 /* wave plate styling — "chip" (default) makes the wave label the status button,
    "tint" colours the whole plate instead. Click the header control to switch. */
 let PANEL_STYLE = new URLSearchParams(location.search).get("panels") === "tint" ? "tint" : "chip";
+/* "detailed" = the full tree; "compact" = wave plates and lane letters only */
+let VIEW = new URLSearchParams(location.search).get("view") === "compact" ? "compact" : "detailed";
+/* ?runs=stemA,stemB (or ?runs=all) puts every run on one page, served from docs/plans/ */
+const RUNS_PARAM = new URLSearchParams(location.search).get("runs");
 /* null = follow tracker.json's `pulse`; true/false = operator override from the legend */
 let PULSE_OVERRIDE = null;
 
 document.addEventListener("click", (e) => {
-  if (e.target.closest("#pstyle")) {
+  if (e.target.closest("#vstyle")) {
+    VIEW = VIEW === "compact" ? "detailed" : "compact";
+  } else if (e.target.closest("#pstyle")) {
     PANEL_STYLE = PANEL_STYLE === "tint" ? "chip" : "tint";
   } else if (e.target.closest("#pulselbl")) {
     PULSE_OVERRIDE = !pulseOn(lastData);
     applyPulse(lastData);
   } else return;
-  if (lastData) { lastPayload = ""; render(lastData); }
+  redraw();
 });
+
+/* re-paint whatever the page is currently showing (one run or many) */
+function redraw() {
+  lastPayload = "";
+  if (lastRuns) renderMulti(lastRuns);
+  else if (lastData) render(lastData);
+}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -366,10 +395,11 @@ const st = (s) => ["pending", "running", "done", "issues", "error"].includes(s) 
 /* flow layout — wave hub forks into its lanes, lanes rejoin at the gate */
 const AX = 92;                     /* orchestrator x */
 const HUB_GAP = 104;               /* hub → first stage column */
-const STAGE_W = 340;               /* stage column pitch (fits a lane's detail block) */
+const STAGE_W_FULL = 340;          /* stage column pitch (fits a lane's detail block) */
+const STAGE_W_MINI = 108;          /* compact: just circle-to-circle */
 const WAVE_GAP = 130;              /* last stage → next hub (the gate sits halfway) */
 const LANE_VGAP = 34;              /* breathing room between stacked parallel lanes */
-const HEADER_H = 116;              /* plate header band: hub circle + wave label */
+const HEADER_H_FULL = 116;         /* plate header band: hub circle + wave label */
 /* radii kept close together so the cells read as one family, not three tiers */
 const R = { hub: 23, lane: 26, orch: 24, gate: 12, agent: 17, skill: 13, tool: 12.5, art: 13, todo: 8 };
 
@@ -578,7 +608,7 @@ function circleNode(x, y, r, status, cls, label, title, letter, sub) {
              data-tokens="${sub.tokens == null ? "" : sub.tokens}" data-status="${esc(st(sub.status))}">${esc(sub.text)}</span>`
         : "";
   return `<div class="node ${cls} s-${s}${r <= R.agent ? " small" : ""}"
-    style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;${letter ? `font-size:${Math.round(r * 1.12)}px;` : ""}"
+    style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;${letter ? `font-size:${Math.round(r * (String(letter).length > 1 ? 0.78 : 1.12))}px;` : ""}"
     title="${esc(title || "")}">
     ${shine ? '<div class="bloom"></div><div class="ringx"></div>' : ""}
     <div class="disc">${esc(letter || "")}</div>
@@ -623,6 +653,7 @@ function laneStats(lane) {
 
 /* height a lane occupies below its circle centre — drives the flow layout */
 function laneExtras(lane) {
+  if (VIEW === "compact") return R.lane + 10;   /* letters only — no detail hangs below */
   let h = R.lane + (laneStats(lane) ? 54 : 40);     /* circle + meta (+ stats) */
   if ((lane.todos || []).length) h += 30;
   for (const a of (lane.agents || [])) {
@@ -635,6 +666,7 @@ function laneExtras(lane) {
 
 /* how far a lane's detail block reaches right of its circle */
 function laneContentW(lane) {
+  if (VIEW === "compact") return R.lane + 6;
   const hasRows = ((lane.agents || []).length + (lane.findings || []).length + (lane.todos || []).length) > 0;
   return hasRows ? 300 : 62;
 }
@@ -677,8 +709,11 @@ function applyPulse(data) {
   document.documentElement.classList.toggle("pulse-on", pulseOn(data));
 }
 
-function render(data) {
-  applyPulse(data);
+/* builds one run's board; the callers below place it on the page */
+function boardMarkup(data) {
+  const compact = VIEW === "compact";
+  const STAGE_W = compact ? STAGE_W_MINI : STAGE_W_FULL;
+  const HEADER_H = compact ? 74 : HEADER_H_FULL;
   const waves = data.waves || [];
   let nodes = "", edges = "", axisLabels = "";
   const line = (x1, y1, x2, y2, arrow) =>
@@ -746,7 +781,9 @@ function render(data) {
     p.hubY = y0 + 26 + R.hub;                       /* hub sits in the plate's top-left corner */
     panels += `<rect class="wave-panel s-${st(p.w.status)}" x="${x0}" y="${y0}"
       width="${x1 - x0}" height="${y1 - y0}" rx="34"/>`;
-    axisLabels += `<div class="wave-tag s-${st(p.w.status)}" style="left:${x1 - 24}px;top:${y0 + 20}px">wave ${esc(p.w.wave)}</div>`;
+    if (!compact) {
+      axisLabels += `<div class="wave-tag s-${st(p.w.status)}" style="left:${x1 - 24}px;top:${y0 + 20}px">wave ${esc(p.w.wave)}</div>`;
+    }
     maxBottom = Math.max(maxBottom, y1);
   });
 
@@ -771,7 +808,11 @@ function render(data) {
       const cx = lane._x, y = lane._y;
       const meta = `${lane.role || ""}${lane.afk === false ? " · fg" : " · afk"}`;
       const lStat = laneStats(lane);
-      nodes += circleNode(cx, y, R.lane, lane.status, "", meta, `${lane.brief || ""}`, lane.lane, lStat);
+      const laneTitle = `${lane.lane} — ${meta}${lStat ? " · " + lStat.text : ""}${lane.brief ? " · " + lane.brief : ""}`;
+      nodes += compact
+        ? circleNode(cx, y, R.lane, lane.status, "", "", laneTitle, lane.lane)
+        : circleNode(cx, y, R.lane, lane.status, "", meta, `${lane.brief || ""}`, lane.lane, lStat);
+      if (compact) return;                        /* letters only — skip the detail tree */
 
       const branchX = cx + 26;                      /* detail hangs below-right of the lane */
       let cy = y + R.lane + (lStat ? 54 : 40);
@@ -855,11 +896,13 @@ function render(data) {
     const par = isParallel(w);
     const tok = waveTokens(w);
     /* start time under the number; once the wave has finished, its end time too */
-    nodes += circleNode(p.hubX, p.hubY, R.hub, w.status, "hub",
-      w.started ? `start: ${fmtClock(w.started)}` : "",
-      `wave ${w.wave}${w.started ? " — started " + w.started : ""}${w.ended ? ", ended " + w.ended : ""}`,
-      w.wave, w.ended ? `end: ${fmtClock(w.ended)}` : null);
-    axisLabels += `<div class="wave-head" style="left:${p.hubX + R.hub + 14}px;top:${p.hubY}px">
+    const hubTitle = `wave ${w.wave}${w.started ? " — started " + w.started : ""}${w.ended ? ", ended " + w.ended : ""}`;
+    nodes += VIEW === "compact"
+      ? circleNode(p.hubX, p.hubY, R.hub, w.status, "hub", "", hubTitle, `W${w.wave}`)
+      : circleNode(p.hubX, p.hubY, R.hub, w.status, "hub",
+          w.started ? `start: ${fmtClock(w.started)}` : "", hubTitle,
+          w.wave, w.ended ? `end: ${fmtClock(w.ended)}` : null);
+    if (!compact) axisLabels += `<div class="wave-head" style="left:${p.hubX + R.hub + 14}px;top:${p.hubY}px">
       <div class="mode${par ? "" : " is-seq"}"><span class="sym">${par ? "‖" : "→"}</span>${par ? "parallel" : "sequential"}</div>
       <div class="formula">${esc(laneFormula(w) || "—")}</div>
       <div class="head-stats stats" data-started="${esc(w.started || "")}" data-ended="${esc(w.ended || "")}"
@@ -870,21 +913,7 @@ function render(data) {
   const bw = x + 60;
   const bh = maxBottom + 60;
 
-  const rs = st(data.run_status === "shipped" ? "done" : data.run_status);
-  const updated = data.updated ? new Date(data.updated) : null;
-  const runTok = waves.reduce((n, w) => n + (waveTokens(w) || 0), 0);
-  const anyTok = waves.some((w) => waveTokens(w) != null);
-  const runDur = fmtDur(durationMs(data.started, data.run_status === "running" ? null : data.updated, data.run_status === "running" ? "running" : "done"));
-  const runStats = [runDur, anyTok ? fmtTokens(runTok) : null].filter(Boolean).join(" · ");
-
-  app.innerHTML = `
-    <header class="top">
-      <h1>${esc(data.title || data.stem || "mow run")}</h1>
-      <span class="stem">${esc(data.stem || "")}</span>
-      <span class="meta"><button type="button" class="pstyle" id="pstyle">${
-        PANEL_STYLE === "tint" ? "waves: tinted plates" : "waves: status buttons"}</button>
-        <span class="live-dot"></span><span id="livetxt">live</span>${updated ? " · " + updated.toLocaleTimeString() : ""}${runStats ? " · " + esc(runStats) : ""}</span>
-    </header>
+  return `
     <div class="viewport">
       <div class="board panels-${PANEL_STYLE}" style="width:${bw}px;height:${bh}px">
         <svg width="${bw}" height="${bh}" viewBox="0 0 ${bw} ${bh}">
@@ -898,8 +927,35 @@ function render(data) {
         </svg>
         ${axisLabels}${nodes}
       </div>
-    </div>
-    <footer class="legend">
+    </div>`;
+}
+
+/* one run's title line — stem, status dot, duration · tokens */
+function runHead(data, heading) {
+  const updated = data.updated ? new Date(data.updated) : null;
+  const runTok = (data.waves || []).reduce((n, w) => n + (waveTokens(w) || 0), 0);
+  const anyTok = (data.waves || []).some((w) => waveTokens(w) != null);
+  const running = data.run_status === "running";
+  const runDur = fmtDur(durationMs(data.started, running ? null : data.updated, running ? "running" : "done"));
+  const runStats = [runDur, anyTok ? fmtTokens(runTok) : null].filter(Boolean).join(" · ");
+  return `<${heading} class="run-title">
+      <span class="dot s-${st(running ? "running" : data.run_status === "shipped" ? "done" : data.run_status)}"></span>
+      ${esc(data.title || data.stem || "mow run")}
+      <span class="stem">${esc(data.stem || "")}</span>
+      <span class="run-stats">${updated ? updated.toLocaleTimeString() : ""}${runStats ? " · " + esc(runStats) : ""}</span>
+    </${heading}>`;
+}
+
+function controls(data) {
+  return `<span class="meta">
+      <button type="button" class="pstyle" id="vstyle">view: ${VIEW === "compact" ? "compact" : "detailed"}</button>
+      <button type="button" class="pstyle" id="pstyle">${PANEL_STYLE === "tint" ? "waves: tinted plates" : "waves: status buttons"}</button>
+      <span class="live-dot"></span><span id="livetxt">live</span>
+    </span>`;
+}
+
+function legend(data) {
+  return `<footer class="legend">
       <span class="key"><span class="sw" style="background:var(--done)"></span>done</span>
       <span class="key"><span class="sw shine"></span>in progress</span>
       <span class="key"><button type="button" class="pstyle" id="pulselbl">pulse ${pulseOn(data) ? "on" : "off"}</button></span>
@@ -914,8 +970,54 @@ function render(data) {
     </footer>`;
 }
 
+/* one run — the normal tracker */
+function render(data) {
+  applyPulse(data);
+  app.innerHTML = `<header class="top">${runHead(data, "h1")}${controls(data)}</header>`
+    + boardMarkup(data) + legend(data);
+  refreshDurations();
+}
+
+/* several runs on one page — every /mow go this server can see */
+function renderMulti(runs) {
+  applyPulse(runs.length ? runs[0].data : {});
+  const live = runs.filter((r) => r.data.run_status === "running").length;
+  app.innerHTML = `<header class="top">
+      <h1>mow runs</h1>
+      <span class="stem">${runs.length} run${runs.length === 1 ? "" : "s"}${live ? ` · ${live} live` : ""}</span>
+      ${controls(runs.length ? runs[0].data : {})}
+    </header>`
+    + runs.map((r) => `<section class="run">${runHead(r.data, "h2")}${boardMarkup(r.data)}</section>`).join("")
+    + legend(runs.length ? runs[0].data : {});
+  refreshDurations();
+}
+
 function renderEmpty(msg) {
   app.innerHTML = `<div class="empty"><p>${msg}</p><p>tracker.json is written by the /mow go orchestrator next to this file.</p></div>`;
+}
+
+/* The page polls every 2s, but the board only changes when the orchestrator
+   writes tracker.json. A run that is "running" whose file hasn't been touched
+   in minutes means the writer is behind — say so, rather than letting a stale
+   board read as live progress. */
+const STALE_AFTER_MS = 240000;
+
+function markFresh(datas) {
+  const dot = document.querySelector(".live-dot");
+  const txt = document.getElementById("livetxt");
+  if (!dot || !txt) return;
+  dot.classList.remove("stale");
+  const running = datas.filter((d) => d && d.run_status === "running");
+  const ages = running.map((d) => Date.parse(d.updated)).filter(Number.isFinite).map((t) => Date.now() - t);
+  const worst = ages.length ? Math.max(...ages) : null;
+  if (worst != null && worst > STALE_AFTER_MS) {
+    dot.classList.add("stale");
+    txt.textContent = `board ${fmtDur(worst)} behind`;
+    txt.title = "the run is still going; the orchestrator hasn't written tracker.json since then";
+  } else {
+    txt.textContent = "live";
+    txt.title = "";
+  }
 }
 
 function refreshDurations() {
@@ -928,8 +1030,47 @@ function refreshDurations() {
   });
 }
 
+async function fetchRun(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+/* sibling runs, when this page is served from docs/plans/ */
+async function discoverStems() {
+  const html = await (await fetch("./", { cache: "no-store" })).text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll("a[href]")]
+    .map((a) => a.getAttribute("href"))
+    .filter((h) => h && h.endsWith("/") && !h.startsWith("/") && !h.startsWith("?") && !h.startsWith("."))
+    .map((h) => decodeURIComponent(h.replace(/\/$/, "")));
+}
+
+async function pollMulti() {
+  const named = RUNS_PARAM && RUNS_PARAM !== "all"
+    ? RUNS_PARAM.split(",").map((s) => s.trim()).filter(Boolean)
+    : await discoverStems();
+  const runs = [];
+  for (const stem of named) {
+    try {
+      runs.push({ stem, data: await fetchRun(`${stem}/dispatch/tracker.json`) });
+    } catch { /* not a mow run, or its tracker isn't written yet */ }
+  }
+  if (!runs.length) { renderEmpty("No runs found. Serve docs/plans/ and start a /mow go."); return; }
+  const rank = (r) => (r.data.run_status === "running" ? 0 : 1);
+  runs.sort((a, b) => rank(a) - rank(b) || String(b.data.started || "").localeCompare(String(a.data.started || "")));
+  lastOk = Date.now();
+  const payload = JSON.stringify(runs.map((r) => { const { pulse, ...rest } = r.data; return rest; }));
+  if (payload === lastPayload) { markFresh(runs.map((r) => r.data)); return; }
+  lastPayload = payload;
+  lastRuns = runs;
+  renderMulti(runs);
+  markFresh(runs.map((r) => r.data));
+}
+
 async function poll() {
   try {
+    if (RUNS_PARAM != null) return await pollMulti();
     const res = await fetch("tracker.json", { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
@@ -939,13 +1080,15 @@ async function poll() {
     const { pulse, ...rest } = data;
     const payload = JSON.stringify(rest);
     if (payload === lastPayload) {
-      document.querySelector(".live-dot")?.classList.remove("stale");
+      markFresh([data]);
       const p = document.getElementById("pulselbl");
       if (p) p.textContent = `pulse ${pulseOn(data) ? "on" : "off"}`;
       return;
     }
     lastPayload = payload;
+    lastRuns = null;
     render(data);
+    markFresh([data]);
   } catch {
     if (!lastOk) renderEmpty("Waiting for the run to start…");
     else {

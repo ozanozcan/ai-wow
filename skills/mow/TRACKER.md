@@ -52,6 +52,38 @@ the in-app browser pane is hidden (a hidden pane freezes the animation clock).
 
 Stop the server at Integrate: `pkill -f "http.server $PORT"`.
 
+### Views and multi-run
+
+The page takes three optional query params, all switchable live from the header:
+
+| Param | Effect |
+|---|---|
+| `?view=compact` | wave plates and lane letters only — hubs read `W1`, `W2`, no wave button, no detail tree. The glance view for "where is this run". |
+| `?panels=tint` | colour the whole plate by wave status instead of the wave label button |
+| `?runs=all` or `?runs=stemA,stemB` | **several runs on one page.** Serve `docs/plans/` instead of one dispatch folder; the page finds each `<stem>/dispatch/tracker.json`, sorts running first, and stacks them. This is how you watch two `/mow go` chats at once in the same repo. |
+
+```bash
+# one page for every run in this repo
+python3 -m http.server $PORT -d docs/plans
+# → http://localhost:$PORT/tracker.html?runs=all&view=compact
+```
+
+`tracker.html` must sit in the directory being served, so multi-run needs a copy
+at `docs/plans/tracker.html` as well as the per-run one.
+
+### The board is only as live as your writes
+
+The page polls every 2s, but **nothing changes until you write `tracker.json`**.
+Elapsed times keep climbing on their own (they are computed from `started` in the
+browser), which makes a stale board look busy: a lane can sit at `running` with a
+ticking clock long after its agent finished. If a `running` run's `updated` is
+more than four minutes old the header says **"board Nm behind"** with a red dot —
+that is the page telling you the writer is lagging, not the run.
+
+So: write at every event in the table below, and **write the lane/agent terminal
+state as soon as the report lands** — before you verify its claims, not after.
+Verification can take many minutes, and during it the board is lying.
+
 ## tracker.json schema (v1)
 
 ```json
@@ -188,8 +220,8 @@ Field notes:
 | Event | Write |
 |---|---|
 | go §1 load done | full skeleton from INDEX: every wave/lane/todo `pending`, `run_status: running`, agents seeded empty; set run `started`; stamp each wave's `parallelism` from the INDEX map |
-| wave fan-out | wave + its lanes → `running`; set wave `started`; append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
-| lane reports done | lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
+| wave fan-out | wave + its lanes → `running`; set wave `started` (a real timestamp — `run.started` too, never a placeholder date); append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
+| lane reports done (write **before** verifying its claims) | lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
 | wave lanes all terminal | set wave `ended`; roll up `tokens` from lanes/agents if the runtime gave them |
 | review gate starts | `gate.status: running`; append reviewer agents |
 | gate verdict | clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |
