@@ -26,7 +26,7 @@ Legacy `/maow` invocations use the same mode mapping as `/mow`.
 
 ### Automation hooks (mid-wave — not advisory)
 
-These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (Django SSR names concrete modules).
+These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (FTM names concrete modules).
 
 | When | Auto-invoke | Owner |
 |---|---|---|
@@ -34,10 +34,11 @@ These are **mandatory** when the repo has the named skill/agent. Skip only with 
 | **go** before wave 1 | `python scripts/mow_preflight.py docs/plans/<stem>` — grill → hydrate (when pointers exist) → thin-brief → overlap; **subsumes** the former standalone hydrate gate | orchestrator |
 | **go** lane start (`tdd-builder` / code-edit) | `tdd` skill **before** production code (explicit; already in tdd-builder); **Read** lane section of `hydrated-specs.md` | lane |
 | **go** lane mid-build | `parallel-debug` when pytest shows **>1 unrelated** failures | lane |
-| **go** lane mid-build (UI) | Project **`ui-designer`** (repo stack — Django SSR: Django templates + Tailwind + htmx; **never** the global Next.js/shadcn agent) · **`impeccable`** when the work is visual (redesign/polish/new screen), not for mechanical markup-only swaps | lane |
+| **go** lane mid-build (UI) | Project **`ui-designer`** (repo stack — FTM: Django templates + Tailwind + htmx; **never** the global Next.js/shadcn agent) · **`impeccable`** when the work is visual (redesign/polish/new screen), not for mechanical markup-only swaps | lane |
 | **go** lane Verification (UI) | **`imprint`** after any UI/template change (always after impeccable) → `ui-registry.md` | lane |
 | **go** lane Verification (new/changed logic) | `test-coverage` on modified modules | lane (thin → expand) |
 | **go** lane Verification (pure math / domain logic) | `adversarial-tester` on named modules | lane when scope matches; else P3 batch |
+| **go** §1 + every run event | **live tracker** — copy `tracker.html`, maintain `dispatch/tracker.json` per the write-points table in [`TRACKER.md`](TRACKER.md) (same folder as this skill) | orchestrator |
 | **go** Integrate (after final wave) | P3 post-build (`/verify`, `test-coverage`, adversarial batch) then **`ship-check` as auto-gate** before `Status: shipped` | orchestrator |
 | **go** Integrate (architecture-heavy / Wave 2+) | `improve-codebase-architecture` quick scan — **deferred by default** unless plan tags `refactor` or operator asks | orchestrator (optional) |
 
@@ -118,13 +119,13 @@ Source: docs/plans/<stem>/dispatch/INDEX.md
 | Wave | Parallelism | Lanes | AFK | Gate |
 |---|---|---|---|---|
 | 1 | parallel | A ‖ B ‖ C(seq: a→b) | yes | review after |
-| 2 | after wave 1 | D | no | foreground / needs-review |
+| 2 | after wave 1 | Z | no | foreground / needs-review |
 
 ### Lanes
 | Lane | Todos (order) | PBI / Feature | Role | AFK | Review flags | Decisions / Specs | Brief |
 |---|---|---|---|---|---|---|---|
-| A | … | #52 / #65 | code-edit | yes | backend | d `#12` · req `#3` | 01-….md |
-| D | … | #55 / #65 | code-edit | no | - | `-` | 0N-….md |
+| A | … | #52 / #65 | code-edit | yes | django | d `#12` · req `#3` | 01-….md |
+| Z | … | #55 / #65 | code-edit | no | - | `-` | 0N-….md |
 
 ### How to run
 - **AFK yes** → safe to background under `/mow go`
@@ -179,6 +180,8 @@ Classify every todo, then group:
 - **Final wave (alone, last):** any todo that *documents / summarizes / verifies the result of the others* (e.g. a master doc, a final test pass). It depends on everything.
 - **Foreground-only / AFK no (do not background):** destructive ops, anything outside the repo (home dir, global config), git history rewrites, or anything `guard-destructive.sh` would block. Mark these `needs-review` and **AFK: no**.
 
+**Lane letters (A→Z rule):** letter lanes in wave order starting at A, but the **final lane of the run is always `Z`** — the plan reads A to Z, whatever the count (e.g. 6 lanes = A B C D E Z). A single-lane run is just `A` (no Z). This caps a run at 26 lanes (A–Y + Z); more than that means the plan is too big — split it.
+
 **Tracer bullet (new subsystems):** when the plan introduces a subsystem that does not exist yet, prefer wave 1 as the thinnest slice that runs end to end — one path through every layer it touches — even when that under-parallelizes the wave. Widen in wave 2, once the seams are real instead of assumed. For work inside an existing subsystem, shape waves for parallelism as usual.
 
 **Hard rule:** lanes that run in the same wave MUST have disjoint file-sets. On Claude Code, `isolation: "worktree"` (see Runtime resolution / go §2a) makes cross-lane corruption structurally impossible for backgrounded AFK-yes `code-edit` lanes — disjoint file-sets is now merge-conflict avoidance, not the only thing standing between two lanes and a shared tree. On any runtime without that isolation (Cursor, or a manually-pasted lane without the worktree setup from go §3), subagents still share one real working tree, so the rule remains load-bearing there.
@@ -194,7 +197,7 @@ Write **semantic roles** — not runtime-specific `subagent_type` strings. Go mo
 | Read-only research / "find where X is" | `explore` | |
 | UI / design authoring | `ui-design` | a not-yet-created subagent can't build itself — bootstrap with `code-edit` |
 | LLM/agent security review (prompts, tools, model endpoints) | `llm-sec-review` | |
-| Stack-specific review (if project has the agent) | `backend-review`, `frontend-review` | only when the todo is narrowly scoped to that stack |
+| Stack-specific review (if project has the agent) | `backend-review`, `django-review`, `frontend-review` | only when the todo is narrowly scoped to that stack |
 
 **Review is usually not a todo.** Per-wave diff review happens automatically in go mode (see **Review wave** below) — only create a review *lane* when the plan explicitly demands a standalone audit.
 
@@ -369,18 +372,18 @@ Source plan: docs/plans/<stem>/plan.md
 
 ## Waves
 - **Wave 1 (parallel, AFK):** <lane> | <lane> | <lane(seq: a→b)> ...
-- **Wave 2 (after wave 1, foreground):** <final lane>
+- **Wave 2 (after wave 1, foreground):** <final lane — always `Z`>
 
 Each wave ends with a **review gate** (see go mode) before the next starts.
 
 ## Lanes
 | Lane | Todos (in order) | PBI / Feature | Files owned | Role | Review flags | AFK | Background | Decisions / Specs | Brief |
 |---|---|---|---|---|---|---|---|---|---|
-| A | ... | #52 / #65 | ... | code-edit | backend | yes | yes | d `#12` · req `#3` | 01-....md |
+| A | ... | #52 / #65 | ... | code-edit | django | yes | yes | d `#12` · req `#3` | 01-....md |
 
 `PBI / Feature`: per-todo PBI id / Feature id (see Orchestration map section above for source) — `-` if untracked.
 
-`Review flags`: which reviewers the wave gate must run for this lane's changes — from the repo's `docs/agents/protocols.md` P2 (e.g. `backend`, `llm`, `frontend`), or `-` for none (docs/chore).
+`Review flags`: which reviewers the wave gate must run for this lane's changes — from the repo's `docs/agents/protocols.md` P2 (e.g. `django`, `llm`, `frontend`), or `-` for none (docs/chore).
 
 `AFK` / `Background`: `yes` = safe to fan out under `/mow go` without the user watching; `no` = foreground / needs-review.
 
@@ -422,7 +425,7 @@ Confirm: no two same-wave lanes share a file. <list any risk>
 
 5. Report Feature/Task/Requirement ids to the user. Do not leave "run import yourself" as the primary next step.
 
-**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. The mow skill itself is global (it lives in ai-wow and is symlinked into both tools); any per-repo scripts stay per-repo.
+**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from FTM (or sibling) after first ship; the dotfiles skill is global, scripts are per-repo.
 
 ---
 
@@ -484,7 +487,7 @@ Otherwise follow the **`grill-with-docs`** procedure against this stem's `plan.m
    If the grill found nothing to change: `**Grill write-back:** no changes — plan held <YYYY-MM-DD>`.
    Re-run `python scripts/mow_hydrate_specs.py docs/plans/<stem>` so `hydrated-specs.md` matches final pointers (skip if all cells are `-`).
 
-**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (e.g. 390px for a mobile-first app). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
+**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (FTM: 390px mobile-first). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
 
 **Hard refuse:** never mark `done` after a grill that only summarized decisions in chat. `/mow go` lanes read **disk** (plan + briefs), not this conversation.
 
@@ -511,6 +514,7 @@ Do **not** fan out from ready — go owns execution.
 | `llm-sec-review` | `llm-sec-review` | `llm-sec-review` |
 | `ui-design` | `ui-designer` | `ui-designer` |
 | `backend-review` | `backend-reviewer` | `backend-reviewer` |
+| `django-review` | `django-reviewer` | `django-reviewer` |
 | `frontend-review` | `frontend-reviewer` | `frontend-reviewer` |
 
 If a role has no mapping in the current runtime, fall back to `code-edit` / `general-purpose` / `generalPurpose` and note the downgrade in the go summary.
@@ -565,6 +569,21 @@ Read `INDEX.md` and every brief. Re-verify the conflicts check (no same-wave fil
 ```bash
 python scripts/mow_preflight.py docs/plans/<stem>
 ```
+
+**Live tracker (after preflight passes — Claude Code, or any runtime with a browser pane):** set up the run's live visual before wave 1 fan-out. Copy `~/.claude/skills/mow/tracker.html` → `dispatch/tracker.html`, write the initial `dispatch/tracker.json` skeleton from INDEX (every wave/lane/todo `pending`, `run_status: running`), then serve and open it:
+
+```bash
+# one stable port per repo, so two projects' runs never land on each other
+PORT=$(python3 -c "import hashlib,os;print(8300+int(hashlib.md5(os.getcwd().encode()).hexdigest(),16)%80)")
+# clear this repo's own stale tracker from an earlier run (matches only that server)
+pkill -f "http.server $PORT" || true
+python3 -m http.server $PORT -d docs/plans/<stem>/dispatch
+echo "tracker: http://localhost:$PORT/tracker.html"
+```
+
+(background the server). Open the URL that `echo` printed in the browser pane — the page polls `tracker.json` every 2s. **Never skip the kill line and never hardcode 8377**: a server left running by an earlier run keeps serving *that* run's folder, so the board loads, looks live, and shows the wrong run. Because the port is derived from the repo path it is stable — the same project always gets the same URL, worth bookmarking on a second screen, where animation keeps running even when the browser pane is hidden. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
+
+**In-progress pulse (operator chat):** seed `dispatch/tracker.json` with `"pulse": true`. If the operator asks to turn the heartbeat/pulse on or off (e.g. "pulse off", "turn the shine pulse back on"), Edit `pulse` in `tracker.json` **immediately** — do not wait for a wave event. Spin stays on; only the lub-dub glow toggles.
 
 Refuse fan-out on exit 1. Preflight is the **single** go §1 gate — grill write-back (unless stem is `shipped`) → hydrate (when Decisions/Specs pointers exist) → thin-brief validation → same-wave and cross-plan file overlap. It **subsumes** the former standalone hydrate step; do not also call `mow_hydrate_specs.py` separately after preflight passes. When hydrate runs inside preflight, confirm `dispatch/hydrated-specs.md` exists. Subagents **Read** `hydrated-specs.md` for their Lane section — they do not need live taskman for the lock set. If the script is absent, fall back to manual grill + hydrate + overlap checks.
 
@@ -639,6 +658,10 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
    Skip with n/a only if the repo has no taskman. Moves Tasks linked by brief `source_ref` to `done` per action-report Outcome (or all dispatch `NN-*.md` brief tasks with stderr warning when no report).
 
    **Flip the registry (required — same step, not a follow-up):** run `python scripts/mow_set_registry_status.py <stem> shipped` if the repo has the script — this is the recurring miss (action report written, registry row left `planned`/`running`, so `/mow list` shows a finished run as still active). Do not treat this as "then hand-edit the table later" — run the command now, in this same Integrate pass, right after board sync. Fall back to manually editing `docs/plans/INDEX.md`'s `Status`/`Updated` cells only if the script is absent from the repo.
+
+   **Tracker reconcile (required when a tracker ran):** before closing it out, spawn one `general-purpose` subagent to audit the board against reality. It is deliberately a *fresh* reader: the orchestrator wrote `tracker.json` from memory and is blind to its own dropped writes. Brief it to read `dispatch/tracker.json` plus every lane's `## Verification` block, the gate verdicts, and the findings filed on the board, then report **only discrepancies** — lanes/agents left `running` that actually finished, missing or invented artifacts, findings without taskman ids, skills never reconciled, `tokens` the runtime reported but the board never got, wave `started`/`ended` gaps. It reports; it does not edit. Apply its list yourself, then close out. A clean report is a one-line "board matches".
+
+   **Tracker close-out:** set `tracker.json` → `run_status: shipped`, finalize remaining statuses, and stop the tracker HTTP server if you started one (`pkill -f "http.server $PORT"`).
 
 3. **Print the done summary (required — do not skip):** a short human-readable block matching the Operator summary shape, in past tense. Prefer rewriting from what actually shipped (lanes + review gate + verify), not only copying the forward-looking plan text.
 

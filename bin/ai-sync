@@ -148,6 +148,36 @@ def _copy_md(src_dir: Path, dst_dir: Path) -> int:
     return n
 
 
+def _copy_skills(src_dir: Path, dst_dir: Path) -> int:
+    """Mirror whole skill directories — every asset, not just markdown.
+
+    A skill is a folder whose files belong together: SKILL.md plus whatever it
+    ships beside it (reference docs, templates, an HTML page, scripts). Copying
+    only *.md publishes a skill that references assets which were never carried
+    over — e.g. mow's tracker.html, named by its SKILL.md but absent from the
+    bundle. Mirror the tree so a published skill is complete.
+
+    No-ops when the farm is already a symlink into this repo (nothing to import).
+    """
+    n = 0
+    if not src_dir.is_dir() or points_into_repo(src_dir):
+        return 0
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for skill in sorted(p for p in src_dir.iterdir() if p.is_dir()):
+        for f in sorted(skill.rglob("*")):
+            # skip caches and local working snapshots — a bundle ships the
+            # current skill, not its author's backups
+            if (f.is_dir() or f.is_symlink() or "__pycache__" in f.parts
+                    or ".backup." in f.name or f.name.startswith(".")):
+                continue
+            dst = dst_dir / skill.name / f.relative_to(skill)
+            if not dst.exists() or f.read_bytes() != dst.read_bytes():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dst)
+                n += 1
+    return n
+
+
 def _copy_scripts(src_dir: Path, dst_dir: Path) -> int:
     n = 0
     if not src_dir.is_dir() or points_into_repo(src_dir):
@@ -169,8 +199,13 @@ def do_import() -> None:
     a = _copy_md(CLAUDE / "agents", REPO / "agents") + _copy_md(CURSOR / "agents", REPO / "agents")
     c = _copy_md(CLAUDE / "commands", REPO / "commands") + _copy_md(CURSOR / "commands", REPO / "commands")
     h = _copy_scripts(CLAUDE / "hooks", REPO / "hooks") + _copy_scripts(CURSOR / "hooks", REPO / "hooks")
-    if a or c or h:
-        log(f"  imported: {a} agent(s), {c} command(s), {h} hook script(s)")
+    # Skills only need importing when the farm lives outside this repo; when
+    # ~/.agents/skills is the usual symlink back here, all three calls no-op.
+    s = (_copy_skills(AGENTS_SKILLS, REPO / "skills")
+         + _copy_skills(CLAUDE / "skills", REPO / "skills")
+         + _copy_skills(CURSOR / "skills", REPO / "skills"))
+    if a or c or h or s:
+        log(f"  imported: {a} agent(s), {c} command(s), {h} hook script(s), {s} skill file(s)")
     # Back up the skills lock file so the skill set is restorable.
     lock = HOME / ".agents" / ".skill-lock.json"
     if lock.is_file():
