@@ -115,11 +115,15 @@
   .orch-light svg { width: 100%; height: 100%; display: block; }
   .orch-light .lamp { filter: drop-shadow(0 0 7px color-mix(in oklch, var(--done), transparent 25%)); }
 
-  .pstyle {
-    font: inherit; font-size: 12px; font-weight: 300; color: var(--ink);
-    background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted;
+  .seg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 300; color: var(--ink); }
+  .seg + .seg { margin-left: 10px; }
+  .seg > button {
+    font: inherit; font-size: 12px; color: var(--ink);
+    background: none; border: 1px solid transparent; padding: 2px 9px;
+    border-radius: 999px; cursor: pointer; line-height: 1.5;
   }
-  .pstyle:hover { color: var(--ink); }
+  .seg > button:hover { border-color: var(--line); }
+  .seg > button.on { background: var(--surface); border-color: var(--edge); font-weight: 500; }
 
   /* wave header — hub circle top-left, its shape and cost beside it */
   .wave-head {
@@ -369,14 +373,14 @@ const RUNS_PARAM = new URLSearchParams(location.search).get("runs");
 let PULSE_OVERRIDE = null;
 
 document.addEventListener("click", (e) => {
-  if (e.target.closest("#vstyle")) {
-    VIEW = VIEW === "compact" ? "detailed" : "compact";
-  } else if (e.target.closest("#pstyle")) {
-    PANEL_STYLE = PANEL_STYLE === "tint" ? "chip" : "tint";
-  } else if (e.target.closest("#pulselbl")) {
-    PULSE_OVERRIDE = !pulseOn(lastData);
+  const b = e.target.closest("button[data-view], button[data-panels], button[data-pulse]");
+  if (!b) return;
+  if (b.dataset.view) VIEW = b.dataset.view;
+  else if (b.dataset.panels) PANEL_STYLE = b.dataset.panels;
+  else {
+    PULSE_OVERRIDE = b.dataset.pulse === "1";
     applyPulse(lastData);
-  } else return;
+  }
   redraw();
 });
 
@@ -946,10 +950,18 @@ function runHead(data, heading) {
     </${heading}>`;
 }
 
+/* segmented pickers: both choices always visible, the active one filled — so the
+   label never has to double as both the current state and the action */
+function seg(label, name, options, current) {
+  return `<span class="seg">${label}${options.map(([val, text]) =>
+    `<button type="button" data-${name}="${val}"${val === current ? ' class="on"' : ""}>${text}</button>`).join("")}</span>`;
+}
+
 function controls(data) {
   return `<span class="meta">
-      <button type="button" class="pstyle" id="vstyle">view: ${VIEW === "compact" ? "compact" : "detailed"}</button>
-      <button type="button" class="pstyle" id="pstyle">${PANEL_STYLE === "tint" ? "waves: tinted plates" : "waves: status buttons"}</button>
+      ${seg("view", "view", [["detailed", "detailed"], ["compact", "compact"]], VIEW)}
+      ${seg("waves", "panels", [["chip", "buttons"], ["tint", "tinted"]], PANEL_STYLE)}
+      ${seg("pulse", "pulse", [["1", "on"], ["0", "off"]], pulseOn(data) ? "1" : "0")}
       <span class="live-dot"></span><span id="livetxt">live</span>
     </span>`;
 }
@@ -958,7 +970,6 @@ function legend(data) {
   return `<footer class="legend">
       <span class="key"><span class="sw" style="background:var(--done)"></span>done</span>
       <span class="key"><span class="sw shine"></span>in progress</span>
-      <span class="key"><button type="button" class="pstyle" id="pulselbl">pulse ${pulseOn(data) ? "on" : "off"}</button></span>
       <span class="key"><span class="sw" style="background:var(--issues)"></span>passed with issues</span>
       <span class="key"><span class="sw" style="background:var(--error)"></span>failed</span>
       <span class="key">‖ lanes forked off one hub run together</span>
@@ -1001,6 +1012,7 @@ function renderEmpty(msg) {
    in minutes means the writer is behind — say so, rather than letting a stale
    board read as live progress. */
 const STALE_AFTER_MS = 240000;
+let lastChangeAt = Date.now();       /* when the board's content last actually changed */
 
 function markFresh(datas) {
   const dot = document.querySelector(".live-dot");
@@ -1009,8 +1021,14 @@ function markFresh(datas) {
   dot.classList.remove("stale");
   const running = datas.filter((d) => d && d.run_status === "running");
   const ages = running.map((d) => Date.parse(d.updated)).filter(Number.isFinite).map((t) => Date.now() - t);
-  const worst = ages.length ? Math.max(...ages) : null;
-  if (worst != null && worst > STALE_AFTER_MS) {
+  const stamped = ages.length ? Math.max(...ages) : null;
+  /* Two independent signals: the self-reported `updated` field, and content we
+     actually watched change. Trust whichever is younger — an orchestrator that
+     writes real progress but forgets to bump `updated` is still making progress,
+     and a board is only truly behind when neither has moved. */
+  const observed = Date.now() - lastChangeAt;
+  const worst = stamped == null ? observed : Math.min(stamped, observed);
+  if (running.length && worst > STALE_AFTER_MS) {
     dot.classList.add("stale");
     txt.textContent = `board ${fmtDur(worst)} behind`;
     txt.title = "the run is still going; the orchestrator hasn't written tracker.json since then";
@@ -1063,6 +1081,7 @@ async function pollMulti() {
   const payload = JSON.stringify(runs.map((r) => { const { pulse, ...rest } = r.data; return rest; }));
   if (payload === lastPayload) { markFresh(runs.map((r) => r.data)); return; }
   lastPayload = payload;
+  lastChangeAt = Date.now();
   lastRuns = runs;
   renderMulti(runs);
   markFresh(runs.map((r) => r.data));
@@ -1081,11 +1100,10 @@ async function poll() {
     const payload = JSON.stringify(rest);
     if (payload === lastPayload) {
       markFresh([data]);
-      const p = document.getElementById("pulselbl");
-      if (p) p.textContent = `pulse ${pulseOn(data) ? "on" : "off"}`;
       return;
     }
     lastPayload = payload;
+    lastChangeAt = Date.now();
     lastRuns = null;
     render(data);
     markFresh([data]);
