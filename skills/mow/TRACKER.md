@@ -229,5 +229,9 @@ Field notes:
 | operator asks to toggle pulse | set `pulse: true` or `false` immediately (chat: "pulse off" / "pulse on") |
 | Integrate, before close-out | **reconcile** — a `general-purpose` subagent diffs this file against every lane's `## Verification`, the gate verdicts, and the filed findings, and reports discrepancies only (see go §3). Apply its list, then set `run_status: shipped` |
 
-Every write also bumps `updated` (ISO 8601). Full-file Write is fine — the file is
-small; do not stream partial JSON (the page tolerates one bad poll but not many).
+Every write also bumps `updated` (ISO 8601) — though a `PostToolUse` hook
+(`hooks/stamp-tracker.py`) now stamps it for you on any Write/Edit of a
+`dispatch/tracker.json`, so a forgotten bump no longer strands the board. Set it
+yourself anyway when you can; the hook is the safety net, not the contract. Full-file
+Write is fine — the file is small; do not stream partial JSON (the page tolerates
+one bad poll but not many).
