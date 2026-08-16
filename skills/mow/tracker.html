@@ -569,10 +569,14 @@ function circleNode(x, y, r, status, cls, label, title, letter, sub) {
   const s = st(status);
   const d = r * 2;
   const shine = s === "running";
-  const subHtml = sub && sub.text
-    ? `<span class="sub stats" data-started="${esc(sub.started || "")}" data-ended="${esc(sub.ended || "")}"
-         data-tokens="${sub.tokens == null ? "" : sub.tokens}" data-status="${esc(st(sub.status))}">${esc(sub.text)}</span>`
-    : "";
+  /* a string sub is static text; an object sub is a live stats line the ticker owns */
+  const subHtml = !sub ? ""
+    : typeof sub === "string"
+      ? `<span class="sub">${esc(sub)}</span>`
+      : sub.text
+        ? `<span class="sub stats" data-started="${esc(sub.started || "")}" data-ended="${esc(sub.ended || "")}"
+             data-tokens="${sub.tokens == null ? "" : sub.tokens}" data-status="${esc(st(sub.status))}">${esc(sub.text)}</span>`
+        : "";
   return `<div class="node ${cls} s-${s}${r <= R.agent ? " small" : ""}"
     style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;${letter ? `font-size:${Math.round(r * 1.12)}px;` : ""}"
     title="${esc(title || "")}">
@@ -592,7 +596,9 @@ function rowNode(x, y, r, status, name, kind, title, minor, meta) {
       <div class="disc">${ICONS[kind] || ""}</div>
     </div>
     <span class="name">${esc(name)}</span>
-    ${meta ? `<span class="rmeta">${esc(meta)}</span>` : ""}
+    ${meta && meta.text ? `<span class="rmeta stats" data-started="${esc(meta.started || "")}"
+      data-ended="${esc(meta.ended || "")}" data-tokens="${meta.tokens == null ? "" : meta.tokens}"
+      data-status="${esc(st(meta.status))}">${esc(meta.text)}</span>` : ""}
   </div>`;
 }
 
@@ -786,8 +792,11 @@ function render(data) {
       /* agents in calling order; skills/tools/artifacts elbow off each agent */
       (lane.agents || []).forEach((a) => {
         line(cx, cy, branchX - R.agent, cy);
+        /* how long this subagent ran, and what it spent — ticks live while running */
+        const aTok = parseTokens(a.tokens);
+        const aStat = statsLine(a.started, a.ended, aTok, a.status);
         nodes += rowNode(branchX, cy, R.agent, a.status, a.name, "agent", a.detail, false,
-          fmtTokens(parseTokens(a.tokens)));
+          aStat === "—" ? null : { text: aStat, started: a.started, ended: a.ended, tokens: aTok, status: a.status });
         const parentY = cy;
         cy += 36;
         const subs = [...(a.skills || []).map((s) => [s, "skill", R.skill]),
@@ -845,8 +854,11 @@ function render(data) {
     /* the hub, top-left of the plate — wave number, then its shape and cost beside it */
     const par = isParallel(w);
     const tok = waveTokens(w);
-    nodes += circleNode(p.hubX, p.hubY, R.hub, w.status, "hub", fmtClock(w.started),
-      `wave ${w.wave}${w.started ? " — started " + w.started : ""}`, w.wave);
+    /* start time under the number; once the wave has finished, its end time too */
+    nodes += circleNode(p.hubX, p.hubY, R.hub, w.status, "hub",
+      w.started ? `start: ${fmtClock(w.started)}` : "",
+      `wave ${w.wave}${w.started ? " — started " + w.started : ""}${w.ended ? ", ended " + w.ended : ""}`,
+      w.wave, w.ended ? `end: ${fmtClock(w.ended)}` : null);
     axisLabels += `<div class="wave-head" style="left:${p.hubX + R.hub + 14}px;top:${p.hubY}px">
       <div class="mode${par ? "" : " is-seq"}"><span class="sym">${par ? "‖" : "→"}</span>${par ? "parallel" : "sequential"}</div>
       <div class="formula">${esc(laneFormula(w) || "—")}</div>

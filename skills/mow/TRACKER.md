@@ -89,6 +89,8 @@ Stop the server at Integrate: `pkill -f "http.server $PORT"`.
             {
               "name": "tdd-builder",
               "status": "running",
+              "started": "2026-08-14T12:01:10Z",
+              "tokens": 18400,
               "detail": "worktree: .claude/worktrees/…",
               "skills": [
                 { "name": "tdd", "status": "done" },
@@ -167,10 +169,12 @@ Field notes:
   both and the page infers it: two or more lanes → parallel, one → sequential.
   Sequential todos *inside* a lane are a different axis — they render as a
   chained row of circles under the lane, on parallel and sequential waves alike.
-- `started` / `ended` (optional ISO 8601, per **wave or lane**) = wall-clock
-  bounds. Anything with `started` and no `ended` shows a live duration that
-  ticks. Both render under the circle as `duration · tokens`. Omit rather than
-  guess.
+- `started` / `ended` (optional ISO 8601, per **wave, lane or agent**) =
+  wall-clock bounds. Anything with `started` and no `ended` shows a live
+  duration that ticks, so a running subagent's elapsed time climbs on the board.
+  Waves and lanes render it under the circle, agents beside the name, both as
+  `duration · tokens`. Stamp an agent's `started` when you spawn it and its
+  `ended` when its report lands. Omit rather than guess.
 - `tokens` (optional, per wave, lane, or agent) = a number (total) or
   `{ "input": N, "output": N, "total": N }` / `{ "in": N, "out": N }`. Totals
   roll up without double-counting: a lane prefers its own figure over the sum
@@ -184,8 +188,8 @@ Field notes:
 | Event | Write |
 |---|---|
 | go §1 load done | full skeleton from INDEX: every wave/lane/todo `pending`, `run_status: running`, agents seeded empty; set run `started`; stamp each wave's `parallelism` from the INDEX map |
-| wave fan-out | wave + its lanes → `running`; set wave `started`; append each spawned agent (`running`) with Toolkit skills as `pending` |
-| lane reports done | lane agent → `done`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
+| wave fan-out | wave + its lanes → `running`; set wave `started`; append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
+| lane reports done | lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
 | wave lanes all terminal | set wave `ended`; roll up `tokens` from lanes/agents if the runtime gave them |
 | review gate starts | `gate.status: running`; append reviewer agents |
 | gate verdict | clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |
