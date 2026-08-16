@@ -20,9 +20,9 @@ This is the practical map for: *think of something → grill/plan in any chat �
 | **`/mow go`** | Fan out briefs to subagents wave by wave; ends with past-tense **what we did / what you have now** | Rewrite the plan |
 | **`taskman` CLI** | Durable Feature→PBI→Task + **Requirement** living spec | Spawn agents (skills call it) |
 | **`taskman plan from-decisions/to-dispatch`** | Translate between board ↔ `dispatch/` folder | Decide *what* to work on |
-| **`/wrap-up`** | End of chat: **evidence gate** (unattributed paths + stale `in_progress`) then board sync + **requirements** + session report | Replace live capture during work |
+| **`/wrap-up`** | End of chat: **evidence gate** (unattributed paths + stale `in_progress`) then board sync (incl. retroactive chat sweep) + **requirements** + high-priority tasks for every leftover + **auto-checkpoint** bundling them toward `/mow plan`/`ready` + session report | Replace live capture during work |
 | **`taskman harvest`** | Safety net: mine archived transcripts → approve → board | Primary capture path |
-| **`/checkpoint`** | Forward handoff for the *next* agent | Board sync (that's wrap-up) |
+| **`/checkpoint`** | Forward handoff for the *next* agent — auto-invoked by `/wrap-up` when leftovers exist; manual only for mid-session swaps | Board sync (that's wrap-up) |
 
 **Rule of thumb:** you invoke skills; **agents** run taskman CLI; the board + living-spec remember work; `docs/plans/<stem>/dispatch/` is the handoff format.
 
@@ -224,7 +224,7 @@ Get this wrong and the question is silently marked `done` at Integrate, claiming
 | That question just got answered | `task set --notes "Answer: …"` → `decision add … --why …` → `task move <id> --status done` → `plan.md` `## Decisions locked` |
 | That question is real but not for this run | `task set <id> -t …,scope:out` + `task move <id> --status disabled` (never `done`) |
 | End of every working chat | `/wrap-up` |
-| Hand off to a *future* agent mid-epic | `/checkpoint` (optional; independent of wrap-up) |
+| Hand off to a *future* agent mid-epic (mid-session swap) | `/checkpoint` — end-of-chat handoff happens automatically inside `/wrap-up` |
 | Resume after a break | `/pick-up-where-i-left-off` |
 | Missed items in old transcripts | `taskman harvest` |
 
@@ -269,7 +269,7 @@ taskman plan to-dispatch    → fresh dispatch/ from board
         ↓
 /mow go <stem>              → agents run
         ↓
-/wrap-up                    → statuses + report (+ optional harvest)
+/wrap-up                    → statuses + leftover tasks + auto-checkpoint + report (+ optional harvest)
 ```
 
 Legacy: `/dispatch-plan` = `/mow plan`, `/dispatch-plan dispatch` = `/mow go`; `/maow` = `/mow` (same modes).

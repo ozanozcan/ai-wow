@@ -19,7 +19,8 @@ Resume in a new chat with **`/pick-up-where-i-left-off`** (not checkpoint).
 
 | Invocation | Mode | When |
 |---|---|---|
-| `/checkpoint` | **save** (default) | End of session / before an agent swap — create a new checkpoint |
+| `/checkpoint` | **save** (default) | Mid-session agent swap — create a new checkpoint by hand |
+| via `/wrap-up` step 4 | **save** | The normal end-of-chat path — wrap-up invokes save mode itself, prefilled (`from:`, `mow:`, `## Board tasks`, bundled Next task); skip step 4's freetext ask, wrap-up already gathered it |
 | `/checkpoint done` | **done** | A picked-up task is finished — archive it |
 | `/checkpoint list` | **list** | Show the index table |
 
@@ -79,12 +80,20 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
    status: open
    created: <YYYY-MM-DD>
    updated: <YYYY-MM-DD>
+   from: <what created it — "wrap-up @ docs/session-reports/<file>.md" or "manual @ <branch>">
+   mow: <plan lineage — "docs/plans/<stem> · <furthest phase: plan|ready|go wave N>"; omit if none>
    ---
 
    # <title>
 
    ## Next task
-   [One clear description]
+   [One clear description. When this checkpoint bundles board tasks (below), this is the
+   mow entry point: `/mow ready docs/plans/<stem>` if an action plan covering them exists,
+   else `/mow plan` naming the task ids — not a hand-written re-plan.]
+
+   ## Board tasks
+   [Optional — taskman ids bundled for the next session (one per line, `#id — title`).
+   Wrap-up fills this with the high-priority leftovers it just created.]
 
    ## Context
    [Optional]
@@ -105,7 +114,7 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
 
    Rules: reference artifacts by path; redact secrets; bullets not essays; omit empty sections. Only `## Next task` is required.
 
-6. **Add a row to `docs/checkpoints/INDEX.md`** (newest at the bottom of the table): `| <slug> | <title> | <branch> | <created> | <updated> | open |`.
+6. **Add a row to `docs/checkpoints/INDEX.md`** (newest at the bottom of the table): `| <slug> | <title> | <branch> | <created> | <updated> | open | <from> |`. The `From` cell is the compact form of the frontmatter `from:` (`wrap-up @ <report file>` / `manual`), plus ` · mow: <stem> <phase>` when `mow:` is set. If the repo's existing INDEX predates the `From` column, add the column header once and backfill old rows with `-`.
 
 7. **Tell the user**: name the concrete file just written — `Saved to docs/checkpoints/<slug>.md — next session, run /pick-up-where-i-left-off.`
 
@@ -140,10 +149,11 @@ Print the `docs/checkpoints/INDEX.md` table as-is, sorted by status (`in-progres
 ## Daily flow
 
 ```
-End of session / before swap:   /checkpoint
+End of session:                 /wrap-up   (creates the checkpoint itself when anything is left over)
+Mid-session swap / manual save: /checkpoint
 See what's saved:               /checkpoint list
 Next session (pick which):      /pick-up-where-i-left-off
-A picked-up task is finished:   /checkpoint done
+A picked-up task is finished:   /checkpoint done   (wrap-up also runs this for the active one)
 ```
 
 Do not use this skill to update GitHub Issues, PRDs, or `plans/*.md` — link from the checkpoint instead. The raw per-session transcript archive (MinIO via `.cursor/hooks/archive-session.sh`) is a separate layer — checkpoints are curated, that pipeline is the firehose.

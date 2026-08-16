@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: End-of-chat ritual — evidence gate, session report, taskman board sync, optional checkpoint close, offer harvest, offer commit when the tree is dirty. Invoke via /wrap-up at the end of every working session in a taskman-enabled repo.
+description: End-of-chat ritual — evidence gate, retroactive chat-vs-board sync, high-priority tasks for every leftover, automatic checkpoint bundling them toward /mow plan|ready, session report, offer harvest/commit. Invoke via /wrap-up at the end of every working session in a taskman-enabled repo; it owns the whole end-of-chat sequence, including the checkpoint.
 disable-model-invocation: true
 ---
 
@@ -11,10 +11,8 @@ Consolidated end-of-chat ritual (TaskMan Spec §5.6). Replaces separate "just wr
 **Output report:** `docs/session-reports/<YYYY-MM-DD-HHMM>-<slug>.md` at the project root.
 
 How this differs from checkpoint:
-- **`/wrap-up`** (this skill) — backward-looking record + board sync. Run at the end of *every* working chat.
-- **`/checkpoint`** — forward-looking, status-tracked handoff for the *next* agent. Only when handing off.
-
-They are independent. Use both when you finished work *and* want to hand off.
+- **`/wrap-up`** (this skill) — backward-looking record + board sync, **plus** it invokes the checkpoint skill itself (step 4) whenever the session leaves anything unfinished. Run at the end of *every* working chat.
+- **`/checkpoint`** — forward-looking, status-tracked handoff for the *next* agent. Still available standalone (mid-session agent swap), but the end-of-chat path is wrap-up calling it — the operator should not need to run `/checkpoint` manually after `/wrap-up`.
 
 ## Preconditions
 
@@ -109,6 +107,15 @@ Apply board moves implied by step 0 receipts (`done` / `blocked`) plus any chat-
 .venv/bin/python -m taskman requirement remove <id>
 ```
 
+**Retroactive chat sweep (required):** walk the chat history and compare it against the board (`task list`, `decision list` for the touched features). For every substantive action this chat *completed* that has no board item — a fix shipped, a doc written, a config changed, a decision acted on — create the item retroactively and close it in one stroke:
+
+```bash
+.venv/bin/python -m taskman task add "…" [-t tags] [--source "…"]   # then:
+.venv/bin/python -m taskman task move <id> --status done
+```
+
+The gate (step 0) catches work visible in the diff; this sweep catches the rest — actions whose evidence lives only in the transcript (CLI runs, external-system changes, verdicts). Skip only what is genuinely trivial (a one-line answer, a lookup). If everything already has an item, say so.
+
 Rules:
 - Prefer evidence from the gate + git over chat recall. Chat fills gaps the diff cannot see (decisions, requirements).
 - Prefer `--source` when a transcript path/line is known (`{relative_transcript_path}#L{line_number}`).
@@ -129,9 +136,26 @@ If this chat completed (or clearly finished) work tied to `docs/plans/<stem>/`:
 
 Skip when the chat did not touch any `docs/plans/<stem>/` work (pure refactor, unrelated bugfix, etc.).
 
-### 4. Checkpoint (only if one was active)
+### 4. Leftovers → board + checkpoint (automatic)
 
-If this chat picked up a checkpoint (`docs/checkpoints/` in-progress), offer or run `/checkpoint done` per that skill. Do not create a new checkpoint unless the user asks to hand off.
+This step owns everything left behind. The operator should never have to run `/checkpoint` manually after wrap-up.
+
+1. **Collect the leftovers** — unfinished tasks, decisions made but not yet acted on, open questions, deferred fixes, anything the chat started and did not finish (the same material as the report's "Open threads").
+2. **Every leftover becomes a board task, priority high:**
+   ```bash
+   .venv/bin/python -m taskman task add "…" -p high [-t tags] [--source "…"]
+   ```
+   Use `-p keystone` (the highest level) only when the leftover blocks everything else or continues an existing keystone thread. A leftover that is purely a decision to record goes through `decision add` in step 2 instead — but if it implies follow-up work, it *also* gets a task here.
+3. **Reconcile existing checkpoints (always)** — read `docs/checkpoints/INDEX.md` and compare this chat's work against **every** `open` / `in-progress` checkpoint, not only one formally resumed via `/pick-up-where-i-left-off` — a chat can work on a checkpoint's task without ever picking it up. For each checkpoint this chat touched:
+   - **Finished** — its `## Next task` is verifiably complete (cite evidence, same bar as step 0: commit sha, file path, or test output — never chat recall alone): run `/checkpoint done` on it.
+   - **Advanced but not finished** — update the checkpoint file in place: rewrite `## Next task` to what actually remains, log what happened under `## Done recently`, bump `updated` in frontmatter + INDEX row. Status stays as it was.
+   - **Untouched** — leave it alone.
+4. **Create the new checkpoint (invoke the checkpoint skill — save mode) whenever step 4.2 created any task** — unless the leftovers belong to a checkpoint just updated in step 4.3: then fold the new task ids into *that* checkpoint's `## Board tasks` instead of creating a parallel one. Do not ask first; wrap-up is the end-of-chat ritual and the checkpoint is part of it. Pass along:
+   - `from:` — `wrap-up @ docs/session-reports/<this session's report path>` (write the report path you are about to use in step 5).
+   - `mow:` — if this session's work ties to `docs/plans/<stem>/`, the stem plus its furthest phase (`plan` / `ready` / `go wave N` — read `dispatch/INDEX.md`); omit otherwise.
+   - `## Board tasks` — the task ids created in step 4.2.
+   - `## Next task` — **bundle the leftover tasks into a mow entry point**: `/mow ready docs/plans/<stem>` when an action plan already exists covering them (plan.md + dispatch briefs), else `/mow plan` naming the task ids. Only when the leftovers are genuinely too small for mow (a single trivial follow-up), name the direct action instead.
+5. **Nothing left over?** No tasks created, no active checkpoint → skip the checkpoint entirely and say so; a checkpoint with an empty Next task is noise.
 
 ### 5. Write the session report
 
@@ -170,7 +194,7 @@ start_sha: <anchor sha>
 [Loose ends / still-open citations. Omit if none.]
 
 ## Next steps
-[Follow-up. Note uncommitted work if any. If handing off: "see /checkpoint".]
+[Follow-up. Note uncommitted work if any. Name the checkpoint created in step 4 + its bundled task ids, if one was created.]
 ```
 
 Rules: reference artifacts by path; redact secrets; bullets not essays; omit empty optional sections.
@@ -196,9 +220,9 @@ If `git status` shows a dirty tree (modified / untracked / staged), **ask** befo
 
 ### 8. Tell the user
 
-Report path + summary of taskman commands run + whether harvest/commit were offered/run. If meaningful work should be handed off, suggest `/checkpoint`.
+Report path + summary of taskman commands run (including retroactive-sweep and leftover task ids) + the checkpoint created in step 4 (slug + its Next task), + whether harvest/commit were offered/run.
 
-**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync) ran, step 3 (action report) ran when a plan shipped this session, step 4 (checkpoint) ran when one was active, step 6 (harvest) was offered and not left declined-with-something-to-capture, and step 7 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
+**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync incl. retroactive chat sweep) ran, step 3 (action report) ran when a plan shipped this session, step 4 ran (existing checkpoints reconciled — done/updated/untouched; every leftover has a high-priority task; a checkpoint bundling them exists whenever any were created), step 6 (harvest) was offered and not left declined-with-something-to-capture, and step 7 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
 
 **Resume pointer (skip only if nothing durable was written this session):** a short, copy-pasteable line naming exactly which files a fresh session should load — the session report path always; the active checkpoint path if one exists; the plan + dispatch path if this session's work ties to `docs/plans/<stem>/`.
 
@@ -211,7 +235,7 @@ Same ritual in both runtimes. Session markers come from:
 
 ## Rules
 
-- Records + syncs; does not plan the next epic — that's `/checkpoint` / planning skills.
+- Records + syncs + hands off (via the checkpoint skill in step 4); it does not *plan* the next epic — the checkpoint's Next task points at `/mow plan` / `/mow ready`, which own that.
 - **Gate before narrative.** Exit 1 means stop and clear lists — do not write the session report yet.
 - Never auto-run harvest without asking.
 - Never auto-commit without asking — wrap-up only *reminds* and waits for yes.

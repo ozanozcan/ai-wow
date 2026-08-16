@@ -33,7 +33,7 @@ Resume work from a saved checkpoint in **`docs/checkpoints/`** at the project ro
    - If missing or no `open`/`in-progress` rows exist, tell the user to run `/checkpoint` first, then stop.
 
 2. **List and ask which to continue**
-   - Show the `open` and `in-progress` checkpoints (slug, title, branch, status, updated). Hide `done` rows unless asked.
+   - Show the `open` and `in-progress` checkpoints **sorted by `Updated`, newest first**, with these columns: slug, title, updated, status, **from** (where it was checkpointed from — the `From` cell / `from:` frontmatter, e.g. `wrap-up @ <session-report file>` or `manual`), and **mow lineage** (`mow:` frontmatter — plan stem + furthest phase, e.g. `docs/plans/<stem> · go wave 2`) when present. Older checkpoints without `from:`/`mow:` show `-`. Hide `done` rows unless asked.
    - **Ask the user which checkpoint to continue.** If exactly one is available, propose it and confirm. Do not guess silently.
    - **For every `in-progress` row that is not the one chosen this time:** ask once, alongside the list — *"`<slug>` is still marked in-progress from a previous session — is that actually finished? Run `/checkpoint done` on it before we continue, or leave it as-is?"* This is the case `/checkpoint`'s own step 0b can't reach: work finished, `/wrap-up` ran, its checkpoint-close offer got skipped or the "not safe to end" verdict got missed, and the very next thing run is `/pick-up-where-i-left-off` (not `/checkpoint`) — so this is the only remaining place that catches it. Act on the answer, then proceed to step 3 either way.
 
@@ -47,7 +47,10 @@ Resume work from a saved checkpoint in **`docs/checkpoints/`** at the project ro
    - Read `.cursor/rules/tasks.mdc` only if the user might prioritize backlog goals over this checkpoint.
 
 6. **Orient** — summarize in plain language:
-   - Next task (from the checkpoint or a user override)
+   - Next task (from the checkpoint or a user override). When it is a `/mow plan` / `/mow ready` bundle, say so — that command is the resume path, not a fresh plan.
+   - **Provenance** — restate `from:` (which session report / wrap-up produced this checkpoint; offer to open the report for detail).
+   - **Mow lineage** — if `mow:` is set, read `docs/plans/<stem>/dispatch/INDEX.md` and restate where the previous mow run stopped (waves done, lanes open) so the previous `/mow go` state is visible before resuming.
+   - **Board tasks** — if `## Board tasks` lists ids, run `taskman task show <id>` on them and fold their titles/status into the summary.
    - Context, open questions, blockers
    - `## Agent briefing` from the checkpoint if present
    - What changed on disk since the checkpoint (`git status --short`, `git diff --stat HEAD` if useful)
