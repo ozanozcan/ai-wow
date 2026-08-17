@@ -310,9 +310,18 @@
 
   .finding { position: absolute; transform: translateY(-50%); font-size: 11.5px; font-weight: 400; color: var(--ink); white-space: nowrap; max-width: 270px; overflow: hidden; text-overflow: ellipsis; }
   .finding b { font-weight: 600; }
-  .finding.warning b { color: var(--issues); }
-  .finding.critical b { color: var(--error); }
+  /* the three severities mow triages by (skill §2b.3): critical → warning → suggestion.
+     Board letter and legend letter share one rule each, so the two can't drift apart. */
+  .finding.critical b,   .legend .sev.critical   { color: var(--error); }
+  .finding.warning b,    .legend .sev.warning    { color: var(--issues); }
+  .finding.suggestion b, .legend .sev.suggestion { color: var(--faint); }
   .finding .tid { color: var(--ink); font-weight: 400; }
+  /* hover shows the whole line — the plate is drawn with spread shadow so nothing shifts */
+  .finding:hover {
+    max-width: none; overflow: visible; z-index: 5;
+    background: var(--surface); border-radius: 2px;
+    box-shadow: 0 0 0 6px var(--surface), 0 0 0 7px var(--line);
+  }
 
   /* ---------- legend / empty ---------- */
   .legend {
@@ -322,6 +331,8 @@
   }
   .legend .key { display: inline-flex; align-items: center; gap: 7px; }
   .legend .sw { width: 11px; height: 11px; border-radius: 50%; }
+  /* review-finding letters — same glyph and weight the board uses, so they read as a set */
+  .legend .sev { font-size: 11.5px; font-weight: 600; width: 11px; text-align: center; }
   .legend .sw.shine {
     position: relative;
     background: radial-gradient(circle at 50% 42%, var(--running-core), var(--running));
@@ -441,7 +452,7 @@ const ICONS_V1 = {
       <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" stroke-width="2.08" stroke-dasharray="2.1 4.31"/>
     </g>
     <g transform="translate(12 12) scale(0.85) translate(-12 -12)">
-    <path d="M9.2 19.3 L12.44 12.65" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <path d="M9.2 19.3 L13.19 11.12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
     <path d="M14.45 5.61 L15.23 7.73 L17.35 8.51 L15.23 9.29 L14.45 11.41 L13.67 9.29 L11.55 8.51 L13.67 7.73 z" fill="none" stroke="currentColor" stroke-width="0.85" stroke-linejoin="round"/>
     <path d="M11.6 4.35 L11.9 5.1 L12.65 5.4 L11.9 5.7 L11.6 6.45 L11.3 5.7 L10.55 5.4 L11.3 5.1 z"/>
     <path d="M17.3 10.35 L17.57 11.03 L18.25 11.3 L17.57 11.57 L17.3 12.25 L17.03 11.57 L16.35 11.3 L17.03 11.03 z"/>
@@ -739,7 +750,6 @@ function boardMarkup(data) {
     p.stageX = p.stages.map((_, s) => x + HUB_GAP + s * STAGE_W);
     const lastX = p.stageX.length ? p.stageX[p.stageX.length - 1] : x;
     x = lastX + STAGE_W + WAVE_GAP;                 /* next hub */
-    p.gateX = (lastX + x) / 2;                      /* gate sits midway between the two */
     /* place every lane: column = stage, stack centred on the baseline */
     p.stages.forEach((stage, s) => {
       let yRel = -p.stageH[s] / 2;
@@ -780,8 +790,8 @@ function boardMarkup(data) {
       bot = Math.max(bot, l._y + laneExtras(l));
       right = Math.max(right, l._x + laneContentW(l));
     });
-    if (p.w.gate) right = Math.max(right, p.gateX + R.gate + 26);
     const x0 = p.hubX - R.hub - 24, y0 = top - HEADER_H, x1 = right + 26, y1 = bot + 24;
+    p.x0 = x0; p.x1 = x1;                           /* plate edges — the gate is placed off them */
     p.hubY = y0 + 26 + R.hub;                       /* hub sits in the plate's top-left corner */
     panels += `<rect class="wave-panel s-${st(p.w.status)}" x="${x0}" y="${y0}"
       width="${x1 - x0}" height="${y1 - y0}" rx="34"/>`;
@@ -789,6 +799,15 @@ function boardMarkup(data) {
       axisLabels += `<div class="wave-tag s-${st(p.w.status)}" style="left:${x1 - 24}px;top:${y0 + 20}px">wave ${esc(p.w.wave)}</div>`;
     }
     maxBottom = Math.max(maxBottom, y1);
+  });
+
+  /* the gate belongs to neither wave — it sits in the corridor between two plates,
+     on the straight run of the arrow that hands the run forward. The last wave's
+     gate clears the right edge of its plate the same way. */
+  plan.forEach((p, i) => {
+    const right = p.x1 == null ? p.hubX + R.hub : p.x1;
+    const next = plan[i + 1];
+    p.gateX = next && next.x0 != null ? (right + next.x0) / 2 : right + 26 + R.gate;
   });
 
   /* the start signal — one lamp, green: the light that drops to start the race */
@@ -840,8 +859,10 @@ function boardMarkup(data) {
         /* how long this subagent ran, and what it spent — ticks live while running */
         const aTok = parseTokens(a.tokens);
         const aStat = statsLine(a.started, a.ended, aTok, a.status);
+        /* an em dash where the writer never stamped the agent — same convention waves
+           and lanes already use, so "not recorded" can't read as "nothing to report" */
         nodes += rowNode(branchX, cy, R.agent, a.status, a.name, "agent", a.detail, false,
-          aStat === "—" ? null : { text: aStat, started: a.started, ended: a.ended, tokens: aTok, status: a.status });
+          { text: aStat, started: a.started, ended: a.ended, tokens: aTok, status: a.status });
         const parentY = cy;
         cy += 36;
         const subs = [...(a.skills || []).map((s) => [s, "skill", R.skill]),
@@ -862,8 +883,8 @@ function boardMarkup(data) {
       /* findings — taskman rows */
       (lane.findings || []).forEach((f) => {
         const sev = esc(f.severity || "warning");
-        nodes += `<div class="finding ${sev}" style="left:${branchX - 12}px;top:${cy}px" title="${esc(f.title || "")}">
-          <b>${sev === "critical" ? "C" : "W"}</b> <span class="tid">${esc(f.task || "")}</span> ${esc(f.title || "")}</div>`;
+        nodes += `<div class="finding ${sev}" style="left:${branchX - 12}px;top:${cy}px" title="${esc(`${sev} ${f.task ? f.task + " " : ""}${f.title || ""}`)}">
+          <b>${{ critical: "C", suggestion: "S" }[sev] || "W"}</b> <span class="tid">${esc(f.task || "")}</span> ${esc(f.title || "")}</div>`;
         cy += 22;
       });
 
@@ -972,6 +993,9 @@ function legend(data) {
       <span class="key"><span class="sw shine"></span>in progress</span>
       <span class="key"><span class="sw" style="background:var(--issues)"></span>passed with issues</span>
       <span class="key"><span class="sw" style="background:var(--error)"></span>failed</span>
+      <span class="key"><b class="sev critical">C</b>critical finding</span>
+      <span class="key"><b class="sev warning">W</b>warning</span>
+      <span class="key"><b class="sev suggestion">S</b>suggestion</span>
       <span class="key">‖ lanes forked off one hub run together</span>
       <span class="key">→ a lane that waits, then rejoins at the gate</span>
       <span class="key"><span class="node file small" style="position:relative;width:16px;height:16px"><span class="disc" style="--node-fill:var(--done)">${fileIcon("a.py")}</span></span>artifact / file</span>

@@ -20,6 +20,12 @@
       "cursor": { "event": "sessionEnd", "failClosed": false }
     },
     {
+      "id": "stamp-tracker",
+      "script": "stamp-tracker.sh",
+      "claude": { "event": "PostToolUse", "matcher": "Write|Edit" },
+      "cursor": { "event": "afterFileEdit", "failClosed": false }
+    },
+    {
       "id": "ai-sync",
       "command": "python3 BIN/ai-sync --from-hook",
       "claude": { "event": "SessionEnd" },

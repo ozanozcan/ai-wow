@@ -27,7 +27,12 @@ def main() -> None:
 
     tool_input = payload.get("tool_input") or {}
     tool_response = payload.get("tool_response") or {}
-    path = tool_response.get("filePath") or tool_input.get("file_path") or ""
+    path = (
+        tool_response.get("filePath")            # Claude PostToolUse
+        or tool_input.get("file_path")
+        or payload.get("file_path")              # Cursor afterFileEdit
+        or ""
+    )
     if not path or os.path.basename(path) != "tracker.json":
         return
 
