@@ -388,7 +388,9 @@ def _cmd_for(defn: dict, tool: str) -> str:
 def render_claude_hooks(defs: list[dict]) -> dict:
     groups: dict[tuple, list] = {}
     for d in defs:
-        c = d["claude"]
+        c = d.get("claude")
+        if not c:
+            continue                # tool-specific hook — no Claude event for it
         key = (c["event"], c.get("matcher"))
         groups.setdefault(key, []).append({"type": "command", "command": _cmd_for(d, "claude")})
     out: dict[str, list] = {}
@@ -404,7 +406,9 @@ def render_claude_hooks(defs: list[dict]) -> dict:
 def render_cursor_hooks(defs: list[dict]) -> dict:
     out: dict[str, list] = {}
     for d in defs:
-        cu = d["cursor"]
+        cu = d.get("cursor")
+        if not cu:
+            continue                # tool-specific hook — no Cursor event for it
         entry: dict = {"command": _cmd_for(d, "cursor")}
         if "matcher" in cu:
             entry["matcher"] = cu["matcher"]

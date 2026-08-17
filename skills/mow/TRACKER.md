@@ -235,3 +235,14 @@ Every write also bumps `updated` (ISO 8601) — though a `PostToolUse` hook
 yourself anyway when you can; the hook is the safety net, not the contract. Full-file
 Write is fine — the file is small; do not stream partial JSON (the page tolerates
 one bad poll but not many).
+
+The same hook also stamps **agent `started` / `ended`** from the Task tool call
+itself: `PreToolUse` records the spawn in `dispatch/.agent-times.json`,
+`PostToolUse` pairs the return with it and merges the span into the matching
+agent. A span with no agent entry to land on yet waits in that ledger and is
+retried on every later tracker write, so the two can happen in any order. It
+matches on the lane whose `brief` the Task prompt names, falling back to the
+first unstamped agent whose `name` starts with the `subagent_type` — a heuristic,
+unlike the `updated` stamp, so it only ever fills a field you left empty. Keep
+stamping agents yourself: your value always wins, and the hook is Claude-only
+(Cursor has no Task event). The ledger is disposable run state; delete it freely.
