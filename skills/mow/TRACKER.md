@@ -58,7 +58,7 @@ The page takes three optional query params, all switchable live from the header:
 
 | Param | Effect |
 |---|---|
-| `?view=compact` | wave plates and lane letters only — hubs read `W1`, `W2`, no wave button, no detail tree. The glance view for "where is this run". |
+| `?view=compact` | the glance view for "where is this run": hubs read `W1`, `W2`, lanes keep their letters, and each lane hangs the todo it is on (`#8836 5v5 flag formation spine`) — no wave button, no detail tree. The chat board's default. |
 | `?panels=tint` | colour the whole plate by wave status instead of the wave label button |
 | `?runs=all` or `?runs=stemA,stemB` | **several runs on one page.** Serve `docs/plans/` instead of one dispatch folder; the page finds each `<stem>/dispatch/tracker.json`, sorts running first, and stacks them. This is how you watch two `/mow go` chats at once in the same repo. |
 
@@ -70,6 +70,48 @@ python3 -m http.server $PORT -d docs/plans
 
 `tracker.html` must sit in the directory being served, so multi-run needs a copy
 at `docs/plans/tracker.html` as well as the per-run one.
+
+### The chat board
+
+The board in chat is the board in the browser — an `iframe` at
+`http://localhost:$PORT/tracker.html?view=compact`, not a card assembled by hand.
+Two surfaces, one renderer, so they cannot disagree. Post it at wave boundaries
+(fan-out, gate verdict, close-out), never per write. Runtimes without a widget
+tool — terminal Claude Code, Cursor — skip it; the URL line already gave them the
+board, and `/mow go` opens it in a real browser there.
+
+Compact is the chat default because it answers "where is this run" without the
+detail tree: hub per wave, lane letters, and under each lane the todo it is on
+(`#8836 5v5 flag formation spine`), with the gate's status word beneath its node
+and the full verdict on hover.
+
+One snapshot survives the run: at close-out, `widget.py <tracker.json>` prints
+the same renderer with the font stripped and the board inlined, so the transcript
+keeps a readable record after `pkill` takes the server down. It costs ~15k
+tokens — once, deliberately, never per wave.
+
+### Active time, and the activity trail
+
+Durations on the board are **work, not wall clock**. A run left overnight used to
+report 12h 51m; the number was honest elapsed time and useless. Two signals
+replace it, both written by the hook, neither by you:
+
+- **agent spans** — every subagent's `started`/`ended`, taken from the bounds of
+  its own tool call. Overlapping lanes count once.
+- **`dispatch/.activity`** — an epoch-seconds sample per tool call, at most one
+  per 30s. A subagent's own tool calls fire the hook under the parent session, so
+  the trail is dense while anything is running and empty while nobody is.
+
+Active time is the **intersection**: time an agent was open *and* someone was
+working. That matters because the idle hides *inside* spans — one real HLC lane
+held a single agent open for 12.7h across a night while every other agent that
+day ran 4–13 minutes. Intersecting cut a 12h span to the 1h 20m actually worked.
+Gaps longer than 5 minutes with no tool call at all count as idle. Hover any
+duration for `active · elapsed · idle`.
+
+Both files are disposable. Delete `.activity` and durations fall back to raw
+spans; delete both and they fall back to wall clock, which is what boards written
+before the hook still show.
 
 ### The board is only as live as your writes
 
@@ -220,14 +262,14 @@ Field notes:
 | Event | Write |
 |---|---|
 | go §1 load done | full skeleton from INDEX: every wave/lane/todo `pending`, `run_status: running`, agents seeded empty; set run `started`; stamp each wave's `parallelism` from the INDEX map |
-| wave fan-out | wave + its lanes → `running`; set wave `started` (a real timestamp — `run.started` too, never a placeholder date); append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
+| wave fan-out | **post the chat board** (see above) after the write; wave + its lanes → `running`; set wave `started` (a real timestamp — `run.started` too, never a placeholder date); append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
 | lane reports done (write **before** verifying its claims) | lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
 | wave lanes all terminal | set wave `ended`; roll up `tokens` from lanes/agents if the runtime gave them |
 | review gate starts | `gate.status: running`; append reviewer agents |
-| gate verdict | clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |
+| gate verdict | **post the chat board** after the write; clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |
 | fix lane spawned | append it like any agent; re-review updates gate again |
 | operator asks to toggle pulse | set `pulse: true` or `false` immediately (chat: "pulse off" / "pulse on") |
-| Integrate, before close-out | **reconcile** — a `general-purpose` subagent diffs this file against every lane's `## Verification`, the gate verdicts, and the filed findings, and reports discrepancies only (see go §3). Apply its list, then set `run_status: shipped` |
+| Integrate, before close-out | **reconcile** — a `general-purpose` subagent diffs this file against every lane's `## Verification`, the gate verdicts, and the filed findings, and reports discrepancies only (see go §3). Apply its list, then set `run_status: shipped`; **post the close-out snapshot** (`widget.py`) — the iframe goes blank when the server stops, so this is the only board the transcript keeps |
 
 Every write also bumps `updated` (ISO 8601) — though a `PostToolUse` hook
 (`hooks/stamp-tracker.py`) now stamps it for you on any Write/Edit of a

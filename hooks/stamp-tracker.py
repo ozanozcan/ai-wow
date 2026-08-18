@@ -41,6 +41,12 @@ import os
 import sys
 
 LEDGER = ".agent-times.json"
+ACTIVITY = ".activity"
+SAMPLE_EVERY = 30           # seconds between activity samples — cheap, still dense
+
+# The subagent tool is `Agent` here and `Task` in other runtimes/versions. Guarding
+# on one name meant the span stamping never fired at all; accept both.
+AGENT_TOOLS = ("Agent", "Task")
 
 
 def _now() -> str:
@@ -247,12 +253,58 @@ def on_file_write(payload) -> None:
         _write_json(path, data)
 
 
+# ---------------------------------------------------------------- activity trail
+#
+# A Task's wall clock is not work: a background agent left open while the operator
+# sleeps reports twelve hours, which is the number active time set out to kill. The
+# only honest evidence of work is tool calls, and a subagent's tool calls fire this
+# same hook under the parent's session id (verified) — so sampling every call gives
+# a trail that is dense exactly while something is running and empty while nobody
+# is. The page intersects agent spans with it, so an overnight gap inside one span
+# stops counting.
+#
+# Kept cheap because this now runs on every tool call in every session: a glob, and
+# for 29 seconds out of 30 a single stat that returns immediately.
+
+def _live_dispatch(cwd):
+    """Newest dispatch dir holding a board, or None. Glob only — no reads."""
+    hits = glob.glob(os.path.join(cwd or ".", "docs/plans/*/dispatch/tracker.json"))
+    hits += glob.glob(os.path.join(cwd or ".", "dispatch/tracker.json"))
+    if not hits:
+        return None
+    try:
+        return os.path.dirname(max(hits, key=os.path.getmtime))
+    except OSError:
+        return None
+
+
+def note_activity(cwd) -> None:
+    dispatch = _live_dispatch(cwd)
+    if not dispatch:
+        return
+    trail = os.path.join(dispatch, ACTIVITY)
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    try:
+        if now - os.path.getmtime(trail) < SAMPLE_EVERY:
+            return              # already sampled this window — the cheap path
+    except OSError:
+        board = _read_json(os.path.join(dispatch, "tracker.json"))
+        if not _is_board(board) or board.get("run_status") != "running":
+            return              # no trail for a finished run's leftover folder
+    try:
+        with open(trail, "a", encoding="utf-8") as fh:
+            fh.write(f"{int(now)}\n")
+    except Exception:
+        return
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except Exception:
         return
-    if payload.get("tool_name") == "Task":
+    note_activity(payload.get("cwd") or os.getcwd())
+    if payload.get("tool_name") in AGENT_TOOLS:
         on_task(payload, payload.get("hook_event_name") or "PostToolUse")
     else:
         on_file_write(payload)

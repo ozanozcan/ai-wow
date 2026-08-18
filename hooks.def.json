@@ -22,14 +22,14 @@
     {
       "id": "stamp-tracker",
       "script": "stamp-tracker.sh",
-      "claude": { "event": "PostToolUse", "matcher": "Write|Edit|Task" },
+      "claude": { "event": "PostToolUse" },
       "cursor": { "event": "afterFileEdit", "failClosed": false }
     },
     {
       "_comment": "same script, spawn half of the agent-span stamp; Cursor has no Task event",
       "id": "stamp-tracker-spawn",
       "script": "stamp-tracker.sh",
-      "claude": { "event": "PreToolUse", "matcher": "Task" }
+      "claude": { "event": "PreToolUse", "matcher": "Agent|Task" }
     },
     {
       "id": "ai-sync",

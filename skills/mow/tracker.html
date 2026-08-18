@@ -282,6 +282,13 @@
     display: block; margin-top: 2px;
     font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums;
   }
+  /* compact carries what the glance view is for — which todo a lane is on, and
+     how its wave's gate ruled. Clamped so a long title cannot widen the plate;
+     the node's title attribute still holds the whole string. */
+  .node-label.terse { max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
+  .node-label.terse .tid { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .node-label.verdict { max-width: 190px; overflow: hidden; text-overflow: ellipsis;
+    font-size: 11px; color: var(--faint); }
   .orch .disc { background: var(--surface); color: var(--ink); border: 1.5px solid var(--edge); }
   .orch .node-label { top: auto; bottom: 100%; margin: 0 0 8px; }
 
@@ -367,6 +374,7 @@
 
 <script>
 const POLL_MS = 2000;
+const ACTIVITY_FILE = ".activity";
 const app = document.getElementById("app");
 let lastOk = null;
 let lastPayload = "";
@@ -587,8 +595,156 @@ function durationMs(started, ended, status) {
   return Math.max(0, t1 - t0);
 }
 
-function statsLine(started, ended, tokens, status) {
-  const d = fmtDur(durationMs(started, ended, status));
+/* ---------- active time ----------
+   Wall clock answers "how long ago did this start", which is not the question
+   the board is asked. A run left overnight came back reporting 12h 51m of work.
+   Active time answers it from the one signal that only moves while work happens:
+   the per-subagent spans the tracker hook stamps off each Task call. Overlapping
+   lanes count once — two agents sharing the same 20 minutes is 20 minutes of
+   work, not 40. Idle is whatever wall clock has left over, and it is never
+   guessed at: with no agent stamped anywhere (an old board, or a run whose hook
+   never fired) there is nothing to union, so wall clock stands in unchanged
+   rather than reporting a confident zero. */
+
+/* every agent under a run, a wave, or a single lane */
+function agentsUnder(scope) {
+  if (!scope || typeof scope !== "object") return [];
+  const lanes = scope.waves ? (scope.waves || []).flatMap((w) => (w && w.lanes) || [])
+    : scope.lanes ? scope.lanes || []
+      : [scope];
+  return lanes.flatMap((l) => ((l && l.agents) || []).filter((a) => a && typeof a === "object"));
+}
+
+function spanOf(agent, now) {
+  const t0 = Date.parse((agent && agent.started) || "");
+  if (!Number.isFinite(t0)) return null;
+  const t1 = agent.ended ? Date.parse(agent.ended)
+    : (st(agent.status) === "running" ? now : NaN);   /* a live agent is working right now */
+  return Number.isFinite(t1) && t1 >= t0 ? [t0, t1] : null;
+}
+
+/* An open span is evidence only while the board is being written. A run whose
+   orchestrator stopped writing at 01:31 and was found at 13:14 has one agent
+   still saying `running`, and letting it tick to now rebuilds the very number
+   this replaced — 19h of "active" work nobody did. So an open span reaches at
+   most one staleness window past the last write: while the board is live that
+   ceiling is in the future and changes nothing, and the moment the writer stops
+   the clock stops with it. Set on every render, read by the 1s ticker. */
+let SPAN_CEIL = Infinity;
+
+function spanCeiling(data) {
+  const seen = Date.parse((data && data.updated) || "");
+  return Number.isFinite(seen) ? seen + STALE_AFTER_MS : Infinity;
+}
+
+function spanNow(now) {
+  return Math.min(now == null ? Date.now() : now, SPAN_CEIL);
+}
+
+/* ---------- the activity trail ----------
+   A span is when an agent was open; the trail is when anyone was working. They
+   are not the same: a background agent left open overnight reported 12.7h on a
+   real HLC lane while every other agent that day ran 4–13 minutes. The hook
+   samples every tool call — including a subagent's own, which fire under the
+   parent session — so the trail is dense while work happens and empty while it
+   does not. Intersecting the two throws the night out of the middle of the span.
+   No trail (older runs, or a run whose hook never fired) → no intersection, and
+   spans stand as they did. */
+let ACTIVITY = [];              /* merged [start, end] windows, epoch ms */
+
+const IDLE_GAP_MS = 300000;     /* 5 min with no tool call at all = idle */
+const SAMPLE_MS = 30000;        /* the hook's sampling interval — a sample covers it */
+
+function activityWindows(samples) {
+  /* > 0 drops the trailing blank line, which would otherwise coerce to a 1970 sample */
+  const s = (samples || []).filter((t) => Number.isFinite(t) && t > 0).sort((a, b) => a - b);
+  const out = [];
+  for (const t of s) {
+    const last = out[out.length - 1];
+    if (last && t - last[1] <= IDLE_GAP_MS) last[1] = t + SAMPLE_MS;
+    else out.push([t, t + SAMPLE_MS]);
+  }
+  return out;
+}
+
+/* |A ∩ B| for two sorted, already-merged interval sets */
+function intersectMs(a, b) {
+  let i = 0, j = 0, total = 0;
+  while (i < a.length && j < b.length) {
+    const lo = Math.max(a[i][0], b[j][0]), hi = Math.min(a[i][1], b[j][1]);
+    if (hi > lo) total += hi - lo;
+    if (a[i][1] < b[j][1]) i++; else j++;
+  }
+  return total;
+}
+
+function mergeSpans(spans) {
+  const s = (spans || []).slice().sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const sp of s) {
+    const last = out[out.length - 1];
+    if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]);
+    else out.push(sp.slice());
+  }
+  return out;
+}
+
+function spansUnder(scope, now) {
+  return agentsUnder(scope).map((a) => spanOf(a, spanNow(now))).filter(Boolean);
+}
+
+function unionMs(spans) {
+  if (!spans || !spans.length) return null;
+  const merged = mergeSpans(spans);
+  if (ACTIVITY.length) return intersectMs(merged, ACTIVITY);     /* spans ∩ work */
+  return merged.reduce((n, s) => n + (s[1] - s[0]), 0);
+}
+
+/* the ticker re-reads spans off the DOM, so they travel as `t0,t1|t0,` epoch ms —
+   an empty end means still running, and resolves against now on every tick */
+function spansAttr(scope) {
+  const spans = agentsUnder(scope).map((a) => {
+    const t0 = Date.parse(a.started || "");
+    if (!Number.isFinite(t0)) return null;
+    if (a.ended) {
+      const t1 = Date.parse(a.ended);
+      return Number.isFinite(t1) && t1 >= t0 ? `${t0},${t1}` : null;
+    }
+    return st(a.status) === "running" ? `${t0},` : null;
+  }).filter(Boolean);
+  /* the run's ceiling rides along, so multi-run pages cap each board by its own
+     last write rather than by whichever run was rendered last */
+  return spans.length ? `${Number.isFinite(SPAN_CEIL) ? SPAN_CEIL : ""}|${spans.join("|")}` : "";
+}
+
+function parseSpans(attr, now) {
+  const parts = String(attr || "").split("|");
+  const ceil = +parts.shift();
+  const cap = Math.min(now, Number.isFinite(ceil) ? ceil : Infinity);
+  return parts.filter(Boolean).map((part) => {
+    const [a, b] = part.split(",");
+    const t0 = +a, t1 = b === "" || b == null ? cap : +b;
+    return Number.isFinite(t0) && Number.isFinite(t1) && t1 >= t0 ? [t0, t1] : null;
+  }).filter(Boolean);
+}
+
+/* hover carries what the terse line drops — the wall clock it replaced, and the
+   idle it hides. Silent when nothing is stamped: then the line *is* wall clock. */
+function statsTitle(started, ended, status, spans) {
+  const act = unionMs(spans);
+  if (act == null) return "";
+  const parts = [`${fmtDur(act)} active`];
+  const wall = durationMs(started, ended, status);
+  if (wall != null) {
+    parts.push(`${fmtDur(wall)} elapsed`);
+    if (wall - act > 60000) parts.push(`${fmtDur(wall - act)} idle`);
+  }
+  return parts.join(" · ");
+}
+
+function statsLine(started, ended, tokens, status, spans) {
+  const act = unionMs(spans);
+  const d = fmtDur(act != null ? act : durationMs(started, ended, status));
   const tok = fmtTokens(typeof tokens === "number" || tokens == null ? tokens : parseTokens(tokens));
   if (d && tok) return `${d} · ${tok}`;
   if (d) return d;
@@ -610,24 +766,30 @@ function laneFormula(w) {
     .join(" → ");
 }
 
+/* `label` is plain text, or {html, cls} when the caller needs its own markup
+   inside the label (compact's id + title) — the html form is escaped by its
+   builder, never by a caller passing raw board strings */
 function circleNode(x, y, r, status, cls, label, title, letter, sub) {
   const s = st(status);
   const d = r * 2;
   const shine = s === "running";
+  const labelHtml = !label ? "" : typeof label === "string" ? esc(label) : label.html;
+  const labelCls = label && label.cls ? ` ${label.cls}` : "";
   /* a string sub is static text; an object sub is a live stats line the ticker owns */
   const subHtml = !sub ? ""
     : typeof sub === "string"
       ? `<span class="sub">${esc(sub)}</span>`
       : sub.text
         ? `<span class="sub stats" data-started="${esc(sub.started || "")}" data-ended="${esc(sub.ended || "")}"
-             data-tokens="${sub.tokens == null ? "" : sub.tokens}" data-status="${esc(st(sub.status))}">${esc(sub.text)}</span>`
+             data-tokens="${sub.tokens == null ? "" : sub.tokens}" data-status="${esc(st(sub.status))}"
+             data-spans="${esc(sub.spans || "")}" title="${esc(sub.title || "")}">${esc(sub.text)}</span>`
         : "";
   return `<div class="node ${cls} s-${s}${r <= R.agent ? " small" : ""}"
     style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;${letter ? `font-size:${Math.round(r * (String(letter).length > 1 ? 0.78 : 1.12))}px;` : ""}"
     title="${esc(title || "")}">
     ${shine ? '<div class="bloom"></div><div class="ringx"></div>' : ""}
     <div class="disc">${esc(letter || "")}</div>
-    ${label ? `<div class="node-label">${esc(label)}${subHtml}</div>` : ""}
+    ${label ? `<div class="node-label${labelCls}">${labelHtml}${subHtml}</div>` : ""}
   </div>`;
 }
 
@@ -661,14 +823,29 @@ function fileNode(x, y, status, name, title) {
 
 function laneStats(lane) {
   const tok = laneTokens(lane);
-  const text = statsLine(lane.started, lane.ended, tok, lane.status);
+  const spans = spansUnder(lane);
+  const text = statsLine(lane.started, lane.ended, tok, lane.status, spans);
   return text === "—" ? null
-    : { text, started: lane.started, ended: lane.ended, tokens: tok, status: lane.status };
+    : { text, started: lane.started, ended: lane.ended, tokens: tok, status: lane.status,
+        spans: spansAttr(lane), title: statsTitle(lane.started, lane.ended, lane.status, spans) };
+}
+
+/* compact's answer to "where is this run": the todo each lane is on, id first.
+   A bare letter tells you a lane exists; it does not tell you what it is doing,
+   which is the whole reason the glance view gets looked at. */
+function laneTerseLabel(lane) {
+  const todos = lane.todos || [];
+  const first = todos[0] || {};
+  const id = first.id ? String(first.id) : "";
+  const title = first.title || lane.brief || "";
+  if (!id && !title) return null;
+  const more = todos.length > 1 ? ` +${todos.length - 1}` : "";
+  return { cls: "terse", html: `${id ? `<span class="tid">${esc(id)}</span> ` : ""}${esc(title + more)}` };
 }
 
 /* height a lane occupies below its circle centre — drives the flow layout */
 function laneExtras(lane) {
-  if (VIEW === "compact") return R.lane + 10;   /* letters only — no detail hangs below */
+  if (VIEW === "compact") return R.lane + (laneTerseLabel(lane) ? 28 : 10);
   let h = R.lane + (laneStats(lane) ? 54 : 40);     /* circle + meta (+ stats) */
   if ((lane.todos || []).length) h += 30;
   for (const a of (lane.agents || [])) {
@@ -681,7 +858,7 @@ function laneExtras(lane) {
 
 /* how far a lane's detail block reaches right of its circle */
 function laneContentW(lane) {
-  if (VIEW === "compact") return R.lane + 6;
+  if (VIEW === "compact") return laneTerseLabel(lane) ? 96 : R.lane + 6;   /* label is centred, so half of it clears the circle */
   const hasRows = ((lane.agents || []).length + (lane.findings || []).length + (lane.todos || []).length) > 0;
   return hasRows ? 300 : 62;
 }
@@ -833,7 +1010,7 @@ function boardMarkup(data) {
       const lStat = laneStats(lane);
       const laneTitle = `${lane.lane} — ${meta}${lStat ? " · " + lStat.text : ""}${lane.brief ? " · " + lane.brief : ""}`;
       nodes += compact
-        ? circleNode(cx, y, R.lane, lane.status, "", "", laneTitle, lane.lane)
+        ? circleNode(cx, y, R.lane, lane.status, "", laneTerseLabel(lane), laneTitle, lane.lane)
         : circleNode(cx, y, R.lane, lane.status, "", meta, `${lane.brief || ""}`, lane.lane, lStat);
       if (compact) return;                        /* letters only — skip the detail tree */
 
@@ -931,7 +1108,9 @@ function boardMarkup(data) {
       <div class="mode${par ? "" : " is-seq"}"><span class="sym">${par ? "‖" : "→"}</span>${par ? "parallel" : "sequential"}</div>
       <div class="formula">${esc(laneFormula(w) || "—")}</div>
       <div class="head-stats stats" data-started="${esc(w.started || "")}" data-ended="${esc(w.ended || "")}"
-        data-tokens="${tok == null ? "" : tok}" data-status="${esc(st(w.status))}">${esc(statsLine(w.started, w.ended, tok, w.status))}</div>
+        data-tokens="${tok == null ? "" : tok}" data-status="${esc(st(w.status))}"
+        data-spans="${esc(spansAttr(w))}" title="${esc(statsTitle(w.started, w.ended, w.status, spansUnder(w)))}"
+        >${esc(statsLine(w.started, w.ended, tok, w.status, spansUnder(w)))}</div>
     </div>`;
   });
 
@@ -961,13 +1140,20 @@ function runHead(data, heading) {
   const runTok = (data.waves || []).reduce((n, w) => n + (waveTokens(w) || 0), 0);
   const anyTok = (data.waves || []).some((w) => waveTokens(w) != null);
   const running = data.run_status === "running";
-  const runDur = fmtDur(durationMs(data.started, running ? null : data.updated, running ? "running" : "done"));
+  const runEnd = running ? null : data.updated, runStatus = running ? "running" : "done";
+  /* the headline is where the overnight number did its damage, so it is the one
+     place the word is spelled out — a bare "41m" beside a 1:02 AM start invites
+     exactly the arithmetic that produced 12h 51m */
+  const runSpans = spansUnder(data), runActive = unionMs(runSpans);
+  const runDur = runActive != null ? `${fmtDur(runActive)} active`
+    : fmtDur(durationMs(data.started, runEnd, runStatus));
   const runStats = [runDur, anyTok ? fmtTokens(runTok) : null].filter(Boolean).join(" · ");
+  const runTitle = statsTitle(data.started, runEnd, runStatus, runSpans);
   return `<${heading} class="run-title">
       <span class="dot s-${st(running ? "running" : data.run_status === "shipped" ? "done" : data.run_status)}"></span>
       ${esc(data.title || data.stem || "mow run")}
       <span class="stem">${esc(data.stem || "")}</span>
-      <span class="run-stats">${updated ? updated.toLocaleTimeString() : ""}${runStats ? " · " + esc(runStats) : ""}</span>
+      <span class="run-stats" title="${esc(runTitle)}">${updated ? updated.toLocaleTimeString() : ""}${runStats ? " · " + esc(runStats) : ""}</span>
     </${heading}>`;
 }
 
@@ -1008,6 +1194,7 @@ function legend(data) {
 /* one run — the normal tracker */
 function render(data) {
   applyPulse(data);
+  SPAN_CEIL = spanCeiling(data);
   app.innerHTML = `<header class="top">${runHead(data, "h1")}${controls(data)}</header>`
     + boardMarkup(data) + legend(data);
   refreshDurations();
@@ -1022,7 +1209,11 @@ function renderMulti(runs) {
       <span class="stem">${runs.length} run${runs.length === 1 ? "" : "s"}${live ? ` · ${live} live` : ""}</span>
       ${controls(runs.length ? runs[0].data : {})}
     </header>`
-    + runs.map((r) => `<section class="run">${runHead(r.data, "h2")}${boardMarkup(r.data)}</section>`).join("")
+    + runs.map((r) => {
+      SPAN_CEIL = spanCeiling(r.data);          /* each run capped by its own last write */
+      ACTIVITY = r.activity || [];              /* and measured against its own trail */
+      return `<section class="run">${runHead(r.data, "h2")}${boardMarkup(r.data)}</section>`;
+    }).join("")
     + legend(runs.length ? runs[0].data : {});
   refreshDurations();
 }
@@ -1068,8 +1259,24 @@ function refreshDurations() {
     const ended = el.getAttribute("data-ended") || "";
     const raw = el.getAttribute("data-tokens");
     const tokens = raw === "" || raw == null ? null : +raw;
-    el.textContent = statsLine(started, ended, Number.isFinite(tokens) ? tokens : null, el.getAttribute("data-status"));
+    const status = el.getAttribute("data-status");
+    /* open spans resolve against this tick's now, so active time climbs only
+       while an agent is actually running — and holds the moment the last one ends */
+    const spans = parseSpans(el.getAttribute("data-spans"), Date.now());
+    el.textContent = statsLine(started, ended, Number.isFinite(tokens) ? tokens : null, status, spans);
+    const title = statsTitle(started, ended, status, spans);
+    if (title) el.title = title;
   });
+}
+
+/* the trail sits beside the board in the same served folder; absent is normal */
+async function fetchActivity(dir) {
+  try {
+    const r = await fetch(`${dir}${ACTIVITY_FILE}`, { cache: "no-store" });
+    if (!r.ok) return [];
+    const txt = await r.text();
+    return activityWindows(txt.split("\n").map((n) => +n * 1000));
+  } catch { return []; }
 }
 
 async function fetchRun(url) {
@@ -1095,7 +1302,11 @@ async function pollMulti() {
   const runs = [];
   for (const stem of named) {
     try {
-      runs.push({ stem, data: await fetchRun(`${stem}/dispatch/tracker.json`) });
+      runs.push({
+        stem,
+        data: await fetchRun(`${stem}/dispatch/tracker.json`),
+        activity: await fetchActivity(`${stem}/dispatch/`),
+      });
     } catch { /* not a mow run, or its tracker isn't written yet */ }
   }
   if (!runs.length) { renderEmpty("No runs found. Serve docs/plans/ and start a /mow go."); return; }
@@ -1117,6 +1328,7 @@ async function poll() {
     const res = await fetch("tracker.json", { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
+    ACTIVITY = await fetchActivity("");
     lastOk = Date.now();
     lastData = data;
     applyPulse(data);
