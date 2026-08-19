@@ -5,7 +5,7 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:13:14Z",
+  "updated": "2026-08-19T20:15:18Z",
   "waves": [
     {
       "wave": 1,
@@ -141,10 +141,11 @@
     },
     {
       "wave": 2,
-      "status": "running",
+      "status": "done",
       "parallelism": "sequential",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "Foreground lane; acceptance suite run inline by the orchestrator. Counts agree with ls agents/*.md = 8; zero django-reviewer refs; out-of-scope Django sites intact; ai-sync exit 0."
       },
       "lanes": [
         {
@@ -152,29 +153,58 @@
           "brief": "03-docs-reference-sweep.md",
           "role": "code-edit",
           "afk": false,
-          "status": "running",
+          "status": "done",
           "todos": [
             {
               "id": "03",
               "title": "Docs, routing rows and inventory counts",
-              "status": "running"
+              "status": "done"
             }
           ],
           "agents": [
             {
               "name": "orchestrator (foreground)",
-              "status": "running",
+              "status": "done",
               "started": "2026-08-19T20:13:14Z",
               "detail": "AFK no \u2014 run with the operator watching",
               "skills": [],
-              "tools": [],
-              "artifacts": []
+              "tools": [
+                {
+                  "name": "acceptance grep suite",
+                  "status": "done"
+                },
+                {
+                  "name": "python3 bin/ai-sync status",
+                  "status": "done"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "HOW-TO-USE.agent.md",
+                  "path": "HOW-TO-USE.agent.md"
+                },
+                {
+                  "label": "HOW-TO-USE.human.md",
+                  "path": "HOW-TO-USE.human.md"
+                },
+                {
+                  "label": "README.md",
+                  "path": "README.md"
+                },
+                {
+                  "label": "global/CLAUDE.md",
+                  "path": "global/CLAUDE.md"
+                }
+              ],
+              "ended": "2026-08-19T20:15:18Z"
             }
           ],
-          "started": "2026-08-19T20:13:14Z"
+          "started": "2026-08-19T20:13:14Z",
+          "ended": "2026-08-19T20:15:18Z"
         }
       ],
-      "started": "2026-08-19T20:13:14Z"
+      "started": "2026-08-19T20:13:14Z",
+      "ended": "2026-08-19T20:15:18Z"
     }
   ]
 }

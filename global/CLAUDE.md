@@ -56,7 +56,11 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 | Task smells like | Reach for |
 |---|---|
 | UI — page, screen, template, component, styling, mobile | impeccable skill while building; imprint after; mobile-width screenshot for QA |
-| Python backend diff ready to commit | `backend-reviewer` (auto-detects Django/FastAPI/Flask) or `django-reviewer` for dedicated Django/DRF review |
+| `.py` importing FastAPI / SQLAlchemy, ready to commit | `backend-reviewer` |
+| `.py` importing Streamlit | `streamlit-reviewer` |
+| `.jsx` / `.tsx` React or Next component | `frontend-reviewer` |
+| Templates, `.html`, `.js` with no component framework (vanilla, jQuery, HTMX) | `classic-web-reviewer` |
+| One diff touching both a Python route and its template (HTMX, Jinja) | **both** `backend-reviewer` and `classic-web-reviewer` — dispatch is by file type, so a mixed diff needs both halves reviewed |
 | Non-Python backend diff ready to commit | stack reviewer subagent matching the project |
 | Prompts, tool-calling, agents, RAG, model endpoints | llm-sec-review subagent alongside the stack reviewer |
 | Auth, payments, uploads, secrets, settings | suggest /security-review before commit |
