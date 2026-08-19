@@ -52,8 +52,8 @@ contract, plus the acceptance greps.
 **Hydrated specs:** n/a — every lane's Decisions / Specs cell is `-`, so
 `hydrated-specs.md` is not generated.
 
-**Grill checkpoint:** pending
-**Grill write-back:** pending — fill on `/mow ready` (plan.md + briefs; required before `/mow go`)
+**Grill checkpoint:** done 2026-08-19
+**Grill write-back:** plan.md ✓ (3 decisions locked: tracker `command -v` cascade · file-type reviewer dispatch with named seam · section G trimmed to operational + pointer) · briefs: 01-reviewer-roster.md, 02-mow-tracker-portability.md, 03-docs-reference-sweep.md · taskman: n/a — no root `.taskman.toml` in this repo
 
 ## Conflicts check
 

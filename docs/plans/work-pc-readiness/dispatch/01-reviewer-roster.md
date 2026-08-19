@@ -29,6 +29,13 @@ to every review it will ever run, with no inert stack branches.
   reviewer shares nothing with the classic-web one beyond output format.
 - **`classic-web-reviewer` spans two languages on purpose.** `|safe` in a Jinja template
   and `innerHTML` in a jQuery file are the same XSS finding; one section covers both.
+- **Section G is trimmed, not kept and not deleted** (grilled 2026-08-19; plan.md
+  `## Decisions locked`). Keep the operational items — timeouts, retries, fallback path,
+  token/cost bounds, observability and eval hooks. **Remove** the four that
+  `llm-sec-review` owns: prompt injection / untrusted-input-as-instructions, structured
+  output trust, the founding-principle line, and secret isolation. In their place put a
+  single pointer line naming `llm-sec-review`. The current section G is at
+  [`agents/backend-reviewer.md:123-129`](../../../../agents/backend-reviewer.md).
 - **The HTMX seam is locked** (grilled 2026-08-19; plan.md `## Decisions locked`).
   Dispatch is by **file type**: `.py` → `backend-reviewer`, templates/`.js`/`.html` →
   `classic-web-reviewer`. Both files must name the seam so the overlap is not a blind
@@ -110,6 +117,13 @@ readonly: true
 - GIVEN a Streamlit diff that calls a paid API at module scope with no
   `@st.cache_data`, WHEN `streamlit-reviewer` is applied, THEN the rerun-cost finding is
   reachable, because Streamlit re-executes the whole script on every widget interaction.
+- GIVEN a diff that adds a model call with no timeout and no fallback path, WHEN
+  `backend-reviewer` is applied, THEN the resilience finding is reachable; but GIVEN a
+  diff that concatenates user text into a system prompt, THEN `backend-reviewer` SHALL
+  defer to `llm-sec-review` rather than raising its own prompt-injection finding.
+  Verify: `grep -c "llm-sec-review" agents/backend-reviewer.md` ≥ 1, and
+  `grep -icE "prompt injection|untrusted input" agents/backend-reviewer.md` returns 0
+  outside that pointer line.
 - GIVEN a FastAPI route returning `HTMLResponse(f"<div>{user_input}</div>")`, WHEN
   `backend-reviewer` is applied, THEN the escaping risk is reachable as a finding **and**
   the agent names `classic-web-reviewer` as the one to run for the markup half — the

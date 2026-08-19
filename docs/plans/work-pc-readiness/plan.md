@@ -61,6 +61,15 @@ starts and stops cleanly in Git Bash on a locked-down Windows box.
   `templates/BOOTSTRAP.md`) — deleting it there makes those docs worse, and the global
   guideline is to touch only what the request requires.
 - **Session reports are never edited** — `docs/session-reports/` is historical record.
+- **`backend-reviewer`'s LLM section keeps only the operational half.** (Grilled
+  2026-08-19.) Retain timeouts, retries, fallback paths, token/cost bounds and eval
+  hooks — those are production-readiness concerns a backend reviewer should catch.
+  Remove prompt injection, untrusted-input-as-instructions, structured-output trust and
+  secret isolation, which `llm-sec-review` owns; replace them with a one-line pointer to
+  that agent. The routing table already says to run both on model-touching diffs, so
+  keeping the security items in both produced duplicate findings on the common path.
+  Rejected: keeping G whole (duplication), deleting G (a FastAPI diff reviewed without
+  `llm-sec-review` would get no model-layer check at all), and inverting the split.
 - **Reviewer dispatch is by file type, with the seam named in both agents.**
   (Grilled 2026-08-19.) `.py` → `backend-reviewer`; templates, `.js`, `.html` →
   `classic-web-reviewer`. So that HTML-built-in-Python is not a blind spot for both,
