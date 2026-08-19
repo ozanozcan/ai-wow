@@ -5,15 +5,15 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:15:18Z",
+  "updated": "2026-08-19T20:17:03Z",
   "waves": [
     {
       "wave": 1,
       "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "done",
-        "detail": "Verification blocks checked against QA contracts; acceptance greps re-run by orchestrator in the merged tree; both worktrees merged clean. Review flags '-' (no application code), so no reviewer subagents."
+        "status": "issues",
+        "detail": "Wave 1 lanes both passed review. Post-gate: lane B's landed diff was reverted by the repo sync (skills/ is mirrored from dotfiles-ai). Lane A intact and committed."
       },
       "lanes": [
         {
@@ -87,7 +87,7 @@
           "brief": "02-mow-tracker-portability.md",
           "role": "code-edit",
           "afk": true,
-          "status": "done",
+          "status": "issues",
           "todos": [
             {
               "id": "02",
@@ -132,7 +132,8 @@
           ],
           "started": "2026-08-19T19:58:30Z",
           "ended": "2026-08-19T20:04:57Z",
-          "tokens": 69479
+          "tokens": 69479,
+          "detail": "Work verified correct, but reverted post-apply: ai-wow/skills/ is a downstream mirror of ~/Desktop/dotfiles-ai/skills, and the repo sync restored the pre-run files. Cascade never reached a commit. Patch preserved in scratchpad; awaiting operator decision."
         }
       ],
       "started": "2026-08-19T19:58:30Z",
