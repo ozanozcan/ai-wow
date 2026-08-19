@@ -61,6 +61,13 @@ starts and stops cleanly in Git Bash on a locked-down Windows box.
   `templates/BOOTSTRAP.md`) — deleting it there makes those docs worse, and the global
   guideline is to touch only what the request requires.
 - **Session reports are never edited** — `docs/session-reports/` is historical record.
+- **The tracker's non-portable calls get a `command -v` cascade, not a caveat.**
+  (Grilled 2026-08-19.) Kill: `pkill` → `taskkill` → skip-with-warning. Open: `open` →
+  `start` → `xdg-open` → skip. The URL is printed unconditionally in every branch, so a
+  shell with none of the three still leaves the operator able to open the board by hand.
+  macOS behavior is unchanged. Rejected: documenting the gap in Appendix B only, which
+  would leave the wrong-run stale-server board as the *default* on Windows; and
+  collision-detect-without-kill, which is portable but makes cleanup a manual chore.
 
 ## Not yet specified
 

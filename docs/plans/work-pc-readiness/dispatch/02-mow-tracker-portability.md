@@ -28,10 +28,14 @@ no auto-open command exists.
   warning says it: a server left running by an earlier run keeps serving *that* run's
   folder, so the board loads, looks live, and shows the wrong run. On Windows the kill
   currently never happens, so this failure is the default there, not an edge case.
-- **Windows equivalents:** `taskkill //F //PID <pid>` after finding the listener with
-  `netstat -ano | grep :$PORT`, or simply detecting the port is already bound and
-  refusing to reuse it. Browser open is `start` on Windows, `xdg-open` on Linux.
-  Prefer a small `case`/`command -v` cascade over an OS-detection branch.
+- **The fix is a `command -v` cascade — locked, not a choice to make inside the lane**
+  (grilled 2026-08-19; see plan.md `## Decisions locked`). Kill: `pkill` → `taskkill`
+  (find the PID with `netstat -ano | grep :$PORT`, then `taskkill //F //PID <pid>`) →
+  skip with a printed warning. Open: `open` → `start` → `xdg-open` → skip.
+  **Print the URL unconditionally in every branch**, so a shell with none of the three
+  still leaves the operator able to open the board by hand. Probe for the command, not
+  the platform — no `uname` / `$OSTYPE` branch. Documenting the gap in Appendix B
+  instead was considered and rejected, as was collision-detect-without-kill.
 - **The port derivation must not change.** `PORT=$(python3 -c "import hashlib,os;print(8300+int(hashlib.md5(os.getcwd().encode()).hexdigest(),16)%80)")`
   is deliberately stable per repo path so the operator can bookmark the URL. Keep it.
 - **Editing this file cannot break the run in progress.** `~/.agents/skills` points at
