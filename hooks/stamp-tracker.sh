@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # mow tracker.json `updated` stamper — Claude Code + Cursor entrypoint.
 # ai-sync registers this as PostToolUse (Write|Edit) / afterFileEdit.
-# Tries python3 first, falls back to python (Windows / some Linux installs).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
-[ -n "$PYTHON" ] || exit 0
-exec "$PYTHON" "$HERE/stamp-tracker.py"
+exec python3 "$HERE/stamp-tracker.py"

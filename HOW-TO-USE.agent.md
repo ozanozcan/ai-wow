@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 14 skills · 6 subagents · 1 command · 3 hooks · 1 board package
+inventory: 14 skills · 7 subagents · 1 command · 3 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -119,7 +119,8 @@ flowchart LR
 
 | Agent | Role | Tools | Hard boundary |
 |---|---|---|---|
-| `backend-reviewer` | review | Read Grep Glob Bash | FastAPI/SQLAlchemy async; never edits |
+| `backend-reviewer` | review | Read Grep Glob Bash | Python stack — auto-detects FastAPI/Django/Flask; never edits |
+| `django-reviewer` | review | Read Grep Glob Bash | Django/DRF dedicated; deeper ORM/serializer/settings checklist |
 | `frontend-reviewer` | review | Read Grep Glob Bash | Correctness only — aesthetics go to `ui-designer` |
 | `llm-sec-review` | review | Read Grep Glob Bash | Model-adjacent only; general appsec elsewhere |
 | `tdd-builder` | build | Read Edit Write Bash Glob Grep Skill Agent | Never commits; always ends with `## Verification` |
@@ -371,8 +372,7 @@ flowchart TD
 Check Developer Mode:
 `reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense` → `0x1`.
 
-Hook scripts are bash and invoke `python3` literally; a shim is required unless
-Python came from the Microsoft Store. Verify from **Git Bash**, not `cmd`.
+Hook scripts are bash and invoke `python3` first, then fall back to `python` automatically. A shim is only required if **neither** `python3` nor `python` resolves in Git Bash. Verify from **Git Bash**, not `cmd`. Standard Windows Python installs (python.org or Microsoft Store) provide `python`; `python3` is available after running `python3` once from the Store, or via a PATH shim.
 
 Hooks are optional and nothing in the core depends on them. **Never let a hook
 failure block the install** — report it and continue.

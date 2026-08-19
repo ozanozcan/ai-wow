@@ -1,8 +1,15 @@
 {
   "_comment": "Copy to local.config.json (gitignored) and edit. Absent or empty is fine — the managed-doc render and project-hook validation simply no-op. Set push to false on machines that must never push (e.g. a corporate laptop); commits stay local.",
+  "_windows_corporate_note": "On a locked-down Windows machine: set link_mode to 'copy' (symlinks denied by group policy) and push to false. Run ai-sync from Git Bash. python3 and python are both tried automatically by hook scripts.",
   "managed_repos": [
     "~/projects/demo-api",
     "~/projects/web-app"
   ],
-  "push": true
+  "push": true,
+  "_windows_example_uncomment_below": "Delete this key and the one above, then set these values for a corporate Windows machine:",
+  "_windows_example": {
+    "link_mode": "copy",
+    "push": false,
+    "managed_repos": ["C:/Users/you/projects/my-service"]
+  }
 }

@@ -66,7 +66,7 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
 
 2. **Draft the title**: format `Project - one-sentence summary of the task`. One concrete next task — name the feature, file, or behavior. Confirm or edit with the user.
 
-3. **Derive the slug**: slugify the title — lowercase, spaces/punctuation → hyphens, drop the `→`/articles noise, keep it readable and unique. Example: `Web App - Add status tracking to checkpoint skill` → `web-app-add-status-tracking-to-checkpoint-skill`. If a file with that slug already exists, append a short disambiguator.
+3. **Derive the slug**: slugify the title — lowercase, spaces/punctuation → hyphens, drop the `→`/articles noise, keep it readable and unique. Example: `FitnessManager - Add status tracking to checkpoint skill` → `project-a-add-status-tracking-to-checkpoint-skill`. If a file with that slug already exists, append a short disambiguator.
 
 4. **Ask the user** (optional freetext): context, open questions, gotchas, relevant files.
 
@@ -107,7 +107,7 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
    ## Agent briefing
    - **Decisions made**: [choices and rationale]
    - **Dead ends**: [what was tried and failed — do not retry]
-   - **Suggested skills**: [e.g. diagnose, backend-reviewer, grill-with-docs]
+   - **Suggested skills**: [e.g. diagnose, django-reviewer, grill-with-docs]
    - **Artifacts**: [paths or URLs only — do not paste bodies]
    - **Do not**: [scope traps, anti-patterns]
    ```

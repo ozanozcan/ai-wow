@@ -98,6 +98,10 @@ Add a new entry for the component that was captured. Do not overwrite existing e
 
 If an entry for this component type already exists — update it rather than duplicating.
 
+Before appending, check the entries already there for rot. For each one, confirm the path on its `File:` line still exists. If it does not, that component was deleted or moved — flag it in step 4 and ask whether to repoint the entry or drop it. Do not delete anything yourself.
+
+A stale entry is worse than a missing one. A missing entry means the next component gets built without a reference. A stale entry means it gets built to match something that is not there any more.
+
 ### Entry format
 
 ```markdown
@@ -266,6 +270,8 @@ After the developer confirms — write the agreed baseline to `ui-registry.md` a
 | Input background | [class]       |
 | Input border     | [class]       |
 ```
+
+**There is only ever one baseline.** If `ui-registry.md` already has a baseline section, replace it — never append a second. Two baselines with different dates do not record history, they record a contradiction, and the next component matches whichever one happens to be read first. The old values are in git if anyone needs them.
 
 ### Step 5 — List what needs fixing
 

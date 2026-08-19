@@ -34,6 +34,7 @@ REPO = Path(__file__).resolve().parent.parent
 HOME = Path.home()
 CLAUDE = HOME / ".claude"
 CURSOR = HOME / ".cursor"
+COPILOT = HOME / ".copilot"
 AGENTS_SKILLS = HOME / ".agents" / "skills"
 CLAUDE_JSON = HOME / ".claude.json"
 
@@ -43,6 +44,15 @@ LINK_DIRS = {
     "agents": REPO / "agents",
     "commands": REPO / "commands",
     "hooks": REPO / "hooks",
+}
+
+# Copilot only reads a subset of these at user level: skills are already
+# covered by ~/.agents/skills (Copilot's own personal skill search path), and
+# ~/.copilot/hooks is reserved for Copilot's *rendered* JSON hook registration
+# (see render_copilot_hooks) rather than raw shell scripts, so only agents is
+# a plain symlink here.
+COPILOT_LINK_DIRS = {
+    "agents": REPO / "agents",
 }
 
 # Single files shared via a symlink rather than a whole directory.
@@ -196,7 +206,8 @@ def _copy_scripts(src_dir: Path, dst_dir: Path) -> int:
 
 def do_import() -> None:
     """Union live content from both tools into the repo. Idempotent."""
-    a = _copy_md(CLAUDE / "agents", REPO / "agents") + _copy_md(CURSOR / "agents", REPO / "agents")
+    a = (_copy_md(CLAUDE / "agents", REPO / "agents") + _copy_md(CURSOR / "agents", REPO / "agents")
+         + _copy_md(COPILOT / "agents", REPO / "agents"))
     c = _copy_md(CLAUDE / "commands", REPO / "commands") + _copy_md(CURSOR / "commands", REPO / "commands")
     h = _copy_scripts(CLAUDE / "hooks", REPO / "hooks") + _copy_scripts(CURSOR / "hooks", REPO / "hooks")
     # Skills only need importing when the farm lives outside this repo; when
@@ -311,6 +322,10 @@ def do_link() -> None:
             res = ensure_linked(tool / name, canonical)
             if res != "ok":
                 log(f"  {tool.name}/{name}: {res}")
+    for name, canonical in COPILOT_LINK_DIRS.items():
+        res = ensure_linked(COPILOT / name, canonical)
+        if res != "ok":
+            log(f"  {COPILOT.name}/{name}: {res}")
     for link, canonical in LINK_FILES.items():
         res = ensure_linked(link, canonical)
         if res != "ok":
@@ -382,6 +397,10 @@ def _cmd_for(defn: dict, tool: str) -> str:
     script = defn["script"]
     if tool == "claude":
         return f"bash ~/.claude/hooks/{script}"
+    if tool == "copilot":
+        # ~/.copilot/hooks holds Copilot's *rendered* JSON registration (this
+        # function's output), not a script mirror, so point straight at the repo.
+        return f"bash {(REPO / 'hooks').as_posix()}/{script}"
     return f"{HOME.as_posix()}/.cursor/hooks/{script}"
 
 
@@ -418,6 +437,19 @@ def render_cursor_hooks(defs: list[dict]) -> dict:
     return {"version": 1, "hooks": out}
 
 
+def render_copilot_hooks(defs: list[dict]) -> dict:
+    out: dict[str, list] = {}
+    for d in defs:
+        co = d.get("copilot")
+        if not co:
+            continue                # tool-specific hook — no Copilot event for it
+        entry: dict = {"type": "command", "command": _cmd_for(d, "copilot")}
+        if "timeout" in co:
+            entry["timeout"] = co["timeout"]
+        out.setdefault(co["event"], []).append(entry)
+    return {"hooks": out}
+
+
 def do_render_hooks() -> None:
     defs = hook_defs()
     if not defs:
@@ -438,6 +470,13 @@ def do_render_hooks() -> None:
         backup(cursor_path)
         write_json(cursor_path, new_cursor)
         log("  rendered ~/.cursor/hooks.json")
+    # Copilot: dedicated file under its hooks/ dir (it loads every *.json there).
+    copilot_path = COPILOT / "hooks" / "ai-wow.json"
+    new_copilot = render_copilot_hooks(defs)
+    if load_json(copilot_path, None) != new_copilot:
+        backup(copilot_path)
+        write_json(copilot_path, new_copilot)
+        log("  rendered ~/.copilot/hooks/ai-wow.json")
 
 
 def do_render_mcp() -> None:
@@ -450,6 +489,12 @@ def do_render_mcp() -> None:
         backup(cursor_path)
         write_json(cursor_path, desired)
         log("  rendered ~/.cursor/mcp.json")
+    # Copilot: dedicated file, its own documented portable location.
+    copilot_path = COPILOT / "mcp-config.json"
+    if load_json(copilot_path, None) != desired:
+        backup(copilot_path)
+        write_json(copilot_path, desired)
+        log("  rendered ~/.copilot/mcp-config.json")
     # Claude: only touch the big live file when we actually have servers.
     if servers:
         d = load_json(CLAUDE_JSON, {})
@@ -458,6 +503,32 @@ def do_render_mcp() -> None:
             d["mcpServers"] = servers
             write_json(CLAUDE_JSON, d)
             log("  updated ~/.claude.json mcpServers")
+
+
+def do_render_copilot_workspace() -> None:
+    """Per-project Copilot pieces that only make sense inside a workspace:
+    slash commands (.github/prompts/*.prompt.md) and workspace hooks
+    (.github/hooks/ai-wow.json), rendered into each managed_repos entry."""
+    defs = hook_defs()
+    workspace_hooks = render_copilot_hooks(defs)
+    for repo in managed_repos():
+        if not repo.is_dir():
+            continue
+        prompts_dir = repo / ".github" / "prompts"
+        for src in sorted(REPO.glob("commands/*.md")):
+            dest = prompts_dir / f"{src.stem}.prompt.md"
+            text = src.read_text()
+            if dest.is_file() and dest.read_text() == text:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(text)
+            log(f"  rendered {dest}")
+        if workspace_hooks.get("hooks"):
+            hooks_path = repo / ".github" / "hooks" / "ai-wow.json"
+            if load_json(hooks_path, None) != workspace_hooks:
+                hooks_path.parent.mkdir(parents=True, exist_ok=True)
+                write_json(hooks_path, workspace_hooks)
+                log(f"  rendered {hooks_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -519,6 +590,24 @@ def _iter_project_hook_commands(repo: Path) -> list[tuple[Path, str]]:
                 for hook in group.get("hooks") or []:
                     if isinstance(hook, dict) and "command" in hook:
                         found.append((claude_path, hook["command"]))
+
+    # Copilot workspace hooks live under .github/hooks/*.json — scan every OTHER
+    # file there (ai-wow.json is our own render, from do_render_copilot_workspace,
+    # not a duplicate registration).
+    github_hooks_dir = repo / ".github" / "hooks"
+    if github_hooks_dir.is_dir():
+        for hooks_path in sorted(github_hooks_dir.glob("*.json")):
+            if hooks_path.name == "ai-wow.json":
+                continue
+            data = load_json(hooks_path, None)
+            if not isinstance(data, dict):
+                continue
+            for entries in (data.get("hooks") or {}).values():
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    if isinstance(entry, dict) and "command" in entry:
+                        found.append((hooks_path, entry["command"]))
     return found
 
 
@@ -688,6 +777,17 @@ def do_status() -> int:
             else:
                 state = "missing"
             print(f"  {tool.name}/{name:9} {state}")
+    for name, canonical in COPILOT_LINK_DIRS.items():
+        link = COPILOT / name
+        if link.is_symlink() and link.resolve() == canonical.resolve():
+            state = "linked"
+        elif not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
+            state = "copied (in sync)"
+        elif link.exists():
+            state = "NOT linked (real dir)"
+        else:
+            state = "missing"
+        print(f"  {COPILOT.name}/{name:9} {state}")
     for link, canonical in LINK_FILES.items():
         if link.is_symlink() and link.resolve() == canonical.resolve():
             state = "linked"
@@ -700,8 +800,10 @@ def do_status() -> int:
         print(f"  {link.parent.name}/{link.name:9} {state}")
     print(f"  claude/settings.json hooks: {'present' if load_json(CLAUDE/'settings.json',{}).get('hooks') else 'none'}")
     print(f"  cursor/hooks.json:          {'present' if (CURSOR/'hooks.json').exists() else 'none'}")
+    print(f"  copilot/hooks/ai-wow.json:  {'present' if (COPILOT/'hooks'/'ai-wow.json').exists() else 'none'}")
+    print(f"  copilot/mcp-config.json:    {'present' if (COPILOT/'mcp-config.json').exists() else 'none'}")
     n = len([p for p in AGENTS_SKILLS.iterdir() if p.is_dir()]) if AGENTS_SKILLS.is_dir() else 0
-    print(f"  shared skills (~/.agents):  {n}")
+    print(f"  shared skills (~/.agents):  {n}  (Copilot reads this path directly — no extra render needed)")
 
     dupes = find_duplicate_hook_registrations()
     drift = find_managed_doc_drift()
@@ -743,6 +845,7 @@ def sync() -> int:
     do_render_hooks()
     do_render_mcp()
     do_render_managed_docs()
+    do_render_copilot_workspace()
     do_commit()
     log("done.")
     dupes = find_duplicate_hook_registrations()

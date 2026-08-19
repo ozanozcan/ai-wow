@@ -102,19 +102,39 @@ flowchart LR
 
   A -->|"symlink"| C["~/.claude"]
   A -->|"symlink"| D["~/.cursor"]
+  A -->|"symlink (agents only)"| E["~/.copilot"]
   B -->|"render to <br/>Claude schema"| C
   B -->|"render to <br/>Cursor schema"| D
+  B -->|"render to <br/>Copilot schema"| E
 
   C -.->|"your edits land here"| A
   D -.->|"your edits land here"| A
+  E -.->|"agent edits land here"| A
 ```
 
 **Why not symlink everything?** Skills, subagents, commands and hook *scripts* use
-an identical on-disk format in both editors, so a symlink means the editor's
-directory *is* this repo — zero drift, and editing from inside either tool writes
-straight back here. Hook *registration* and MCP config use **different schemas** per
-editor, so they can't be shared as files; `ai-sync` translates one neutral
-definition into each editor's dialect.
+an identical on-disk format across Claude Code and Cursor, so a symlink means the
+editor's directory *is* this repo — zero drift, and editing from inside either tool
+writes straight back here. Hook *registration* and MCP config use **different
+schemas** per editor, so they can't be shared as files; `ai-sync` translates one
+neutral definition into each editor's dialect.
+
+**Copilot is a third target, but a thinner one.** Its personal skill search path
+already includes `~/.agents/skills` — the exact symlink below — so skills need no
+extra wiring at all. Subagents get their own symlink to `~/.copilot/agents`
+(Copilot's personal custom-agent directory differs from Claude's). Hooks and MCP
+are rendered into Copilot's schema the same way Cursor's are. Slash commands and
+per-project hooks are workspace-scoped in Copilot (`.github/prompts/`,
+`.github/hooks/`), so those render into each repo listed in `managed_repos`
+instead of a global symlink — see §4.
+
+> [!NOTE]
+> The hook *scripts* were written to parse Claude Code's stdin/stdout JSON shape.
+> They're now registered for Copilot's matching lifecycle events too, but Copilot's
+> exact runtime payload hasn't been verified against them. Hooks fail open, so a
+> mismatch just makes a hook silently inert — it won't misfire — but don't treat
+> `guard-destructive` as an active guardrail under Copilot until you've confirmed
+> live that it actually fires.
 
 Skills take one extra hop, and it's the hop that breaks:
 

@@ -4,7 +4,8 @@
 
 **A portable way of working with AI coding agents.** Skills, subagents, slash
 commands, lifecycle hooks, and a durable task board — versioned in one repo, synced
-into Claude Code and Cursor by one script, identical on every machine.
+into Claude Code, Cursor, and GitHub Copilot (VS Code) by one script, identical on
+every machine.
 
 A team has a way of working: standards everyone follows, specialists you hand things
 to, and checks that run whether or not anyone remembers them. Agents don't inherit
@@ -66,11 +67,28 @@ flowchart LR
   end
   A -->|"symlink"| C["~/.claude"]
   A -->|"symlink"| D["~/.cursor"]
+  A -->|"symlink (agents only)"| E["~/.copilot"]
   B -->|"render"| C
   B -->|"render"| D
+  B -->|"render"| E
   C -.->|"edits write back"| A
   D -.->|"edits write back"| A
+  E -.->|"agent edits write back"| A
 ```
+
+Copilot's skills are already covered without any of the above: it searches
+`~/.agents/skills` directly, the same symlink Claude Code and Cursor use — one
+skill farm, three tools. Subagents get a dedicated `~/.copilot/agents` symlink
+because Copilot's *personal* custom-agent path differs from Claude's. Hooks and
+MCP are rendered into Copilot's own schema, same as Cursor's.
+
+> [!NOTE]
+> Copilot's hook scripts are wired to the right lifecycle events (`PreToolUse`,
+> `PostToolUse`, `SessionStart`, `Stop`, `SubagentStart`), but the scripts
+> themselves were written for Claude Code's stdin/stdout JSON shape. Hooks fail
+> open, so a schema mismatch just makes a hook inert rather than unsafe — but
+> don't treat `guard-destructive` as a real guardrail under Copilot until you've
+> confirmed live that it fires.
 
 `ai-sync` runs `import → link → reconcile skills → render → commit`, and is
 registered as a session-end hook so it happens on its own.

@@ -53,7 +53,7 @@ After building or changing UI, screenshot the screen at **390px portrait** (and 
 ## Typography
 
 - Base body ≥ 16px, line-height ~1.5; cap prose line length at **65–75ch**.
-- Pair fonts on a contrast axis (serif + sans, geometric + humanist) or use one family across weights. Don't pair two near-identical sans faces. Don't reach for Inter or a serif as a reflex; a serif needs a real editorial/heritage justification. Load fonts via `next/font` (self-hosted, no layout shift), not a raw `<link>`.
+- **One font family per frontend — operator hard ban (2026-08-14, see `rules/ui-design.md`).** Never pair typefaces: no sans + mono, no display + body, no serif + sans. Hierarchy comes from weight, size, and color of the single family (fallback stacks fine, icon fonts excepted). Don't reach for Inter as a reflex. Load fonts via `next/font` (self-hosted, no layout shift), not a raw `<link>`.
 - Display headings: clamp max ≤ ~6rem; **letter-spacing floor ≥ -0.04em** (tighter and the letters touch). Use `text-balance` on h1–h3, `text-pretty` on long prose.
 - Use `…` not `...`; curly quotes `"` `"` not straight `"`. Number columns/comparisons: `tabular-nums`. Dates, times, and currency: `Intl.DateTimeFormat` / `Intl.NumberFormat` — never hardcoded locale formats. Brand names, code tokens, and identifiers: `translate="no"`.
 - Emphasis within a headline = italic/bold of the **same** family, not a random injected serif.
@@ -92,6 +92,8 @@ You write the React that makes the interface work, not just its classes. The bou
 ## Anti-slop (match-and-refuse; rewrite if you're about to ship one)
 
 - Side-stripe accent borders (`border-l` > 1px as decoration); gradient text (`bg-clip-text`); glassmorphism as a default; the hero big-number/stat/gradient template; endless identical icon+heading+text card grids.
+- **Same-hue text-on-tint — operator hard ban (2026-08-14, see `rules/ui-design.md`).** Text colored in the same hue as its own background (green letters on a green-tinted chip, blue label on a blue badge — the whole `bg-green-100 text-green-800` family). Text on a colored fill is neutral ink; colored text sits only on neutral backgrounds. Fill *or* text carries the hue, never both.
+- **Multiple typefaces in one frontend** (see Typography — operator hard ban).
 - An **eyebrow / kicker on every section** (small all-caps tracked label) and **numbered section markers (01/02/03)** as default scaffolding — only when the section truly is a sequence.
 - **Em-dash (`—`) and en-dash-as-separator (`–`) are banned** in all visible text; use a regular hyphen or restructure the sentence.
 - Div-based fake screenshots, hand-rolled sketchy/doodle SVG illustrations, decorative status dots on every row, scroll cues ("↓ scroll"), and atmospheric locale/time/weather strips.

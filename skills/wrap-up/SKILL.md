@@ -17,7 +17,7 @@ How this differs from checkpoint:
 ## Preconditions
 
 1. Find project root by walking up for `.taskman.toml`.
-2. If missing: write the session report only (steps under `docs/session-reports/` if the repo has that folder, else skip board sync), tell the user taskman sync/harvest are unavailable, and stop. Never guess a project slug.
+2. If missing: run **step 2.5** (lessons — it needs no board, no venv, and no project slug) and write the session report only (steps under `docs/session-reports/` if the repo has that folder, else skip board sync), tell the user taskman sync/harvest are unavailable, and stop. Never guess a project slug.
 
 Prefer running CLI as:
 ```bash
@@ -126,6 +126,50 @@ Rules:
 - Before adding a Requirement, run `taskman requirement list --feature <id>` — if the behavior already has a row, `modify` it instead of creating a duplicate.
 - Never tell the user "run these taskman commands yourself" as the main path; sync first, then report ids in the session report.
 
+### 2.5 Log the session's lessons (cross-project behaviour)
+
+The board records *what work happened here*. This step records *how a future session should behave differently, anywhere*. Runs in every repo, including ones with no board.
+
+**What qualifies — all three, or it isn't a lesson:**
+
+1. It is about **agent behaviour**, not this project's facts. A rule that starts "always/never" and could fire in a different repo.
+2. It was **actually corrected** this session — by the user, by a failing test, by a review, by a run that contradicted the claim. Not a resolution, not a thing you noticed you *could* do better.
+3. It **generalises**. One dataset's quirk, one migration's ordering, one library version's bug — not lessons.
+
+Route the rest to where it belongs, and do not double-log:
+
+| Signal | Goes to |
+|---|---|
+| "this project decided X, because Y" | `taskman decision add … --why …` (step 2) |
+| "cards use `rounded-lg` here" | `ui-registry.md` via `/imprint` |
+| "here's what this session did" | the session report (step 5) |
+| "I claimed done without running the verify command" | **here** |
+
+**How:** read `LESSONS.md` at the dotfiles-ai root first — it is capped, so this is cheap — and decide whether the correction is a rule already logged or a new one. That judgement is yours; the script does no fuzzy matching and will happily store a near-duplicate.
+
+```bash
+# already there — same rule, new occurrence
+python3 ~/.agents/skills/wrap-up/scripts/log_lesson.py --bump L03 \
+  --evidence "<the correction: chat quote, failing test, commit sha, review note>"
+
+# new rule
+python3 ~/.agents/skills/wrap-up/scripts/log_lesson.py \
+  --rule "<one line, general, actionable next time>" \
+  --trigger "<what you were doing>" \
+  --mistake "<what you did or assumed>" \
+  --fix "<what the correct action was>" \
+  --evidence "<what proves this happened>" \
+  --tags "scope,tests"
+```
+
+`--evidence` is mandatory in both modes, for the same reason step 0 refuses uncited `done`: a rule with no correction behind it is a preference someone typed, and preferences belong in `global/CLAUDE.md` by decision, not by accumulation.
+
+**On `>>> PROMOTE`:** the rule has recurred at `seen ×3` across at least two distinct days. Tell the user, quote the rule, and offer to move it into `global/CLAUDE.md`. **Never edit `global/CLAUDE.md` yourself here** — it loads into every session in every project, so it is the operator's call. On `>>> NOT YET` (three hits, all one day), say nothing and move on. On `>>> PRUNE`, name the stale entries in the session report; don't delete anything unasked.
+
+**Guardrail:** a lesson may add a heuristic or name a gotcha. It may never weaken `global/CLAUDE.md`, license skipping a gate, or excuse reporting unfinished work as done. If this session's "lesson" is one of those, don't log it — say why in the report. The self-improving loop is allowed to make the harness sharper, never laxer.
+
+**The common case is nothing.** A session where you were not corrected logs no lesson, and that is the expected outcome. Manufacturing one to look diligent poisons the file for every session after it.
+
 ### 3. Action report (safety net — when a plan shipped)
 
 If this chat completed (or clearly finished) work tied to `docs/plans/<stem>/`:
@@ -187,6 +231,9 @@ start_sha: <anchor sha>
 ## Taskman sync
 [CLI commands run, or "none".]
 
+## Lessons
+[Ids logged/bumped in step 2.5 + any PROMOTE or PRUNE signal. Omit if none.]
+
 ## Decisions
 [Choices + rationale. Omit if none.]
 
@@ -231,7 +278,7 @@ Report path + summary of taskman commands run (including retroactive-sweep and l
 Same ritual in both runtimes. Session markers come from:
 
 - Claude Code: `SessionStart` → `~/.claude/hooks/session-start-marker.sh` (via ai-sync / hooks.def)
-- Cursor: `sessionStart` → same script (user hooks + project `.cursor/hooks.json` on web-app/demo)
+- Cursor: `sessionStart` → same script (user hooks + project `.cursor/hooks.json` on project-a/project-b)
 
 ## Rules
 

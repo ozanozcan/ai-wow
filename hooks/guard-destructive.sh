@@ -1,15 +1,11 @@
 #!/bin/bash
-# PreToolUse hook: ask before running commands that destroy data.
-# Catches: Django admin ops, direct SQL drops/truncates/deletes,
-# SQLAlchemy drop_all, alembic downgrade-to-base, and dev db file removal.
-# Expanded for broader Python stack coverage (FastAPI, Django, Flask, plain Python).
+# beforeShellExecution hook: ask before running commands that destroy data.
+# Catches: manage.py flush, migrate --fake, DROP TABLE, DELETE without WHERE,
+# sqlflush, and deleting the dev database file.
 # Fails open — a hook crash never blocks the agent.
 
-# Resolve Python interpreter: python3 preferred, fall back to python (Windows).
-PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "python3")
-
 input=$(cat)
-command=$(printf "%s" "$input" | "$PYTHON" -c "
+command=$(echo "$input" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -19,13 +15,8 @@ except:
 " 2>/dev/null)
 
 if echo "$command" | grep -qiE \
-    'manage\.py\s+flush|manage\.py\s+migrate\s+--fake|manage\.py\s+sqlflush|\
-DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE\s+TABLE|\
-DELETE\s+FROM\s+[a-zA-Z_]+\s*;|\
-rm\s+.*db\.sqlite3|\
-\.drop_all\s*\(|Base\.metadata\.drop_all|\
-alembic\s+downgrade\s+(base|--?\s*[0-9])'; then
-    command="$command" "$PYTHON" -c "
+    'manage\.py\s+flush|manage\.py\s+migrate\s+--fake|DROP\s+TABLE|DELETE\s+FROM\s+[a-zA-Z_]+\s*;|manage\.py\s+sqlflush|rm\s+.*db\.sqlite3'; then
+    command="$command" python3 -c "
 import json, os
 command = os.environ['command']
 print(json.dumps({

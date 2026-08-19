@@ -1,41 +1,48 @@
 {
-  "_comment": "Neutral hook registration. ai-sync renders this into ~/.claude/settings.json (Claude schema) and ~/.cursor/hooks.json (Cursor schema). 'script' resolves to each tool's hooks/ dir; 'command' is raw (BIN/ -> this repo's bin/).",
+  "_comment": "Neutral hook registration. ai-sync renders this into ~/.claude/settings.json (Claude schema), ~/.cursor/hooks.json (Cursor schema), and ~/.copilot/hooks/ai-wow.json (Copilot schema). 'script' resolves to each tool's hooks/ dir ('copilot' points straight at this repo's hooks/ — see bin/ai-sync _cmd_for); 'command' is raw (BIN/ -> this repo's bin/).",
+  "_copilot_caveat": "Copilot's registration schema (event names, {type,command,timeout}) is confirmed from docs, but these scripts parse Claude's PreToolUse/PostToolUse JSON stdin shape (tool_input.command, etc.) and reply with Claude's hookSpecificOutput.permissionDecision shape. Copilot's actual runtime payload/response shape is unverified — fail-open means a mismatch just makes the hook a no-op, not a false allow, but don't rely on guard-destructive for real protection under Copilot until it's been tested live.",
   "hooks": [
     {
       "id": "guard-destructive",
       "script": "guard-destructive.sh",
       "claude": { "event": "PreToolUse", "matcher": "Bash" },
-      "cursor": { "event": "beforeShellExecution", "failClosed": false }
+      "cursor": { "event": "beforeShellExecution", "failClosed": false },
+      "copilot": { "event": "PreToolUse" }
     },
     {
       "id": "session-start-marker",
       "script": "session-start-marker.sh",
       "claude": { "event": "SessionStart" },
-      "cursor": { "event": "sessionStart", "failClosed": false }
+      "cursor": { "event": "sessionStart", "failClosed": false },
+      "copilot": { "event": "SessionStart" }
     },
     {
       "id": "archive-session",
       "script": "archive-session.sh",
       "claude": { "event": "SessionEnd" },
-      "cursor": { "event": "sessionEnd", "failClosed": false }
+      "cursor": { "event": "sessionEnd", "failClosed": false },
+      "copilot": { "event": "Stop" }
     },
     {
       "id": "stamp-tracker",
       "script": "stamp-tracker.sh",
       "claude": { "event": "PostToolUse" },
-      "cursor": { "event": "afterFileEdit", "failClosed": false }
+      "cursor": { "event": "afterFileEdit", "failClosed": false },
+      "copilot": { "event": "PostToolUse" }
     },
     {
       "_comment": "same script, spawn half of the agent-span stamp; Cursor has no Task event",
       "id": "stamp-tracker-spawn",
       "script": "stamp-tracker.sh",
-      "claude": { "event": "PreToolUse", "matcher": "Agent|Task" }
+      "claude": { "event": "PreToolUse", "matcher": "Agent|Task" },
+      "copilot": { "event": "SubagentStart" }
     },
     {
       "id": "ai-sync",
       "command": "python3 BIN/ai-sync --from-hook",
       "claude": { "event": "SessionEnd" },
-      "cursor": { "event": "sessionEnd", "failClosed": false }
+      "cursor": { "event": "sessionEnd", "failClosed": false },
+      "copilot": { "event": "Stop" }
     }
   ]
 }
