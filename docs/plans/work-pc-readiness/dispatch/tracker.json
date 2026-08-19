@@ -5,7 +5,7 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T19:58:53Z",
+  "updated": "2026-08-19T19:59:06Z",
   "waves": [
     {
       "wave": 1,
@@ -68,7 +68,8 @@
               "detail": "isolation: worktree \u2014 skills/mow shell portability",
               "skills": [],
               "tools": [],
-              "artifacts": []
+              "artifacts": [],
+              "ended": "2026-08-19T19:59:06Z"
             }
           ],
           "started": "2026-08-19T19:58:30Z"
