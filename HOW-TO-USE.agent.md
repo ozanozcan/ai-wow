@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 14 skills · 7 subagents · 1 command · 3 hooks · 1 board package
+inventory: 14 skills · 8 subagents · 1 command · 3 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -119,8 +119,9 @@ flowchart LR
 
 | Agent | Role | Tools | Hard boundary |
 |---|---|---|---|
-| `backend-reviewer` | review | Read Grep Glob Bash | Python stack — auto-detects FastAPI/Django/Flask; never edits |
-| `django-reviewer` | review | Read Grep Glob Bash | Django/DRF dedicated; deeper ORM/serializer/settings checklist |
+| `backend-reviewer` | review | Read Grep Glob Bash | `.py` importing FastAPI/SQLAlchemy; markup built in Python hands off to `classic-web-reviewer`; never edits |
+| `classic-web-reviewer` | review | Read Grep Glob Bash | Templates, `.html`, non-framework `.js` (vanilla, jQuery, HTMX); route auth and query perf are `backend-reviewer`'s |
+| `streamlit-reviewer` | review | Read Grep Glob Bash | `.py` importing Streamlit; execution-model and caching only |
 | `frontend-reviewer` | review | Read Grep Glob Bash | Correctness only — aesthetics go to `ui-designer` |
 | `llm-sec-review` | review | Read Grep Glob Bash | Model-adjacent only; general appsec elsewhere |
 | `tdd-builder` | build | Read Edit Write Bash Glob Grep Skill Agent | Never commits; always ends with `## Verification` |

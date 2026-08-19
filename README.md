@@ -189,7 +189,7 @@ TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman
 ## License
 
 [MIT](LICENSE) for everything original to this repository — the eleven original
-skills, the six subagents, `taskman`, `ai-sync`, and the docs.
+skills, the eight subagents, `taskman`, `ai-sync`, and the docs.
 
 Three bundled skills come from other projects and keep their own licenses:
 `tdd` and `grill-with-docs` from [mattpocock/skills](https://github.com/mattpocock/skills)

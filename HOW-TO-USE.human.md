@@ -252,11 +252,13 @@ archive — you just lose the sync path back.
 Everything in this section runs on a bare clone. No database, no API key, no project
 config. This is most of the value.
 
-**Six subagents.** Each gets its own context window and a restricted tool list.
+**Eight subagents.** Each gets its own context window and a restricted tool list.
 
 | Subagent | Reviews or builds | Use when |
 |---|---|---|
 | `backend-reviewer` | reviews | A FastAPI / SQLAlchemy async diff is ready to commit |
+| `classic-web-reviewer` | reviews | A template, `.html`, or non-framework `.js` diff — vanilla, jQuery, HTMX |
+| `streamlit-reviewer` | reviews | A Streamlit app diff — reruns, caching, session state |
 | `frontend-reviewer` | reviews | A React / Next.js diff — correctness, not looks |
 | `llm-sec-review` | reviews | The diff touches prompts, tool-calling, agents or RAG |
 | `ui-designer` | builds | Any visual work; it is the design authority |

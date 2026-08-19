@@ -5,14 +5,15 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:11:24Z",
+  "updated": "2026-08-19T20:13:14Z",
   "waves": [
     {
       "wave": 1,
       "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "running"
+        "status": "done",
+        "detail": "Verification blocks checked against QA contracts; acceptance greps re-run by orchestrator in the merged tree; both worktrees merged clean. Review flags '-' (no application code), so no reviewer subagents."
       },
       "lanes": [
         {
@@ -140,7 +141,7 @@
     },
     {
       "wave": 2,
-      "status": "pending",
+      "status": "running",
       "parallelism": "sequential",
       "gate": {
         "status": "pending"
@@ -151,17 +152,29 @@
           "brief": "03-docs-reference-sweep.md",
           "role": "code-edit",
           "afk": false,
-          "status": "pending",
+          "status": "running",
           "todos": [
             {
               "id": "03",
               "title": "Docs, routing rows and inventory counts",
-              "status": "pending"
+              "status": "running"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "orchestrator (foreground)",
+              "status": "running",
+              "started": "2026-08-19T20:13:14Z",
+              "detail": "AFK no \u2014 run with the operator watching",
+              "skills": [],
+              "tools": [],
+              "artifacts": []
+            }
+          ],
+          "started": "2026-08-19T20:13:14Z"
         }
-      ]
+      ],
+      "started": "2026-08-19T20:13:14Z"
     }
   ]
 }
