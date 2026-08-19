@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "stem": "work-pc-readiness",
+  "title": "Reviewer roster for the operator's real stacks + portable mow tracker",
+  "run_status": "running",
+  "pulse": true,
+  "started": "2026-08-19T20:05:00Z",
+  "updated": "2026-08-19T19:58:05Z",
+  "waves": [
+    {
+      "wave": 1,
+      "status": "pending",
+      "parallelism": "parallel",
+      "gate": {
+        "status": "pending"
+      },
+      "lanes": [
+        {
+          "lane": "A",
+          "brief": "01-reviewer-roster.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "pending",
+          "todos": [
+            {
+              "id": "01",
+              "title": "FastAPI-only backend reviewer + classic-web + streamlit",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        },
+        {
+          "lane": "B",
+          "brief": "02-mow-tracker-portability.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "pending",
+          "todos": [
+            {
+              "id": "02",
+              "title": "Portable mow tracker shell blocks",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "status": "pending",
+      "parallelism": "sequential",
+      "gate": {
+        "status": "pending"
+      },
+      "lanes": [
+        {
+          "lane": "Z",
+          "brief": "03-docs-reference-sweep.md",
+          "role": "code-edit",
+          "afk": false,
+          "status": "pending",
+          "todos": [
+            {
+              "id": "03",
+              "title": "Docs, routing rows and inventory counts",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        }
+      ]
+    }
+  ]
+}
