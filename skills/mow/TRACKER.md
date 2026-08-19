@@ -35,9 +35,25 @@ them with the plan folder is harmless.
 # one stable port per repo, so two projects' runs never land on each other
 PORT=$(python3 -c "import hashlib,os;print(8300+int(hashlib.md5(os.getcwd().encode()).hexdigest(),16)%80)")
 # clear this repo's own stale tracker from an earlier run (matches only that server)
-pkill -f "http.server $PORT" || true
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f "http.server $PORT" || true
+elif command -v taskkill >/dev/null 2>&1; then
+  # Git Bash: netstat's local-address column gives the listener's PID
+  TRACKER_PID=$(netstat -ano | grep ":$PORT" | awk -v p=":$PORT" '$2 ~ p"$" {print $NF; exit}')
+  [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
+else
+  echo "warn: no pkill or taskkill — a stale server on $PORT may still be serving an older run"
+fi
 python3 -m http.server $PORT -d docs/plans/<stem>/dispatch
+# printed in every shell, so the board is always reachable by hand
 echo "tracker: http://localhost:$PORT/tracker.html"
+# terminal Claude Code has no pane to open it in — hand the page to the real browser
+if [ -n "$TERM_PROGRAM$SSH_TTY" ]; then
+  if command -v open >/dev/null 2>&1; then open "http://localhost:$PORT/tracker.html"
+  elif command -v start >/dev/null 2>&1; then start "http://localhost:$PORT/tracker.html"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$PORT/tracker.html"
+  fi
+fi
 ```
 
 Run it in the background and open the URL it prints. The page polls
@@ -50,7 +66,8 @@ FTM and HLC can run at once, and each project's URL stays the same every run —
 worth bookmarking on a second screen, where animation keeps running even while
 the in-app browser pane is hidden (a hidden pane freezes the animation clock).
 
-Stop the server at Integrate: `pkill -f "http.server $PORT"`.
+Stop the server at Integrate with the same kill cascade the block above uses
+(`pkill` → `taskkill` → warn) — a bare `pkill` errors in Git Bash.
 
 ### Views and multi-run
 
@@ -87,7 +104,7 @@ and the full verdict on hover.
 
 One snapshot survives the run: at close-out, `widget.py <tracker.json>` prints
 the same renderer with the font stripped and the board inlined, so the transcript
-keeps a readable record after `pkill` takes the server down. It costs ~15k
+keeps a readable record after the server is stopped. It costs ~15k
 tokens — once, deliberately, never per wave.
 
 ### Active time, and the activity trail

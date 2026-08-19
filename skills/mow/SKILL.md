@@ -576,14 +576,28 @@ python scripts/mow_preflight.py docs/plans/<stem>
 # one stable port per repo, so two projects' runs never land on each other
 PORT=$(python3 -c "import hashlib,os;print(8300+int(hashlib.md5(os.getcwd().encode()).hexdigest(),16)%80)")
 # clear this repo's own stale tracker from an earlier run (matches only that server)
-pkill -f "http.server $PORT" || true
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f "http.server $PORT" || true
+elif command -v taskkill >/dev/null 2>&1; then
+  # Git Bash: netstat's local-address column gives the listener's PID
+  TRACKER_PID=$(netstat -ano | grep ":$PORT" | awk -v p=":$PORT" '$2 ~ p"$" {print $NF; exit}')
+  [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
+else
+  echo "warn: no pkill or taskkill — a stale server on $PORT may still be serving an older run"
+fi
 python3 -m http.server $PORT -d docs/plans/<stem>/dispatch
+# printed in every shell, so the board is always reachable by hand
 echo "tracker: http://localhost:$PORT/tracker.html"
 # terminal Claude Code has no pane to open it in — hand the page to the real browser
-[ -n "$TERM_PROGRAM$SSH_TTY" ] && command -v open >/dev/null && open "http://localhost:$PORT/tracker.html"
+if [ -n "$TERM_PROGRAM$SSH_TTY" ]; then
+  if command -v open >/dev/null 2>&1; then open "http://localhost:$PORT/tracker.html"
+  elif command -v start >/dev/null 2>&1; then start "http://localhost:$PORT/tracker.html"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$PORT/tracker.html"
+  fi
+fi
 ```
 
-(background the server). **Every runtime that can run that shell gets the board**, terminal Claude Code included — the page is a plain local server, nothing about it needs an in-app pane, and a real browser window on a second screen is the better home anyway (a hidden pane freezes the animation clock). Open the URL that `echo` printed in the browser pane — the page polls `tracker.json` every 2s. **Never skip the kill line and never hardcode 8377**: a server left running by an earlier run keeps serving *that* run's folder, so the board loads, looks live, and shows the wrong run. Because the port is derived from the repo path it is stable — the same project always gets the same URL, worth bookmarking on a second screen, where animation keeps running even when the browser pane is hidden. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
+(background the server). **Every runtime that can run that shell gets the board**, terminal Claude Code included — the page is a plain local server, nothing about it needs an in-app pane, and a real browser window on a second screen is the better home anyway (a hidden pane freezes the animation clock). Open the URL that `echo` printed in the browser pane — the page polls `tracker.json` every 2s. **Never skip the kill cascade and never hardcode 8377**: a server left running by an earlier run keeps serving *that* run's folder, so the board loads, looks live, and shows the wrong run. Because the port is derived from the repo path it is stable — the same project always gets the same URL, worth bookmarking on a second screen, where animation keeps running even when the browser pane is hidden. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
 
 **Chat board (required when your tool list has a widget/visualization tool such as `show_widget`; if it has none, skip — the URL line already gave the operator the board):** post the board into the chat itself at **wave boundaries** — after fan-out, after each gate verdict, and at close-out. This is a row in TRACKER.md's write-points table, not an optional flourish: an FTM run crossed five boundaries posting nothing, and the operator watched an empty chat while the board was live on its port. Not per write, though — a widget per event buries the conversation. Do not hand-build a card: the board already exists, so embed it.
 
@@ -596,7 +610,7 @@ echo "tracker: http://localhost:$PORT/tracker.html"
 
 That is the whole widget — the page renders itself, stays live between posts, and can never drift from what the browser shows, because it *is* what the browser shows. Compact is the chat default: it carries each lane's todo id and title and the gate's status word, which is what the glance view is for. The reader can flip to detailed inside the frame.
 
-The iframe dies with the server, so old transcripts would show an empty box. At **close-out only**, after the final `tracker.json` write and before `pkill`, post a frozen snapshot instead — `python3 ~/.claude/skills/mow/widget.py docs/plans/<stem>/dispatch/tracker.json` prints a self-contained fragment (the same renderer, font stripped, board inlined) to pass as the widget. It is ~15k tokens, so it is worth it exactly once, as the run's record.
+The iframe dies with the server, so old transcripts would show an empty box. At **close-out only**, after the final `tracker.json` write and before the server is stopped, post a frozen snapshot instead — `python3 ~/.claude/skills/mow/widget.py docs/plans/<stem>/dispatch/tracker.json` prints a self-contained fragment (the same renderer, font stripped, board inlined) to pass as the widget. It is ~15k tokens, so it is worth it exactly once, as the run's record.
 
 **In-progress pulse (operator chat):** seed `dispatch/tracker.json` with `"pulse": true`. If the operator asks to turn the heartbeat/pulse on or off (e.g. "pulse off", "turn the shine pulse back on"), Edit `pulse` in `tracker.json` **immediately** — do not wait for a wave event. Spin stays on; only the lub-dub glow toggles.
 
@@ -676,7 +690,18 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
 
    **Tracker reconcile (required when a tracker ran):** before closing it out, spawn one `general-purpose` subagent to audit the board against reality. It is deliberately a *fresh* reader: the orchestrator wrote `tracker.json` from memory and is blind to its own dropped writes. Brief it to read `dispatch/tracker.json` plus every lane's `## Verification` block, the gate verdicts, and the findings filed on the board, then report **only discrepancies** — lanes/agents left `running` that actually finished, missing or invented artifacts, findings without taskman ids, skills never reconciled, `tokens` the runtime reported but the board never got, **any agent missing `started`/`ended`** (the per-subagent duration beside its name comes from nothing else), wave `started`/`ended` gaps. It reports; it does not edit. Apply its list yourself, then close out. A clean report is a one-line "board matches".
 
-   **Tracker close-out:** set `tracker.json` → `run_status: shipped`, finalize remaining statuses, and stop the tracker HTTP server if you started one (`pkill -f "http.server $PORT"`).
+   **Tracker close-out:** set `tracker.json` → `run_status: shipped`, finalize remaining statuses, and stop the tracker HTTP server if you started one — same cascade as §1, never a bare `pkill` (Git Bash has none):
+
+   ```bash
+   if command -v pkill >/dev/null 2>&1; then
+     pkill -f "http.server $PORT" || true
+   elif command -v taskkill >/dev/null 2>&1; then
+     TRACKER_PID=$(netstat -ano | grep ":$PORT" | awk -v p=":$PORT" '$2 ~ p"$" {print $NF; exit}')
+     [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
+   else
+     echo "warn: no pkill or taskkill — stop the server on port $PORT by hand"
+   fi
+   ```
 
 3. **Print the done summary (required — do not skip):** a short human-readable block matching the Operator summary shape, in past tense. Prefer rewriting from what actually shipped (lanes + review gate + verify), not only copying the forward-looking plan text.
 
