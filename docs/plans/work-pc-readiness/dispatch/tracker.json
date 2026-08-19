@@ -5,7 +5,7 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T19:58:30Z",
+  "updated": "2026-08-19T19:58:53Z",
   "waves": [
     {
       "wave": 1,
@@ -41,7 +41,8 @@
                 }
               ],
               "tools": [],
-              "artifacts": []
+              "artifacts": [],
+              "ended": "2026-08-19T19:58:53Z"
             }
           ],
           "started": "2026-08-19T19:58:30Z"
