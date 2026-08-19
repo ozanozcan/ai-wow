@@ -5,7 +5,7 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:04:57Z",
+  "updated": "2026-08-19T20:08:36Z",
   "waves": [
     {
       "wave": 1,
@@ -40,9 +40,21 @@
                   "status": "pending"
                 }
               ],
-              "tools": [],
-              "artifacts": [],
-              "ended": "2026-08-19T19:58:53Z"
+              "tools": [
+                {
+                  "name": "rewrite backend-reviewer.md",
+                  "status": "done"
+                },
+                {
+                  "name": "create classic-web-reviewer.md",
+                  "status": "done"
+                },
+                {
+                  "name": "create streamlit-reviewer.md",
+                  "status": "running"
+                }
+              ],
+              "artifacts": []
             }
           ],
           "started": "2026-08-19T19:58:30Z"
