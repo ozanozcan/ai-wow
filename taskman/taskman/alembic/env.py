@@ -5,13 +5,25 @@ not from alembic.ini's placeholder sqlalchemy.url.
 """
 from __future__ import annotations
 
+import importlib.util
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from taskman.config import database_url
 from taskman.models import Base
+
+# guard.py sits next to this file. It cannot be imported by name: alembic does
+# not put its script directory on sys.path.
+_guard_spec = importlib.util.spec_from_file_location(
+    "_alembic_guard", Path(__file__).with_name("guard.py")
+)
+_guard = importlib.util.module_from_spec(_guard_spec)
+_guard_spec.loader.exec_module(_guard)
+guard_revision_directives = _guard.guard_revision_directives
+guard_version_apply = _guard.guard_version_apply
 
 config = context.config
 # Only configure logging for standalone CLI runs. In-process callers (taskman.db.upgrade_head,
@@ -32,6 +44,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_name=_include_name,
+        process_revision_directives=guard_revision_directives,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -55,6 +68,8 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_name=_include_name,
+            process_revision_directives=guard_revision_directives,
+            on_version_apply=guard_version_apply,
         )
         with context.begin_transaction():
             context.run_migrations()
