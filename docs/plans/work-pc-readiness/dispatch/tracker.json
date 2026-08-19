@@ -5,15 +5,15 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:17:03Z",
+  "updated": "2026-08-19T21:09:19Z",
   "waves": [
     {
       "wave": 1,
       "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "issues",
-        "detail": "Wave 1 lanes both passed review. Post-gate: lane B's landed diff was reverted by the repo sync (skills/ is mirrored from dotfiles-ai). Lane A intact and committed."
+        "status": "done",
+        "detail": "Both lanes reviewed and merged clean. Lane B's landing spot was corrected mid-Integrate after the repo sync reverted it; re-applied to dotfiles-ai with operator approval and re-verified."
       },
       "lanes": [
         {
@@ -87,7 +87,7 @@
           "brief": "02-mow-tracker-portability.md",
           "role": "code-edit",
           "afk": true,
-          "status": "issues",
+          "status": "done",
           "todos": [
             {
               "id": "02",
@@ -118,12 +118,12 @@
               ],
               "artifacts": [
                 {
-                  "label": "SKILL.md",
-                  "path": "skills/mow/SKILL.md"
+                  "label": "SKILL.md (dotfiles-ai)",
+                  "path": "~/Desktop/dotfiles-ai/skills/mow/SKILL.md"
                 },
                 {
-                  "label": "TRACKER.md",
-                  "path": "skills/mow/TRACKER.md"
+                  "label": "TRACKER.md (dotfiles-ai)",
+                  "path": "~/Desktop/dotfiles-ai/skills/mow/TRACKER.md"
                 }
               ],
               "ended": "2026-08-19T20:04:57Z",
@@ -133,7 +133,7 @@
           "started": "2026-08-19T19:58:30Z",
           "ended": "2026-08-19T20:04:57Z",
           "tokens": 69479,
-          "detail": "Work verified correct, but reverted post-apply: ai-wow/skills/ is a downstream mirror of ~/Desktop/dotfiles-ai/skills, and the repo sync restored the pre-run files. Cascade never reached a commit. Patch preserved in scratchpad; awaiting operator decision."
+          "detail": "Operator-approved re-target: ai-wow/skills is a mirror of ~/Desktop/dotfiles-ai/skills, so the gated diff was ported there (the live source) and re-verified. Reaches ai-wow and the work PC via the normal skills sync."
         }
       ],
       "started": "2026-08-19T19:58:30Z",
