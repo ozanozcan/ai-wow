@@ -60,6 +60,9 @@ no auto-open command exists.
   Both are load-bearing for the chat board.
 - **Do not introduce a dependency on `bash` arrays, `pgrep`, `lsof`, or `ss`** — the
   target is stock Git Bash on a locked-down Windows box with no admin rights.
+- **Do not branch on the platform.** No `uname`, `$OSTYPE`, `MSYS`/`MINGW` checks —
+  `command -v` probes only. Platform strings vary across Git Bash, WSL and MSYS2;
+  command presence does not.
 - **Do not touch any other skill.** `skills/` has 15 entries; this lane owns `mow` only.
 - **Do not "improve" unrelated prose in SKILL.md.** It is 71 KB; every changed line must
   trace to the portability fix.
@@ -77,9 +80,13 @@ no auto-open command exists.
   absent from stock Git Bash. Verify: `grep -nE "pkill|[^-]open \"" skills/mow/SKILL.md`
   returns only occurrences inside a `command -v` guard or a portable cascade.
 - GIVEN a Windows Git Bash shell WHEN the operator runs the serving block for a repo
-  whose port is already bound by a previous run's server, THEN the block either kills
-  that server or reports the collision and stops — it SHALL NOT silently attach to a
-  stale server serving another run's folder.
+  whose port is already bound by a previous run's server, THEN the block SHALL kill that
+  server via the `taskkill` branch of the cascade and start a fresh one — it SHALL NOT
+  silently attach to a stale server serving another run's folder, and SHALL NOT merely
+  report the collision and stop.
+- The cascade SHALL probe for commands, not platforms. Verify:
+  `grep -nE "uname|OSTYPE|MSYS|MINGW" skills/mow/SKILL.md skills/mow/TRACKER.md`
+  returns nothing in the tracker blocks.
 - GIVEN a shell with no `open`, no `start`, and no `xdg-open`, WHEN the serving block
   runs, THEN it still prints `tracker: http://localhost:<PORT>/tracker.html` so the
   operator can open it by hand.
