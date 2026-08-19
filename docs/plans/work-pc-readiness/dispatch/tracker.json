@@ -5,14 +5,14 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T20:08:36Z",
+  "updated": "2026-08-19T20:11:24Z",
   "waves": [
     {
       "wave": 1,
-      "status": "running",
+      "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "pending"
+        "status": "running"
       },
       "lanes": [
         {
@@ -20,44 +20,66 @@
           "brief": "01-reviewer-roster.md",
           "role": "code-edit",
           "afk": true,
-          "status": "running",
+          "status": "done",
           "todos": [
             {
               "id": "01",
               "title": "FastAPI-only backend reviewer + classic-web + streamlit",
-              "status": "running"
+              "status": "done"
             }
           ],
           "agents": [
             {
               "name": "tdd-builder",
-              "status": "running",
+              "status": "done",
               "started": "2026-08-19T19:58:30Z",
               "detail": "isolation: worktree \u2014 agents/ roster rewrite",
               "skills": [
                 {
                   "name": "simplify",
-                  "status": "pending"
+                  "status": "done",
+                  "detail": "4 cleanup agents; 9 applied, 3 skipped; 152->149 lines"
                 }
               ],
               "tools": [
                 {
-                  "name": "rewrite backend-reviewer.md",
+                  "name": "grep acceptance suite (red->green)",
                   "status": "done"
                 },
                 {
-                  "name": "create classic-web-reviewer.md",
+                  "name": "python3 bin/ai-sync status",
                   "status": "done"
                 },
                 {
-                  "name": "create streamlit-reviewer.md",
-                  "status": "running"
+                  "name": "frontmatter parser",
+                  "status": "done"
                 }
               ],
-              "artifacts": []
+              "artifacts": [
+                {
+                  "label": "backend-reviewer.md",
+                  "path": "agents/backend-reviewer.md"
+                },
+                {
+                  "label": "classic-web-reviewer.md",
+                  "path": "agents/classic-web-reviewer.md"
+                },
+                {
+                  "label": "streamlit-reviewer.md",
+                  "path": "agents/streamlit-reviewer.md"
+                },
+                {
+                  "label": "django-reviewer.md (deleted)",
+                  "path": "agents/django-reviewer.md"
+                }
+              ],
+              "ended": "2026-08-19T20:11:24Z",
+              "tokens": 93912
             }
           ],
-          "started": "2026-08-19T19:58:30Z"
+          "started": "2026-08-19T19:58:30Z",
+          "ended": "2026-08-19T20:11:24Z",
+          "tokens": 93912
         },
         {
           "lane": "B",
@@ -113,7 +135,8 @@
         }
       ],
       "started": "2026-08-19T19:58:30Z",
-      "ended": null
+      "ended": "2026-08-19T20:11:24Z",
+      "tokens": 163391
     },
     {
       "wave": 2,
