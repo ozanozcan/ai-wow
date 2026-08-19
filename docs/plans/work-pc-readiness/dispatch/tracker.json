@@ -5,7 +5,7 @@
   "run_status": "running",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-19T19:59:06Z",
+  "updated": "2026-08-19T20:04:57Z",
   "waves": [
     {
       "wave": 1,
@@ -52,27 +52,52 @@
           "brief": "02-mow-tracker-portability.md",
           "role": "code-edit",
           "afk": true,
-          "status": "running",
+          "status": "done",
           "todos": [
             {
               "id": "02",
               "title": "Portable mow tracker shell blocks",
-              "status": "running"
+              "status": "done"
             }
           ],
           "agents": [
             {
               "name": "tdd-builder",
-              "status": "running",
+              "status": "done",
               "started": "2026-08-19T19:58:30Z",
               "detail": "isolation: worktree \u2014 skills/mow shell portability",
               "skills": [],
-              "tools": [],
-              "artifacts": [],
-              "ended": "2026-08-19T19:59:06Z"
+              "tools": [
+                {
+                  "name": "bash -n on 3 extracted blocks",
+                  "status": "done"
+                },
+                {
+                  "name": "serving+close-out e2e on port 8399",
+                  "status": "done"
+                },
+                {
+                  "name": "taskkill/open cascade stub matrix",
+                  "status": "done"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "SKILL.md",
+                  "path": "skills/mow/SKILL.md"
+                },
+                {
+                  "label": "TRACKER.md",
+                  "path": "skills/mow/TRACKER.md"
+                }
+              ],
+              "ended": "2026-08-19T20:04:57Z",
+              "tokens": 69479
             }
           ],
-          "started": "2026-08-19T19:58:30Z"
+          "started": "2026-08-19T19:58:30Z",
+          "ended": "2026-08-19T20:04:57Z",
+          "tokens": 69479
         }
       ],
       "started": "2026-08-19T19:58:30Z",
