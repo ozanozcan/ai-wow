@@ -39,6 +39,11 @@ one of the four reviewers. No document claims a count that disagrees with `ls ag
   importing Streamlit → `streamlit-reviewer`; `.jsx`/`.tsx` with React →
   `frontend-reviewer`; `.js`/`.html`/`.j2`/`.jinja` with no component framework →
   `classic-web-reviewer`. Write the rows so an agent can pick without asking.
+- **The routing rows must also carry the HTMX handoff** (grilled 2026-08-19; plan.md
+  `## Decisions locked`). Dispatch is by file type, so a diff that changes both a FastAPI
+  route and its Jinja partial needs **both** reviewers. Say that in the routing table —
+  one row, not a paragraph — so an agent holding a mixed HTMX diff runs both instead of
+  picking one and moving on.
 
 ## Files in scope
 

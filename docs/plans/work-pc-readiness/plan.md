@@ -61,6 +61,15 @@ starts and stops cleanly in Git Bash on a locked-down Windows box.
   `templates/BOOTSTRAP.md`) — deleting it there makes those docs worse, and the global
   guideline is to touch only what the request requires.
 - **Session reports are never edited** — `docs/session-reports/` is historical record.
+- **Reviewer dispatch is by file type, with the seam named in both agents.**
+  (Grilled 2026-08-19.) `.py` → `backend-reviewer`; templates, `.js`, `.html` →
+  `classic-web-reviewer`. So that HTML-built-in-Python is not a blind spot for both,
+  `backend-reviewer` carries one item flagging markup constructed in Python
+  (`HTMLResponse` with an f-string, manual string-built templates) as an escaping risk
+  and naming `classic-web-reviewer` for the markup half; `classic-web-reviewer` carries
+  the mirror note that route auth, tenancy and query performance are **not** its job.
+  Rejected: overlapping file ownership (forces running both agents on every HTMX diff),
+  and a bare file-type split with no handoff (leaves the XSS gap open).
 - **The tracker's non-portable calls get a `command -v` cascade, not a caveat.**
   (Grilled 2026-08-19.) Kill: `pkill` → `taskkill` → skip-with-warning. Open: `open` →
   `start` → `xdg-open` → skip. The URL is printed unconditionally in every branch, so a

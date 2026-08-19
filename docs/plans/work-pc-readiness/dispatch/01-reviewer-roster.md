@@ -29,6 +29,14 @@ to every review it will ever run, with no inert stack branches.
   reviewer shares nothing with the classic-web one beyond output format.
 - **`classic-web-reviewer` spans two languages on purpose.** `|safe` in a Jinja template
   and `innerHTML` in a jQuery file are the same XSS finding; one section covers both.
+- **The HTMX seam is locked** (grilled 2026-08-19; plan.md `## Decisions locked`).
+  Dispatch is by **file type**: `.py` → `backend-reviewer`, templates/`.js`/`.html` →
+  `classic-web-reviewer`. Both files must name the seam so the overlap is not a blind
+  spot: `backend-reviewer` gets **one** item flagging HTML constructed in Python —
+  `HTMLResponse` with an f-string, manually string-built markup — as an escaping risk,
+  pointing at `classic-web-reviewer` for the markup half. `classic-web-reviewer` gets
+  the mirror note in its scope boundary: route auth, tenancy and query performance are
+  not its job. Do **not** give the two agents overlapping file ownership.
 - **Match the existing agent file shape exactly** — frontmatter (`name`, `description`,
   `tools: Read, Grep, Glob, Bash`, `readonly: true`), then `## On invoke`, lettered
   checklist sections, `## Severity mapping`, `## Output format`, `## Rules of engagement`.
@@ -102,6 +110,14 @@ readonly: true
 - GIVEN a Streamlit diff that calls a paid API at module scope with no
   `@st.cache_data`, WHEN `streamlit-reviewer` is applied, THEN the rerun-cost finding is
   reachable, because Streamlit re-executes the whole script on every widget interaction.
+- GIVEN a FastAPI route returning `HTMLResponse(f"<div>{user_input}</div>")`, WHEN
+  `backend-reviewer` is applied, THEN the escaping risk is reachable as a finding **and**
+  the agent names `classic-web-reviewer` as the one to run for the markup half — the
+  seam is stated, not left to the operator to notice.
+- `classic-web-reviewer` SHALL state in its scope boundary that route auth, tenancy and
+  query performance belong to `backend-reviewer`. Verify:
+  `grep -c "backend-reviewer" agents/classic-web-reviewer.md` ≥ 1 and
+  `grep -c "classic-web-reviewer" agents/backend-reviewer.md` ≥ 1.
 - Every new and modified agent file SHALL parse as valid frontmatter and be picked up by
   the sync script. Verify: `python3 bin/ai-sync status` exits 0.
 
