@@ -10,6 +10,14 @@
       "copilot": { "event": "PreToolUse" }
     },
     {
+      "_comment": "alembic only; no-ops outside an Alembic project and defers to a project-local scripts/guard_migration_apply.sh",
+      "id": "guard-migrations",
+      "script": "guard-migrations.sh",
+      "claude": { "event": "PreToolUse", "matcher": "Bash" },
+      "cursor": { "event": "beforeShellExecution", "failClosed": false },
+      "copilot": { "event": "PreToolUse" }
+    },
+    {
       "id": "session-start-marker",
       "script": "session-start-marker.sh",
       "claude": { "event": "SessionStart" },
