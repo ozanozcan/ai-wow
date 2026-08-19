@@ -111,6 +111,11 @@ starts and stops cleanly in Git Bash on a locked-down Windows box.
   examples, not the bundled agent (see Decisions locked).
 - **Vendoring `impeccable`** — Apache-2.0, ~99 files, deliberately added via
   `npx skills add pbakaus/impeccable` rather than committed here.
+- **`templates/protocols.template.md`** — its P1/P2 tables name `<backend-reviewer>` /
+  `<frontend-reviewer>` as **placeholders**, and `templates/BOOTSTRAP.md` step 1 already
+  instructs the adopter to substitute whatever reviewers exist in their environment. It
+  is correct as written and does not enumerate the roster, so the new agents need no
+  entry there.
 
 ## Operator note — the two-repo skill farm
 
