@@ -532,7 +532,7 @@ def do_render_hooks() -> None:
     # Claude: merge hooks block, preserve every other setting.
     foreign = _tool_is_foreign(CLAUDE)
     if foreign:
-        _warn_foreign(CLAUDE, foreign)
+        _warn_foreign(CLAUDE / "agents", foreign)
     else:
         settings_path = CLAUDE / "settings.json"
         settings = load_json(settings_path, {})
@@ -545,7 +545,7 @@ def do_render_hooks() -> None:
     # Cursor: dedicated file, render whole thing.
     foreign = _tool_is_foreign(CURSOR)
     if foreign:
-        _warn_foreign(CURSOR, foreign)
+        _warn_foreign(CURSOR / "agents", foreign)
     else:
         cursor_path = CURSOR / "hooks.json"
         new_cursor = render_cursor_hooks(defs)
@@ -556,7 +556,7 @@ def do_render_hooks() -> None:
     # Copilot: dedicated file under its hooks/ dir (it loads every *.json there).
     foreign = _tool_is_foreign(COPILOT)
     if foreign:
-        _warn_foreign(COPILOT, foreign)
+        _warn_foreign(COPILOT / "agents", foreign)
     else:
         copilot_path = COPILOT / "hooks" / "ai-wow.json"
         new_copilot = render_copilot_hooks(defs)
@@ -573,7 +573,7 @@ def do_render_mcp() -> None:
     # Cursor: dedicated file.
     foreign = _tool_is_foreign(CURSOR)
     if foreign:
-        _warn_foreign(CURSOR, foreign)
+        _warn_foreign(CURSOR / "agents", foreign)
     else:
         cursor_path = CURSOR / "mcp.json"
         if load_json(cursor_path, None) != desired:
@@ -583,7 +583,7 @@ def do_render_mcp() -> None:
     # Copilot: dedicated file, its own documented portable location.
     foreign = _tool_is_foreign(COPILOT)
     if foreign:
-        _warn_foreign(COPILOT, foreign)
+        _warn_foreign(COPILOT / "agents", foreign)
     else:
         copilot_path = COPILOT / "mcp-config.json"
         if load_json(copilot_path, None) != desired:
@@ -593,7 +593,7 @@ def do_render_mcp() -> None:
     # Claude: only touch the big live file when we actually have servers.
     foreign = _tool_is_foreign(CLAUDE)
     if servers and foreign:
-        _warn_foreign(CLAUDE, foreign)
+        _warn_foreign(CLAUDE / "agents", foreign)
     elif servers:
         d = load_json(CLAUDE_JSON, {})
         if d.get("mcpServers") != servers:
