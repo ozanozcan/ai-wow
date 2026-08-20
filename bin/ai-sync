@@ -513,53 +513,88 @@ def render_copilot_hooks(defs: list[dict]) -> dict:
     return {"hooks": out}
 
 
+def _tool_is_foreign(tool_dir: Path) -> Path | None:
+    """Is this tool's whole config directory pointed at a different repo?
+
+    Rendered files (settings.json, hooks.json, mcp configs) aren't symlinks
+    themselves, so they can't detect drift the way LINK_DIRS entries can — but
+    if the tool's agents/ symlink resolves into a foreign repo, that repo is
+    what's actually meant to be driving this tool, and we must not overwrite
+    its hook/MCP rendering with this repo's.
+    """
+    return foreign_repo_root(tool_dir / "agents")
+
+
 def do_render_hooks() -> None:
     defs = hook_defs()
     if not defs:
         return
     # Claude: merge hooks block, preserve every other setting.
-    settings_path = CLAUDE / "settings.json"
-    settings = load_json(settings_path, {})
-    new_hooks = render_claude_hooks(defs)
-    if settings.get("hooks") != new_hooks:
-        backup(settings_path)
-        settings["hooks"] = new_hooks
-        write_json(settings_path, settings)
-        log("  rendered ~/.claude/settings.json hooks")
+    foreign = _tool_is_foreign(CLAUDE)
+    if foreign:
+        _warn_foreign(CLAUDE, foreign)
+    else:
+        settings_path = CLAUDE / "settings.json"
+        settings = load_json(settings_path, {})
+        new_hooks = render_claude_hooks(defs)
+        if settings.get("hooks") != new_hooks:
+            backup(settings_path)
+            settings["hooks"] = new_hooks
+            write_json(settings_path, settings)
+            log("  rendered ~/.claude/settings.json hooks")
     # Cursor: dedicated file, render whole thing.
-    cursor_path = CURSOR / "hooks.json"
-    new_cursor = render_cursor_hooks(defs)
-    if load_json(cursor_path, None) != new_cursor:
-        backup(cursor_path)
-        write_json(cursor_path, new_cursor)
-        log("  rendered ~/.cursor/hooks.json")
+    foreign = _tool_is_foreign(CURSOR)
+    if foreign:
+        _warn_foreign(CURSOR, foreign)
+    else:
+        cursor_path = CURSOR / "hooks.json"
+        new_cursor = render_cursor_hooks(defs)
+        if load_json(cursor_path, None) != new_cursor:
+            backup(cursor_path)
+            write_json(cursor_path, new_cursor)
+            log("  rendered ~/.cursor/hooks.json")
     # Copilot: dedicated file under its hooks/ dir (it loads every *.json there).
-    copilot_path = COPILOT / "hooks" / "ai-wow.json"
-    new_copilot = render_copilot_hooks(defs)
-    if load_json(copilot_path, None) != new_copilot:
-        backup(copilot_path)
-        write_json(copilot_path, new_copilot)
-        log("  rendered ~/.copilot/hooks/ai-wow.json")
+    foreign = _tool_is_foreign(COPILOT)
+    if foreign:
+        _warn_foreign(COPILOT, foreign)
+    else:
+        copilot_path = COPILOT / "hooks" / "ai-wow.json"
+        new_copilot = render_copilot_hooks(defs)
+        if load_json(copilot_path, None) != new_copilot:
+            backup(copilot_path)
+            write_json(copilot_path, new_copilot)
+            log("  rendered ~/.copilot/hooks/ai-wow.json")
 
 
 def do_render_mcp() -> None:
     canonical = load_json(REPO / "mcp.json", {"mcpServers": {}})
     servers = canonical.get("mcpServers", {})
-    # Cursor: dedicated file.
-    cursor_path = CURSOR / "mcp.json"
     desired = {"mcpServers": servers}
-    if load_json(cursor_path, None) != desired:
-        backup(cursor_path)
-        write_json(cursor_path, desired)
-        log("  rendered ~/.cursor/mcp.json")
+    # Cursor: dedicated file.
+    foreign = _tool_is_foreign(CURSOR)
+    if foreign:
+        _warn_foreign(CURSOR, foreign)
+    else:
+        cursor_path = CURSOR / "mcp.json"
+        if load_json(cursor_path, None) != desired:
+            backup(cursor_path)
+            write_json(cursor_path, desired)
+            log("  rendered ~/.cursor/mcp.json")
     # Copilot: dedicated file, its own documented portable location.
-    copilot_path = COPILOT / "mcp-config.json"
-    if load_json(copilot_path, None) != desired:
-        backup(copilot_path)
-        write_json(copilot_path, desired)
-        log("  rendered ~/.copilot/mcp-config.json")
+    foreign = _tool_is_foreign(COPILOT)
+    if foreign:
+        _warn_foreign(COPILOT, foreign)
+    else:
+        copilot_path = COPILOT / "mcp-config.json"
+        if load_json(copilot_path, None) != desired:
+            backup(copilot_path)
+            write_json(copilot_path, desired)
+            log("  rendered ~/.copilot/mcp-config.json")
     # Claude: only touch the big live file when we actually have servers.
-    if servers:
+    foreign = _tool_is_foreign(CLAUDE)
+    if servers and foreign:
+        _warn_foreign(CLAUDE, foreign)
+    elif servers:
         d = load_json(CLAUDE_JSON, {})
         if d.get("mcpServers") != servers:
             backup(CLAUDE_JSON)
