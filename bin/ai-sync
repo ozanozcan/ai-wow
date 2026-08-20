@@ -825,34 +825,32 @@ def do_commit() -> None:
 # status / checks
 # ---------------------------------------------------------------------------
 
+def _dir_link_state(link: Path, canonical: Path) -> str:
+    foreign = foreign_repo_root(link)
+    if foreign:
+        return f"OTHER REPO ({foreign})"
+    if link.is_symlink() and link.resolve() == canonical.resolve():
+        return "linked"
+    if not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
+        return "copied (in sync)"
+    if link.exists():
+        return "NOT linked (real dir)"
+    return "missing"
+
+
 def do_status() -> int:
     print(f"repo: {REPO}")
     print(f"  link mode: {'symlink' if can_symlink() else 'copy (no symlink privilege)'}")
     for name, canonical in LINK_DIRS.items():
         for tool in (CLAUDE, CURSOR):
-            link = tool / name
-            if link.is_symlink() and link.resolve() == canonical.resolve():
-                state = "linked"
-            elif not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
-                state = "copied (in sync)"
-            elif link.exists():
-                state = "NOT linked (real dir)"
-            else:
-                state = "missing"
-            print(f"  {tool.name}/{name:9} {state}")
+            print(f"  {tool.name}/{name:9} {_dir_link_state(tool / name, canonical)}")
     for name, canonical in COPILOT_LINK_DIRS.items():
-        link = COPILOT / name
-        if link.is_symlink() and link.resolve() == canonical.resolve():
-            state = "linked"
-        elif not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
-            state = "copied (in sync)"
-        elif link.exists():
-            state = "NOT linked (real dir)"
-        else:
-            state = "missing"
-        print(f"  {COPILOT.name}/{name:9} {state}")
+        print(f"  {COPILOT.name}/{name:9} {_dir_link_state(COPILOT / name, canonical)}")
     for link, canonical in LINK_FILES.items():
-        if link.is_symlink() and link.resolve() == canonical.resolve():
+        foreign = foreign_repo_root(link)
+        if foreign:
+            state = f"OTHER REPO ({foreign})"
+        elif link.is_symlink() and link.resolve() == canonical.resolve():
             state = "linked"
         elif not can_symlink() and link.is_file() and link.read_bytes() == canonical.read_bytes():
             state = "copied (in sync)"

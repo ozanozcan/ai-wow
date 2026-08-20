@@ -119,8 +119,43 @@ starts and stops cleanly in Git Bash on a locked-down Windows box.
 
 ## Operator note — the two-repo skill farm
 
-`~/.agents/skills` symlinks to `~/Desktop/dotfiles-ai/skills`, **not** to this repo. So
-lane B's edits to `skills/mow/SKILL.md` land in ai-wow — which is what the work PC
-clones — but do **not** change the mow procedure running on this Mac until they are also
-ported to `dotfiles-ai`. That is a feature for this run: the tracker cannot break
-mid-flight by editing itself. It is a trap afterwards.
+**Corrected 2026-08-19 during `/mow go` Integrate. The original note had the direction
+backwards; it is kept below, struck through, because the plan was executed against it.**
+
+`~/.agents/skills` symlinks to `~/Desktop/dotfiles-ai/skills`. That repo is not just the
+*live* copy — it is the **source**. `ai-wow/skills/` is a downstream mirror that a repo
+sync re-copies from dotfiles-ai (preserving mtimes) and then auto-commits. Writing to
+`ai-wow/skills/**` therefore does not persist: lane B's verified diff was applied at
+20:12 UTC and restored to its pre-run state within a minute, never reaching a commit.
+
+The working chain is **edit dotfiles-ai → sync copies into ai-wow → ai-wow pushed →
+work PC clones ai-wow**. Lane B's fix was re-applied to dotfiles-ai with operator
+approval and has since propagated: ai-wow's HEAD carries the cascade and the two copies
+are byte-identical.
+
+> ~~So lane B's edits to `skills/mow/SKILL.md` land in ai-wow — which is what the work PC
+> clones — but do **not** change the mow procedure running on this Mac until they are also
+> ported to `dotfiles-ai`. That is a feature for this run: the tracker cannot break
+> mid-flight by editing itself. It is a trap afterwards.~~
+
+## Correction — the `backend-reviewer` premise was stale
+
+**Recorded 2026-08-19 during Integrate.** This plan and brief `01-reviewer-roster.md`
+describe a `backend-reviewer` with a Django→section-F / Flask→section-A stack-detection
+table at `:26-27` and an LLM section at `:123-129`. **No such file was in the repo.** The
+committed version was 138 lines with zero `django`/`flask` occurrences and its LLM section
+at `:69-75` — the plan was written against a version that had been reverted.
+
+Consequences for the record, not the outcome:
+
+- Items 1's sub-clauses "delete the Django checklist sections" and "drop the Flask row"
+  were **no-ops**. This run did not fix two live bugs in `backend-reviewer`, because
+  those bugs were not present. The `django-reviewer.md` deletion was real.
+- The expectation that the file would get *shorter* was based on the same phantom. With
+  nothing to remove and a six-item security section added, it went 138 → 149 lines
+  (`simplify` took it 152 → 149).
+- `django-reviewer.md` was **tracked**, not "the untracked leftover from a reverted
+  re-add" as stated under `## Decisions locked`; its deletion required `git rm`.
+
+Lane A built to the end state specified by the Goal and Acceptance check rather than to
+the deletion steps, which is why the outcome is correct despite the premise.
