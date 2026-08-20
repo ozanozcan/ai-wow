@@ -139,12 +139,59 @@ def points_into_repo(path: Path) -> bool:
         return False
 
 
+def _git_root(path: Path) -> Path | None:
+    """Walk up from path looking for a .git — the repo that owns it, if any."""
+    p = path
+    for _ in range(30):
+        if (p / ".git").exists():
+            return p
+        if p.parent == p:
+            return None
+        p = p.parent
+    return None
+
+
+def foreign_repo_root(path: Path) -> Path | None:
+    """If path is a symlink resolving into a DIFFERENT git repo (not this one),
+    return that repo's root. Machines sometimes point ~/.claude et al at a
+    sibling harness repo instead of this one (e.g. a private fork) — importing
+    from it or relinking over it would mix two unrelated projects' content
+    into whichever repo ai-sync commits and pushes. Never silent about that.
+    """
+    if points_into_repo(path):
+        return None
+    try:
+        if not path.is_symlink():
+            return None
+        target = path.resolve()
+    except OSError:
+        return None
+    root = _git_root(target)
+    if root is not None and root != REPO:
+        return root
+    return None
+
+
+def _warn_foreign(path: Path, root: Path) -> None:
+    print(
+        f"ai-sync: {path} is a symlink into a DIFFERENT repo ({root}) — "
+        f"leaving it alone (not importing from it, not relinking over it). "
+        f"Remove that symlink by hand first if you actually want this machine "
+        f"on {REPO}.",
+        flush=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # import: pull live content into the canonical repo (union of both tools)
 # ---------------------------------------------------------------------------
 
 def _copy_md(src_dir: Path, dst_dir: Path) -> int:
     n = 0
+    foreign = foreign_repo_root(src_dir)
+    if foreign:
+        _warn_foreign(src_dir, foreign)
+        return 0
     if not src_dir.is_dir() or points_into_repo(src_dir):
         return 0
     dst_dir.mkdir(parents=True, exist_ok=True)
@@ -170,6 +217,10 @@ def _copy_skills(src_dir: Path, dst_dir: Path) -> int:
     No-ops when the farm is already a symlink into this repo (nothing to import).
     """
     n = 0
+    foreign = foreign_repo_root(src_dir)
+    if foreign:
+        _warn_foreign(src_dir, foreign)
+        return 0
     if not src_dir.is_dir() or points_into_repo(src_dir):
         return 0
     dst_dir.mkdir(parents=True, exist_ok=True)
@@ -190,6 +241,10 @@ def _copy_skills(src_dir: Path, dst_dir: Path) -> int:
 
 def _copy_scripts(src_dir: Path, dst_dir: Path) -> int:
     n = 0
+    foreign = foreign_repo_root(src_dir)
+    if foreign:
+        _warn_foreign(src_dir, foreign)
+        return 0
     if not src_dir.is_dir() or points_into_repo(src_dir):
         return 0
     dst_dir.mkdir(parents=True, exist_ok=True)
@@ -316,18 +371,26 @@ def ensure_symlink(link: Path, target: Path) -> str:
     return "linked"
 
 
+def _ensure_linked_unless_foreign(link: Path, canonical: Path) -> str:
+    foreign = foreign_repo_root(link)
+    if foreign:
+        _warn_foreign(link, foreign)
+        return "skip (foreign repo)"
+    return ensure_linked(link, canonical)
+
+
 def do_link() -> None:
     for name, canonical in LINK_DIRS.items():
         for tool in (CLAUDE, CURSOR):
-            res = ensure_linked(tool / name, canonical)
+            res = _ensure_linked_unless_foreign(tool / name, canonical)
             if res != "ok":
                 log(f"  {tool.name}/{name}: {res}")
     for name, canonical in COPILOT_LINK_DIRS.items():
-        res = ensure_linked(COPILOT / name, canonical)
+        res = _ensure_linked_unless_foreign(COPILOT / name, canonical)
         if res != "ok":
             log(f"  {COPILOT.name}/{name}: {res}")
     for link, canonical in LINK_FILES.items():
-        res = ensure_linked(link, canonical)
+        res = _ensure_linked_unless_foreign(link, canonical)
         if res != "ok":
             log(f"  {link.parent.name}/{link.name}: {res}")
 
