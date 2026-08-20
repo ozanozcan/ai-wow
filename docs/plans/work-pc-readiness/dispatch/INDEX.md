@@ -55,6 +55,8 @@ contract, plus the acceptance greps.
 **Grill checkpoint:** done 2026-08-19
 **Grill write-back:** plan.md ✓ (3 decisions locked: tracker `command -v` cascade · file-type reviewer dispatch with named seam · section G trimmed to operational + pointer) · briefs: 01-reviewer-roster.md, 02-mow-tracker-portability.md, 03-docs-reference-sweep.md · taskman: n/a — no root `.taskman.toml` in this repo
 
+**Action report:** [`../action-report.md`](../action-report.md)
+
 ## Conflicts check
 
 No two same-wave lanes share a file.
