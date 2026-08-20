@@ -128,8 +128,66 @@ def guard_revision_directives(context, revision, directives) -> None:
     )
 
 
+def _report(findings: list[str]) -> None:
+    raise UnsafeMigration(
+        "Refusing to apply migration(s) that destroy data:\n\n"
+        + "\n".join(findings)
+        + "\n\nIf this is a rename, rewrite it as op.alter_column(..., "
+        "new_column_name=...). If the drop is intended, back up first, then "
+        "re-run with ALEMBIC_ALLOW_DESTRUCTIVE=1."
+    )
+
+
+def guard_before_run(context) -> None:
+    """Pre-gate: refuse BEFORE any DDL runs.
+
+    ``on_version_apply`` (below) fires *after* alembic executes the migration
+    -- it only saves the data because the raise rolls the transaction back,
+    which assumes transactional DDL. This runs first so nothing is executed at
+    all.
+
+    Read-only commands route through the same env.py, so gate on what alembic
+    is actually about to do: ``_migrations_fn`` is named ``upgrade`` for an
+    upgrade and ``display_version`` for ``alembic current``. Recomputing the
+    plan is safe -- alembic derives it from the revision map and does so again
+    itself. Anything unrecognised falls through to the on_version_apply
+    backstop rather than blocking legitimate work.
+    """
+    if _override():
+        return
+
+    migration_context = context.get_context()
+    fn = getattr(migration_context, "_migrations_fn", None)
+    if getattr(fn, "__name__", "") not in ("upgrade", "downgrade"):
+        return
+
+    try:
+        heads = migration_context.get_current_heads()
+        steps = list(fn(heads, migration_context))
+    except Exception:
+        return  # cannot plan: fail open, the backstop still applies
+
+    findings: list[str] = []
+    for step in steps:
+        if not getattr(step, "is_upgrade", False):
+            continue  # downgrades are destructive by design
+        path = getattr(getattr(step, "revision", None), "path", None)
+        if not path:
+            continue
+        for hit in destructive_calls(path, "upgrade"):
+            findings.append(f"  {Path(path).name} {hit}")
+
+    if findings:
+        _report(findings)
+
+
 def guard_version_apply(ctx, step, heads, run_args) -> None:
-    """on_version_apply hook: refuse to apply an upgrade that destroys data."""
+    """Backstop for anything guard_before_run could not plan.
+
+    Fires after alembic applies the migration, so it depends on the raise
+    rolling the transaction back. Kept because it catches cases the pre-gate
+    skips (an unrecognised command shape, a plan it could not compute).
+    """
     if _override() or not getattr(step, "is_migration", False):
         return
     if not getattr(step, "is_upgrade", False):
@@ -143,13 +201,5 @@ def guard_version_apply(ctx, step, heads, run_args) -> None:
         for hit in destructive_calls(path, "upgrade"):
             findings.append(f"  {Path(path).name} {hit}")
 
-    if not findings:
-        return
-
-    raise UnsafeMigration(
-        "Refusing to apply migration(s) that destroy data:\n\n"
-        + "\n".join(findings)
-        + "\n\nIf this is a rename, rewrite it as op.alter_column(..., "
-        "new_column_name=...). If the drop is intended, back up first, then "
-        "re-run with ALEMBIC_ALLOW_DESTRUCTIVE=1."
-    )
+    if findings:
+        _report(findings)

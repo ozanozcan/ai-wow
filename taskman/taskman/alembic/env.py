@@ -24,6 +24,7 @@ _guard = importlib.util.module_from_spec(_guard_spec)
 _guard_spec.loader.exec_module(_guard)
 guard_revision_directives = _guard.guard_revision_directives
 guard_version_apply = _guard.guard_version_apply
+guard_before_run = _guard.guard_before_run
 
 config = context.config
 # Only configure logging for standalone CLI runs. In-process callers (taskman.db.upgrade_head,
@@ -71,6 +72,7 @@ def run_migrations_online() -> None:
             process_revision_directives=guard_revision_directives,
             on_version_apply=guard_version_apply,
         )
+        guard_before_run(context)
         with context.begin_transaction():
             context.run_migrations()
 
