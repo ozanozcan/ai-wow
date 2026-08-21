@@ -31,5 +31,9 @@ print(json.dumps({
     exit 0
 fi
 
-echo '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}}'
+# No opinion, rather than an explicit "allow". An affirmative allow here would
+# approve every command this hook does not recognise -- including one it failed
+# to parse, if a tool ever sends a payload shape it cannot read. Returning {}
+# lets the normal permission flow decide instead.
+echo '{}'
 exit 0
