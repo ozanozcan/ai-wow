@@ -2,10 +2,10 @@
   "schema": 1,
   "stem": "work-pc-readiness",
   "title": "Reviewer roster for the operator's real stacks + portable mow tracker",
-  "run_status": "running",
+  "run_status": "shipped",
   "pulse": true,
   "started": "2026-08-19T19:57:00Z",
-  "updated": "2026-08-20T08:23:50Z",
+  "updated": "2026-08-20T08:25:54Z",
   "waves": [
     {
       "wave": 1,

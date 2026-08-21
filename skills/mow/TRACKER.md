@@ -295,13 +295,23 @@ yourself anyway when you can; the hook is the safety net, not the contract. Full
 Write is fine — the file is small; do not stream partial JSON (the page tolerates
 one bad poll but not many).
 
-The same hook also stamps **agent `started` / `ended`** from the Task tool call
-itself: `PreToolUse` records the spawn in `dispatch/.agent-times.json`,
+The same hook also stamps **agent `started` / `ended`** from the spawn's own tool
+call: `PreToolUse` records the spawn in `dispatch/.agent-times.json`,
 `PostToolUse` pairs the return with it and merges the span into the matching
 agent. A span with no agent entry to land on yet waits in that ledger and is
 retried on every later tracker write, so the two can happen in any order. It
-matches on the lane whose `brief` the Task prompt names, falling back to the
+matches on the lane whose `brief` the prompt names, falling back to the
 first unstamped agent whose `name` starts with the `subagent_type` — a heuristic,
 unlike the `updated` stamp, so it only ever fills a field you left empty. Keep
 stamping agents yourself: your value always wins, and the hook is Claude-only
 (Cursor has no Task event). The ledger is disposable run state; delete it freely.
+
+**A backgrounded lane gets only `started` from the hook — its `ended` is yours.**
+An async spawn's `PostToolUse` fires when the *launch* returns, so it carries no
+completion information; the hook deliberately writes no `ended` for one. Before
+this was fixed, every AFK lane was stamped as finishing ~20s after spawn, which
+froze that lane's clock on the board and made a live multi-minute run read as
+dead — visible only while the lane was still running, because the orchestrator's
+own write overwrote the bad value the moment the report landed. This is why the
+write-points table says to write a lane's terminal state **as soon as the report
+lands, before verifying its claims**: for background lanes nothing else will.
