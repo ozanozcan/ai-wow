@@ -596,3 +596,13 @@ def test_pointer_only_cells_pass_prose_lint():
         )
         == []
     )
+    # A reason may name a function with parens — the marker spans to the
+    # matching close paren, not the first one (2026-08-26).
+    assert (
+        _mod.check_index_decisions_pointer_only(
+            "A",
+            "d `#852` · waived: d#1129 (this lane owns instantiate_day() only; "
+            "the rest is lane Z)",
+        )
+        == []
+    )

@@ -136,6 +136,23 @@ def test_waived_reason_does_not_inject_pointers_or_unclaimed_ids():
     assert _mod.unclaimed_ids(cell, []) == []
 
 
+def test_waived_reason_may_contain_a_function_call():
+    """A reason ending in `foo()` must not truncate at the inner paren (2026-08-26)."""
+    cell = "d `#852` · waived: d#1129 (this lane owns instantiate_day() only; the rest is lane Z)"
+    assert _mod.parse_waived(cell) == [
+        (1129, "this lane owns instantiate_day() only; the rest is lane Z")
+    ]
+    assert _mod.parse_pointer_cell(cell) == [("d", 852)]
+    assert _mod.unclaimed_ids(cell, [("d", 852)]) == []
+
+
+def test_waived_marker_with_unclosed_paren_is_not_a_marker():
+    """No matching close paren -> not parsed, and left in the cell for the lint."""
+    cell = "waived: d#99 (never closed"
+    assert _mod.parse_waived(cell) == []
+    assert _mod._cell_without_waived(cell) == cell
+
+
 def test_resolve_entries_accepts_capture_in_workflow_project():
     demo = SimpleNamespace(id=1, slug="demo-api")
     workflow = SimpleNamespace(id=99, slug="workflow")

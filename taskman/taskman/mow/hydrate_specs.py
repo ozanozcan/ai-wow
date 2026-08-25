@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import select
@@ -38,10 +39,36 @@ _POINTER_CHUNK = re.compile(
 )
 _ID = re.compile(r"#(\d+)")
 # Wave-offs in INDEX Decisions/Specs cells (d#852). Not hydrated, not citation-checked.
-_WAIVED = re.compile(
-    r"waived:\s*d\s*`?#(\d+)`?\s*\(([^)]*)\)",
+# Only the head is a regex: a reason may contain its own parens (`instantiate_day()`),
+# so the closing paren is found by depth counting rather than by `[^)]*`.
+_WAIVED_HEAD = re.compile(
+    r"waived:\s*d\s*`?#(\d+)`?\s*\(",
     re.I,
 )
+
+
+def _iter_waived(cell: str) -> Iterator[tuple[int, int, int, str]]:
+    """Yield ``(start, end, decision_id, reason)`` for each balanced waived marker.
+
+    ``start``/``end`` bound the whole ``waived: d#N (…)`` span. A marker whose
+    parens never close is not a marker: it is skipped and left in the cell, so the
+    pointers-only check still reports it as residual text.
+    """
+    pos = 0
+    while (m := _WAIVED_HEAD.search(cell, pos)) is not None:
+        depth = 1
+        i = m.end()
+        while i < len(cell) and depth:
+            if cell[i] == "(":
+                depth += 1
+            elif cell[i] == ")":
+                depth -= 1
+            i += 1
+        if depth:
+            pos = m.end()
+            continue
+        yield m.start(), i, int(m.group(1)), cell[m.end() : i - 1]
+        pos = i
 
 
 def parse_waived(cell: str) -> list[tuple[int, str]]:
@@ -49,7 +76,7 @@ def parse_waived(cell: str) -> list[tuple[int, str]]:
     cell = cell.strip()
     if not cell or cell in {"-", "—", "`-`"}:
         return []
-    return [(int(m.group(1)), m.group(2).strip()) for m in _WAIVED.finditer(cell)]
+    return [(oid, reason.strip()) for _s, _e, oid, reason in _iter_waived(cell)]
 
 
 def _cell_without_waived(cell: str) -> str:
@@ -59,7 +86,14 @@ def _cell_without_waived(cell: str) -> str:
     become hydrated/citation-gated ids. Parse waived markers from the raw cell;
     scan pointers / bare ``#id`` on the masked text only.
     """
-    return _WAIVED.sub(" ", cell)
+    out: list[str] = []
+    last = 0
+    for start, end, _oid, _reason in _iter_waived(cell):
+        out.append(cell[last:start])
+        out.append(" ")
+        last = end
+    out.append(cell[last:])
+    return "".join(out)
 
 
 def unclaimed_ids(cell: str, pointers: list[tuple[str, int]]) -> list[int]:
