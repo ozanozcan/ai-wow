@@ -12,10 +12,17 @@ symlink` and eight `NOT linked (real dir)` lines for a complete, correct
 install — so the documented path for a locked-down Windows box read as a
 failed install.
 
-These run a real install into a throwaway HOME against a throwaway copy of the
-repo. Never the caller's own HOME, and never the real checkout: `ai-sync`
+These run a real install into a throwaway home against a throwaway copy of the
+repo. Never the caller's own home, and never the real checkout: `ai-sync`
 commits with `git add -A` and pushes, so the copy gets its own `git init` with
 no remote and a `{"push": false}` config.
+
+Isolation must override USERPROFILE as well as HOME. `Path.home()` goes through
+`ntpath.expanduser` on Windows, which reads USERPROFILE (then HOMEDRIVE +
+HOMEPATH) and ignores HOME entirely — so a HOME-only sandbox is a no-op there
+and this test would install into the operator's real profile. Windows is the
+platform this harness most needs to be safe on; see the human guide's Windows
+appendix.
 """
 
 import json
@@ -65,9 +72,16 @@ def build_repo(root):
     return root
 
 
+def sandbox_env(home):
+    """Every name a platform might resolve `~` through, pointed at the sandbox."""
+    home = str(home)
+    return {**os.environ, "HOME": home, "USERPROFILE": home,
+            "HOMEDRIVE": "", "HOMEPATH": home}
+
+
 def run(root, home, *args):
     return subprocess.run([sys.executable, str(root / "bin" / "ai-sync"), *args],
-                          cwd=root, env={**os.environ, "HOME": str(home)},
+                          cwd=root, env=sandbox_env(home),
                           capture_output=True, text=True)
 
 
