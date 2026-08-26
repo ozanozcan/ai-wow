@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "stem": "work-pc-readiness-followups",
+  "title": "Work-PC readiness follow-ups",
+  "run_status": "running",
+  "pulse": true,
+  "started": "2026-08-26T19:56:53Z",
+  "updated": "2026-08-26T19:56:53Z",
+  "waves": [
+    {
+      "wave": 1,
+      "status": "pending",
+      "parallelism": "parallel",
+      "started": null,
+      "ended": null,
+      "gate": {
+        "status": "pending"
+      },
+      "lanes": [
+        {
+          "lane": "A",
+          "brief": "01-stamp-tracker-parity.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "pending",
+          "todos": [
+            {
+              "id": "stamp-tracker-parity",
+              "title": "Port the backgrounded-agent fix + its regression test into ai-wow",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        },
+        {
+          "lane": "B",
+          "brief": "02-copy-mode-truth.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "pending",
+          "todos": [
+            {
+              "id": "copy-mode-truth",
+              "title": "ai-sync status reports the mode it actually installed",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "status": "pending",
+      "parallelism": "sequential",
+      "started": null,
+      "ended": null,
+      "gate": {
+        "status": "pending"
+      },
+      "lanes": [
+        {
+          "lane": "C",
+          "brief": "03-dotfiles-guard-backport.md",
+          "role": "shell",
+          "afk": false,
+          "status": "pending",
+          "after": [
+            "A",
+            "B"
+          ],
+          "todos": [
+            {
+              "id": "dotfiles-guard-backport",
+              "title": "Stop this Mac auto-allowing commands its guard cannot parse",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        },
+        {
+          "lane": "Z",
+          "brief": "04-fresh-clone-verify.md",
+          "role": "shell",
+          "afk": false,
+          "status": "pending",
+          "after": [
+            "A",
+            "B",
+            "C"
+          ],
+          "todos": [
+            {
+              "id": "fresh-clone-verify",
+              "title": "Prove the merged tree installs from a clone in both link modes",
+              "status": "pending"
+            }
+          ],
+          "agents": []
+        }
+      ]
+    }
+  ]
+}
