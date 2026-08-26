@@ -590,10 +590,13 @@ python3 ~/ai-wow/bin/ai-sync --copy
 { "link_mode": "copy" }
 ```
 
-`ai-sync status` always tells you which mode is active:
+`ai-sync status` always tells you which mode is active. It reads the state on disk
+rather than re-probing the machine, so a one-shot `--copy` is still reported as copy
+mode on later runs — the mode you *installed* with, not the mode this machine happens
+to be capable of:
 
 ```
-link mode: copy (no symlink privilege)
+link mode: copy
 .claude/agents    copied (in sync)
 ```
 

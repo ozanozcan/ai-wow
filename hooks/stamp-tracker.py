@@ -108,6 +108,19 @@ def _task_key(tool_input) -> str:
     return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def _returns_at_launch(tool_name, tool_input) -> bool:
+    """True when this spawn's PostToolUse is the launch, not the completion.
+
+    `Agent` backgrounds by default — an omitted key is still async — while
+    Cursor's `Task` runs in the foreground unless it opts in. Either way an
+    explicit value wins.
+    """
+    flag = tool_input.get("run_in_background")
+    if flag is None:
+        return str(tool_name or "") == "Agent"
+    return bool(flag)
+
+
 def _find_board(cwd):
     """The running mow board this Task most likely belongs to, or None.
 
@@ -214,11 +227,14 @@ def on_task(payload, event) -> None:
     data = _read_json(board_path)
     if not _is_board(data):
         return
+    # A backgrounded spawn returns at launch, so this event says nothing about
+    # when the agent finished — record the start and leave `ended` to the
+    # orchestrator, which writes it when the lane's report lands.
     spans.append({
         "agent": subagent,
         "lane": _lane_hint(data, str(tool_input.get("prompt") or "")),
         "started": open_calls.pop(key, None),
-        "ended": _now(),
+        "ended": None if _returns_at_launch(payload.get("tool_name"), tool_input) else _now(),
     })
     ledger["open"], ledger["spans"] = open_calls, spans
     _write_json(ledger_path, ledger)

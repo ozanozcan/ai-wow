@@ -338,8 +338,9 @@ python3 bin/ai-sync --copy          # one run
 # { "link_mode": "copy" }
 ```
 
-**VERIFY:** `ai-sync status` prints `link mode: copy (no symlink privilege)` and each
-category reads `copied (in sync)`.
+**VERIFY:** `ai-sync status` prints `link mode: copy` and each category reads
+`copied (in sync)`. Status reads the installed state off disk, not the machine's
+symlink capability, so a one-shot `--copy` still reports `copy` on later runs.
 
 **Behavioural difference you must communicate.** In symlink mode the editor
 directory *is* the repo, so edits either side are the same file. In copy mode they

@@ -860,13 +860,52 @@ def do_commit() -> None:
 # status / checks
 # ---------------------------------------------------------------------------
 
-def _dir_link_state(link: Path, canonical: Path) -> str:
+def _is_copy_of(link: Path, canonical: Path) -> bool:
+    """True if link is a real dir/file mirroring canonical — i.e. a copy install."""
+    if link.is_symlink() or not link.exists():
+        return False
+    if link.is_dir():
+        return _trees_equal(canonical, link)
+    try:
+        return canonical.is_file() and link.read_bytes() == canonical.read_bytes()
+    except OSError:
+        return False
+
+
+def installed_mode() -> str:
+    """Which mode this machine was actually installed *with*, read off the disk.
+
+    can_symlink() answers "how should we install?", and --copy is a one-shot flag
+    on the *install* run. `status` is a separate invocation, so probing there
+    reports the machine's capability rather than the install — a --copy install on
+    a symlink-capable box reads as eight failed links. Fall back to the probe only
+    when nothing is installed yet (fresh machine, every target missing).
+    """
+    targets = [
+        (tool / name, canonical)
+        for name, canonical in LINK_DIRS.items()
+        for tool in (CLAUDE, CURSOR)
+    ]
+    targets += [(COPILOT / name, canonical) for name, canonical in COPILOT_LINK_DIRS.items()]
+    targets += list(LINK_FILES.items())
+    copied = False
+    for link, canonical in targets:
+        if points_into_repo(link):
+            return "symlink"
+        if not copied and _is_copy_of(link, canonical):
+            copied = True
+    if copied:
+        return "copy"
+    return "symlink" if can_symlink() else "copy"
+
+
+def _dir_link_state(link: Path, canonical: Path, mode: str) -> str:
     foreign = foreign_repo_root(link)
     if foreign:
         return f"OTHER REPO ({foreign})"
     if link.is_symlink() and link.resolve() == canonical.resolve():
         return "linked"
-    if not can_symlink() and link.is_dir() and _trees_equal(canonical, link):
+    if mode == "copy" and link.is_dir() and _trees_equal(canonical, link):
         return "copied (in sync)"
     if link.exists():
         return "NOT linked (real dir)"
@@ -874,20 +913,21 @@ def _dir_link_state(link: Path, canonical: Path) -> str:
 
 
 def do_status() -> int:
+    mode = installed_mode()
     print(f"repo: {REPO}")
-    print(f"  link mode: {'symlink' if can_symlink() else 'copy (no symlink privilege)'}")
+    print(f"  link mode: {mode}")
     for name, canonical in LINK_DIRS.items():
         for tool in (CLAUDE, CURSOR):
-            print(f"  {tool.name}/{name:9} {_dir_link_state(tool / name, canonical)}")
+            print(f"  {tool.name}/{name:9} {_dir_link_state(tool / name, canonical, mode)}")
     for name, canonical in COPILOT_LINK_DIRS.items():
-        print(f"  {COPILOT.name}/{name:9} {_dir_link_state(COPILOT / name, canonical)}")
+        print(f"  {COPILOT.name}/{name:9} {_dir_link_state(COPILOT / name, canonical, mode)}")
     for link, canonical in LINK_FILES.items():
         foreign = foreign_repo_root(link)
         if foreign:
             state = f"OTHER REPO ({foreign})"
         elif link.is_symlink() and link.resolve() == canonical.resolve():
             state = "linked"
-        elif not can_symlink() and link.is_file() and link.read_bytes() == canonical.read_bytes():
+        elif mode == "copy" and link.is_file() and link.read_bytes() == canonical.read_bytes():
             state = "copied (in sync)"
         elif link.exists():
             state = "NOT linked (real file)"
