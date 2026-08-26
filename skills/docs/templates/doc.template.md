@@ -29,7 +29,7 @@ throat-clearing.
 ```toml
 # Concrete beats general. A real snippet, runnable as written.
 [project]
-slug = "project-b"
+slug = "payments"
 ```
 
 ---

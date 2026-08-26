@@ -13,7 +13,7 @@
 #              constraints and indexes only                  -> no opinion
 #
 # No-ops unless the working dir is an Alembic project, and defers to a
-# project-local guard if one exists (project-b ships its own).
+# project-local guard if one exists (some projects ship their own).
 #
 # Fails open: a migration that cannot be rendered cannot be applied either.
 # Escape hatch: prefix the command with ALEMBIC_ALLOW_DESTRUCTIVE=1.

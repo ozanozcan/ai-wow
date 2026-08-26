@@ -4,7 +4,7 @@
 Two jobs, both mechanical, both previously left to the orchestrator's memory:
 
 1. `updated` — TRACKER.md's contract says every write to `dispatch/tracker.json`
-   also bumps it. A live FTM run was observed rewriting the file every few
+   also bumps it. A live run was observed rewriting the file every few
    seconds while the field sat 19 minutes stale, which made the board's
    staleness indicator call a healthy run behind.
 

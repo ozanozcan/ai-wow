@@ -26,7 +26,7 @@ Legacy `/maow` invocations use the same mode mapping as `/mow`.
 
 ### Automation hooks (mid-wave — not advisory)
 
-These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (FTM names concrete modules).
+These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (a mature repo names concrete modules there).
 
 | When | Auto-invoke | Owner |
 |---|---|---|
@@ -34,7 +34,7 @@ These are **mandatory** when the repo has the named skill/agent. Skip only with 
 | **go** before wave 1 | `python scripts/mow_preflight.py docs/plans/<stem>` — grill → hydrate (when pointers exist) → thin-brief → overlap; **subsumes** the former standalone hydrate gate | orchestrator |
 | **go** lane start (`tdd-builder` / code-edit) | `tdd` skill **before** production code (explicit; already in tdd-builder); **Read** lane section of `hydrated-specs.md` | lane |
 | **go** lane mid-build | `parallel-debug` when pytest shows **>1 unrelated** failures | lane |
-| **go** lane mid-build (UI) | Project **`ui-designer`** (repo stack — FTM: Django templates + Tailwind + htmx; **never** the global Next.js/shadcn agent) · **`impeccable`** when the work is visual (redesign/polish/new screen), not for mechanical markup-only swaps | lane |
+| **go** lane mid-build (UI) | Project **`ui-designer`** (repo stack — e.g. on a Django repo: templates + Tailwind + htmx; **never** the global Next.js/shadcn agent) · **`impeccable`** when the work is visual (redesign/polish/new screen), not for mechanical markup-only swaps | lane |
 | **go** lane Verification (UI) | **`imprint`** after any UI/template change (always after impeccable) → `ui-registry.md` | lane |
 | **go** lane Verification (new/changed logic) | `test-coverage` on modified modules | lane (thin → expand) |
 | **go** lane Verification (pure math / domain logic) | `adversarial-tester` on named modules | lane when scope matches; else P3 batch |
@@ -425,7 +425,7 @@ Confirm: no two same-wave lanes share a file. <list any risk>
 
 5. Report Feature/Task/Requirement ids to the user. Do not leave "run import yourself" as the primary next step.
 
-**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from FTM (or sibling) after first ship; the dotfiles skill is global, scripts are per-repo.
+**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from a sibling repo that already has it after first ship; the dotfiles skill is global, scripts are per-repo.
 
 ---
 
@@ -487,7 +487,7 @@ Otherwise follow the **`grill-with-docs`** procedure against this stem's `plan.m
    If the grill found nothing to change: `**Grill write-back:** no changes — plan held <YYYY-MM-DD>`.
    Re-run `python scripts/mow_hydrate_specs.py docs/plans/<stem>` so `hydrated-specs.md` matches final pointers (skip if all cells are `-`).
 
-**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (FTM: 390px mobile-first). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
+**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (e.g. 390px on a mobile-first project). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
 
 **Hard refuse:** never mark `done` after a grill that only summarized decisions in chat. `/mow go` lanes read **disk** (plan + briefs), not this conversation.
 
@@ -599,7 +599,7 @@ fi
 
 (background the server). **Every runtime that can run that shell gets the board**, terminal Claude Code included — the page is a plain local server, nothing about it needs an in-app pane, and a real browser window on a second screen is the better home anyway (a hidden pane freezes the animation clock). Open the URL that `echo` printed in the browser pane — the page polls `tracker.json` every 2s. **Never skip the kill cascade and never hardcode 8377**: a server left running by an earlier run keeps serving *that* run's folder, so the board loads, looks live, and shows the wrong run. Because the port is derived from the repo path it is stable — the same project always gets the same URL, worth bookmarking on a second screen, where animation keeps running even when the browser pane is hidden. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
 
-**Chat board (required when your tool list has a widget/visualization tool such as `show_widget`; if it has none, skip — the URL line already gave the operator the board):** post the board into the chat itself at **wave boundaries** — after fan-out, after each gate verdict, and at close-out. This is a row in TRACKER.md's write-points table, not an optional flourish: an FTM run crossed five boundaries posting nothing, and the operator watched an empty chat while the board was live on its port. Not per write, though — a widget per event buries the conversation. Do not hand-build a card: the board already exists, so embed it.
+**Chat board (required when your tool list has a widget/visualization tool such as `show_widget`; if it has none, skip — the URL line already gave the operator the board):** post the board into the chat itself at **wave boundaries** — after fan-out, after each gate verdict, and at close-out. This is a row in TRACKER.md's write-points table, not an optional flourish: a real run crossed five boundaries posting nothing, and the operator watched an empty chat while the board was live on its port. Not per write, though — a widget per event buries the conversation. Do not hand-build a card: the board already exists, so embed it.
 
 ```
 <h2 class="sr-only">Live mow board — <stem>, wave N of M</h2>

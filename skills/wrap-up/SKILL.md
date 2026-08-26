@@ -278,7 +278,7 @@ Report path + summary of taskman commands run (including retroactive-sweep and l
 Same ritual in both runtimes. Session markers come from:
 
 - Claude Code: `SessionStart` → `~/.claude/hooks/session-start-marker.sh` (via ai-sync / hooks.def)
-- Cursor: `sessionStart` → same script (user hooks + project `.cursor/hooks.json` on project-a/project-b)
+- Cursor: `sessionStart` → same script (user hooks + a project's own `.cursor/hooks.json`)
 
 ## Rules
 

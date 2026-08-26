@@ -1,7 +1,7 @@
 # Third-party content
 
 Most of this repository is original work under the MIT license in
-[`LICENSE`](LICENSE). Three of the fourteen bundled skills are not — they were
+[`LICENSE`](LICENSE). Three of the sixteen bundled skills are not — they were
 installed from other projects and are redistributed here under their own terms.
 
 | Skill | Upstream | License | Full text |
@@ -44,7 +44,7 @@ npx skills add microsoft/playwright-cli   # playwright-cli       (already bundle
 npx skills add pbakaus/impeccable         # impeccable           (not bundled)
 ```
 
-The eleven remaining skills — `adversarial-tester`, `checkpoint`,
-`complexity-audit`, `imprint`, `improve-codebase-architecture`, `mow`,
+The thirteen remaining skills — `adversarial-tester`, `bs`, `checkpoint`,
+`complexity-audit`, `docs`, `imprint`, `improve-codebase-architecture`, `mow`,
 `parallel-debug`, `pick-up-where-i-left-off`, `ship-check`, `test-coverage`,
 `wrap-up` — are original to this repository and covered by [`LICENSE`](LICENSE).

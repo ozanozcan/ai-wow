@@ -28,8 +28,8 @@ python3 ~/ai-wow/bin/ai-sync status
 
 | | Count | |
 |---|---|---|
-| **Skills** | 15 | Procedures an agent loads into its own context on demand |
-| **Subagents** | 6 | Specialists with isolated context and restricted tools |
+| **Skills** | 16 | Procedures an agent loads into its own context on demand |
+| **Subagents** | 8 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
 | **Hooks** | 3 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
@@ -139,8 +139,8 @@ before fan-out, not discovered afterwards.
 
 | Path | What |
 |---|---|
-| `skills/` | 15 skills, each `<name>/SKILL.md` |
-| `agents/` | 6 subagent definitions |
+| `skills/` | 16 skills, each `<name>/SKILL.md` |
+| `agents/` | 8 subagent definitions |
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
@@ -188,7 +188,7 @@ TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman
 
 ## License
 
-[MIT](LICENSE) for everything original to this repository — the eleven original
+[MIT](LICENSE) for everything original to this repository — the thirteen original
 skills, the eight subagents, `taskman`, `ai-sync`, and the docs.
 
 Three bundled skills come from other projects and keep their own licenses:

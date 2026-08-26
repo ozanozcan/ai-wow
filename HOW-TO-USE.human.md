@@ -187,7 +187,7 @@ should be:
 .claude/commands  linked
 .claude/hooks     linked
 .claude/CLAUDE.md linked
-shared skills (~/.agents):  14
+shared skills (~/.agents):  16
 ```
 
 Anything `ai-sync` overwrites is copied to `.backups/<timestamp>/` first, so a wrong
@@ -269,7 +269,7 @@ Two invariants make this work: **reviewers never build**, and **`tdd-builder` ne
 commits**. If the thing that writes the code is also the thing that approves it, the
 review gate means nothing.
 
-**Fifteen skills**, in four families:
+**Sixteen skills**, in four families:
 
 ```mermaid
 flowchart TD
@@ -281,7 +281,7 @@ flowchart TD
     U1["impeccable †"]; U2["imprint"]; U3["playwright-cli"]
   end
   subgraph ORCH["orchestration"]
-    O0["bs"]; O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]
+    O0["bs"]; O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]; O4["docs"]
   end
   subgraph CONT["continuity"]
     C1["checkpoint"]; C2["pick-up-where-i-left-off"]; C3["wrap-up"]
@@ -660,7 +660,7 @@ cooperate, delete the `hooks` key from `settings.json` and run `ai-sync` by hand
 | Symptom | Cause | Fix |
 |---|---|---|
 | No skills at all, no error | `~/.agents/skills` missing | Create it — `ai-sync` won't |
-| Skills missing, subagents present | Skill farm not reconciled | Re-run `ai-sync`; `status` should show 15 |
+| Skills missing, subagents present | Skill farm not reconciled | Re-run `ai-sync`; `status` should show 16 |
 | Symlink creation denied (corporate policy) | Developer Mode locked off | `ai-sync --copy` — Appendix A |
 | Skill edit in the editor vanished | Copy mode: the editor holds a copy | Edit in the repo, re-run `ai-sync` |
 | "privilege not held" on Windows | Developer Mode off | Enable it, re-run |

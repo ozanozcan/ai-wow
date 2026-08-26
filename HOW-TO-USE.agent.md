@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 14 skills · 8 subagents · 1 command · 3 hooks · 1 board package
+inventory: 16 skills · 8 subagents · 1 command · 3 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -98,7 +98,7 @@ flowchart LR
 | Symptom | Root cause | Action |
 |---|---|---|
 | 0 skills, no error emitted | `~/.agents/skills` absent — `reconcile_skills()` returns early | Create the symlink, re-run `ai-sync` |
-| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 14 |
+| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 16 |
 | both absent | link step never ran | `ai-sync` |
 | `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§9); if policy forbids, §8a copy mode |
 | hooks registered but never fire | `bash` or `python3` unresolvable | §9 — verify from Git Bash |
@@ -145,6 +145,7 @@ flowchart LR
 | `mow` | needs taskman + Postgres |
 | `grill-with-docs` | pre-build; one question at a time, write back each answer |
 | `ship-check` | end gate |
+| `docs` | documents a human reads — wiki, runbook, README, plan write-up; no clickable TOC, no ship |
 | `checkpoint` / `pick-up-where-i-left-off` | continuity; board half needs taskman |
 | `wrap-up` | needs taskman + Postgres |
 
@@ -194,9 +195,9 @@ anything else. Never ask for, echo, or store the token value.
 | # | Step | VERIFY |
 |---|---|---|
 | 1 | `git clone <repo> ~/ai-wow` | `bin/ai-sync` exists |
-| 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **14** entries — **FAIL → STOP** |
+| 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **16** entries — **FAIL → STOP** |
 | 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
-| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 14` |
+| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 16` |
 | 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
 | 6 | if step 3 reported symlink denial | switch to §8a copy mode — do not abandon the install |
 
@@ -360,7 +361,7 @@ Never edit a skill in the mirrored copy.
 flowchart TD
   A{"Developer Mode = 0x1?"} -->|no| A1["STOP — symlinks cannot be created"]
   A -->|yes| B["create ~/.agents/skills (PowerShell)"]
-  B --> C{"14 skills listed?"}
+  B --> C{"16 skills listed?"}
   C -->|no| C1["STOP"]
   C -->|yes| D["ai-sync + status"]
   D --> E{"hooks wanted?"}
@@ -384,7 +385,7 @@ If Developer Mode cannot be enabled, do not stop: fall back to §8a copy mode.
 
 ## 10. REPORTING RULES
 
-- Report VERIFY outcomes with the actual observed value ("`shared skills: 14`"), not
+- Report VERIFY outcomes with the actual observed value ("`shared skills: 16`"), not
   "verified".
 - If a step was skipped, say which and why.
 - If a check could not run, say so — do not infer a pass from an adjacent success.

@@ -704,7 +704,7 @@ td.num{font-family:var(--mono);font-size:var(--t-small);font-variant-numeric:tab
 
     <figure>
       <div class="fig">
-        <svg viewBox="0 0 1080 540" role="img" aria-label="Request path from phone through Porkbun DNS to Render's edge and the project-b-api service, which reads Postgres as the RLS-constrained playbook_app role and Key Value for rate limits, while a separate one-shot pre-deploy job connects to the same Postgres as the schema-owner role to run migrations.">
+        <svg viewBox="0 0 1080 540" role="img" aria-label="Request path from phone through Porkbun DNS to Render's edge and the playbook-api service, which reads Postgres as the RLS-constrained playbook_app role and Key Value for rate limits, while a separate one-shot pre-deploy job connects to the same Postgres as the schema-owner role to run migrations.">
           <defs>
             <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,1 L9,5 L0,9 z" fill="context-stroke"/>
@@ -732,7 +732,7 @@ td.num{font-family:var(--mono);font-size:var(--t-small);font-variant-numeric:tab
 
           <!-- service -->
           <rect class="svg-box" x="600" y="190" width="200" height="104" rx="3"/>
-          <text class="svg-t" x="700" y="220" text-anchor="middle">project-b-api</text>
+          <text class="svg-t" x="700" y="220" text-anchor="middle">playbook-api</text>
           <text class="svg-s" x="700" y="240" text-anchor="middle">web service · Docker</text>
           <text class="svg-s" x="700" y="257" text-anchor="middle">APP_ENV=staging</text>
           <text class="svg-l" x="700" y="278" text-anchor="middle">uvicorn :8000 · non-root</text>
@@ -762,7 +762,7 @@ td.num{font-family:var(--mono);font-size:var(--t-small);font-variant-numeric:tab
           <text class="svg-l" x="188" y="228" text-anchor="middle">GET</text>
           <text class="svg-l" x="400" y="228" text-anchor="middle">CNAME</text>
           <text class="svg-l" x="567" y="228" text-anchor="middle">443→8000</text>
-          <text class="svg-l" x="100" y="196" text-anchor="middle">https://project-b.example</text>
+          <text class="svg-l" x="100" y="196" text-anchor="middle">https://playbook.example.com</text>
 
           <path class="svg-edge" d="M800,222 H860 V180 H895" marker-end="url(#ah)"/>
           <text class="svg-l" x="806" y="246" text-anchor="start">rate limits</text>

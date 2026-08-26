@@ -62,7 +62,7 @@ Run it in the background and open the URL it prints. The page polls
 **Do not hardcode a port and do not skip the kill.** A server left behind by an
 earlier run keeps serving *that* run's dispatch folder: the board loads, looks
 live, and shows another run's data. Deriving the port from the repo path means
-FTM and HLC can run at once, and each project's URL stays the same every run —
+two projects can run at once, and each project's URL stays the same every run —
 worth bookmarking on a second screen, where animation keeps running even while
 the in-app browser pane is hidden (a hidden pane freezes the animation clock).
 
@@ -120,7 +120,7 @@ replace it, both written by the hook, neither by you:
   the trail is dense while anything is running and empty while nobody is.
 
 Active time is the **intersection**: time an agent was open *and* someone was
-working. That matters because the idle hides *inside* spans — one real HLC lane
+working. That matters because the idle hides *inside* spans — one real lane
 held a single agent open for 12.7h across a night while every other agent that
 day ran 4–13 minutes. Intersecting cut a 12h span to the 1h 20m actually worked.
 Gaps longer than 5 minutes with no tool call at all count as idle. Hover any
