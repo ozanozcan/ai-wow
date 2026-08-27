@@ -2,19 +2,20 @@
   "schema": 1,
   "stem": "work-pc-readiness-followups",
   "title": "Work-PC readiness follow-ups",
-  "run_status": "running",
+  "run_status": "shipped",
   "pulse": true,
   "started": "2026-08-26T19:56:53Z",
-  "updated": "2026-08-26T19:56:53Z",
+  "updated": "2026-08-26T20:13:22Z",
   "waves": [
     {
       "wave": 1,
-      "status": "pending",
+      "status": "done",
       "parallelism": "parallel",
-      "started": null,
-      "ended": null,
+      "started": "2026-08-26T19:58:24Z",
+      "ended": "2026-08-26T20:06:54Z",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "orchestrator re-ran every acceptance check in the merged tree; no roster agent owns plain Python"
       },
       "lanes": [
         {
@@ -22,41 +23,100 @@
           "brief": "01-stamp-tracker-parity.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "stamp-tracker-parity",
               "title": "Port the backgrounded-agent fix + its regression test into ai-wow",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-26T19:58:41Z",
+              "ended": "2026-08-26T20:01:51Z",
+              "detail": "worktree-isolated \u00b7 start from dispatch/.agent-times.json, end = start + measured runtime",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "tokens": 54137
+            }
+          ],
+          "started": "2026-08-26T19:58:41Z",
+          "ended": "2026-08-26T20:01:51Z",
+          "artifacts": [
+            {
+              "label": "test_stamp_tracker.py",
+              "path": "hooks/tests/test_stamp_tracker.py"
+            },
+            {
+              "label": "stamp-tracker.py",
+              "path": "hooks/stamp-tracker.py"
+            }
+          ]
         },
         {
           "lane": "B",
           "brief": "02-copy-mode-truth.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "copy-mode-truth",
               "title": "ai-sync status reports the mode it actually installed",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-26T19:59:03Z",
+              "ended": "2026-08-26T20:04:25Z",
+              "detail": "worktree-isolated \u00b7 start from dispatch/.agent-times.json, end = start + measured runtime",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "tokens": 75038
+            }
+          ],
+          "started": "2026-08-26T19:59:03Z",
+          "ended": "2026-08-26T20:04:25Z",
+          "artifacts": [
+            {
+              "label": "ai-sync",
+              "path": "bin/ai-sync"
+            },
+            {
+              "label": "HOW-TO-USE.human.md",
+              "path": "HOW-TO-USE.human.md"
+            },
+            {
+              "label": "HOW-TO-USE.agent.md",
+              "path": "HOW-TO-USE.agent.md"
+            }
+          ]
         }
       ]
     },
     {
       "wave": 2,
-      "status": "pending",
+      "status": "done",
       "parallelism": "sequential",
-      "started": null,
-      "ended": null,
+      "started": "2026-08-26T20:06:54Z",
+      "ended": "2026-08-26T20:13:22Z",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "fresh-clone sweep 15/15; new ai-sync test proven red against pre-fix code"
       },
       "lanes": [
         {
@@ -64,7 +124,7 @@
           "brief": "03-dotfiles-guard-backport.md",
           "role": "shell",
           "afk": false,
-          "status": "pending",
+          "status": "done",
           "after": [
             "A",
             "B"
@@ -73,17 +133,26 @@
             {
               "id": "dotfiles-guard-backport",
               "title": "Stop this Mac auto-allowing commands its guard cannot parse",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [],
+          "ended": "2026-08-26T20:11:04Z",
+          "started": "2026-08-26T20:06:54Z",
+          "artifacts": [
+            {
+              "label": "guard-destructive.sh (dotfiles-ai)",
+              "path": "/Users/ozan/Desktop/dotfiles-ai/hooks/guard-destructive.sh"
+            }
+          ],
+          "detail": "foreground orchestrator lane \u2014 no hook instruments Bash the way it does an agent spawn, so bounds are the surrounding commit timestamps, not measured"
         },
         {
           "lane": "Z",
           "brief": "04-fresh-clone-verify.md",
           "role": "shell",
           "afk": false,
-          "status": "pending",
+          "status": "done",
           "after": [
             "A",
             "B",
@@ -93,12 +162,22 @@
             {
               "id": "fresh-clone-verify",
               "title": "Prove the merged tree installs from a clone in both link modes",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [],
+          "ended": "2026-08-26T20:13:22Z",
+          "started": "2026-08-26T20:11:04Z",
+          "artifacts": [
+            {
+              "label": "test_ai_sync_status.py",
+              "path": "bin/tests/test_ai_sync_status.py"
+            }
+          ],
+          "detail": "foreground orchestrator lane \u2014 no hook instruments Bash the way it does an agent spawn, so bounds are the surrounding commit timestamps, not measured"
         }
       ]
     }
-  ]
+  ],
+  "ended": "2026-08-26T20:13:22Z"
 }
