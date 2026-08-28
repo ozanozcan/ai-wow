@@ -197,10 +197,16 @@ declined to stamp a launch-time return as a completion.
    rendered from dotfiles-ai's `hooks.def.json`, which has no such row. It *will* register
    on a work-PC clone from ai-wow's own def, so it is not a readiness gap.
 7. **The dotfiles-ai change is uncommitted** in that repo, awaiting its own operator pass.
-8. **Nothing durable asserts the *shape* of the published repo.** The fresh-clone sweep
-   checks 16 skills / 8 subagents / no `impeccable` / no employer strings, but it lives in
-   a session scratch directory and will not survive. `bin/tests/test_ai_sync_status.py`
-   covers the install, not the inventory — which is the drift class the predecessor run
-   already had to fix once (counts reading 14 / 15 / 17). A `bin/tests/test_repo_shape.py`
-   would close it; deliberately not added, since this run already shipped one unplanned
-   test and the second is the operator's call.
+8. ~~**Nothing durable asserts the *shape* of the published repo.**~~ **Closed** —
+   operator asked for it after close-out. `bin/tests/test_repo_shape.py` (28 checks)
+   counts the disk and compares every stated claim against it, rather than hardcoding a
+   number, so adding a skill stays legitimate while the docs disagreeing with reality does
+   not. It also checks the licensing surface as a set: THIRD-PARTY's third-party rows plus
+   its "remaining skills" list must equal `skills/` exactly.
+
+   Its first version had the defect it exists to prevent — the line-straddle fallback
+   asked whether *any* claim matched *anywhere* in the document, which is always true, so
+   the fail-loud sweep was inert and an invented phrasing passed. Found by mutation
+   testing the test, not by reading it. Claims and coverage now share one pass over match
+   spans. Four mutations verified: numeral drift, spelled-word drift, a real skill added
+   with docs untouched, and an unrecognised phrasing.
