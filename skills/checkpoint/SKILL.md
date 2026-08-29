@@ -66,7 +66,7 @@ Create a new checkpoint for the current chat. Does **not** touch any other check
 
 2. **Draft the title**: format `Project - one-sentence summary of the task`. One concrete next task — name the feature, file, or behavior. Confirm or edit with the user.
 
-3. **Derive the slug**: slugify the title — lowercase, spaces/punctuation → hyphens, drop the `→`/articles noise, keep it readable and unique. Example: `FitnessManager - Add status tracking to checkpoint skill` → `project-a-add-status-tracking-to-checkpoint-skill`. If a file with that slug already exists, append a short disambiguator.
+3. **Derive the slug**: slugify the title — lowercase, spaces/punctuation → hyphens, drop the `→`/articles noise, keep it readable and unique. Example: `WebApp - Add status tracking to checkpoint skill` → `webapp-add-status-tracking-to-checkpoint-skill`. If a file with that slug already exists, append a short disambiguator.
 
 4. **Ask the user** (optional freetext): context, open questions, gotchas, relevant files.
 

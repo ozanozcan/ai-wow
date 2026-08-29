@@ -29,6 +29,42 @@ REPO = Path(__file__).resolve().parent.parent.parent
 # session reports quote historical counts on purpose and are not claims.
 PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-PARTY.md"]
 
+# Every directory whose contents ship as harness content a reader can run. The
+# scrub used to cover only hooks/ and bin/, which is why a `FitnessManager`
+# worked-example survived in skills/checkpoint/SKILL.md: the leak was never in
+# the two directories being watched.
+#
+# docs/ is deliberately NOT here. Session reports and plan folders narrate real
+# runs and name the projects those runs touched; scrubbing them would falsify
+# the record rather than protect it. They are tracked and public, so that is a
+# standing decision, not an oversight — revisit it, do not silently widen this
+# list to make a red test green.
+SCRUBBED_DIRS = ["hooks", "bin", "agents", "commands", "global", "skills", "templates"]
+
+# The narrow form of this pattern gave a false green once already: a live
+# `project-b.example` domain sat in a page template while the grep looked
+# only for the hyphenated spelling. Match every separator, and none.
+LEAK = re.compile(
+    r"\bftm\b|\bhlc\b|project-a"
+    r"|high[ ._-]?level[ ._-]?coaching"
+    r"|/Users/[a-z]+",
+    re.I,
+)
+
+
+def _scan(path):
+    """[] or [relative path] — one leaked file, so callers can extend()."""
+    if not path.is_file() or "__pycache__" in path.parts:
+        return []
+    # This file names the patterns it hunts for; it cannot scan itself.
+    if path.resolve() == Path(__file__).resolve():
+        return []
+    try:
+        text = path.read_text()
+    except (UnicodeDecodeError, OSError):
+        return []
+    return [str(path.relative_to(REPO))] if LEAK.search(text) else []
+
 WORDS = {w: i for i, w in enumerate(
     "zero one two three four five six seven eight nine ten eleven twelve "
     "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
@@ -155,19 +191,11 @@ def main():
 
     # --- nothing employer-specific leaked into the published repo ---------
     leaked = []
-    for path in list((REPO / "hooks").rglob("*")) + list((REPO / "bin").rglob("*")) + \
-               [REPO / n for n in PUBLISHED]:
-        if not path.is_file() or "__pycache__" in path.parts:
-            continue
-        try:
-            text = path.read_text()
-        except (UnicodeDecodeError, OSError):
-            continue
-        # This file names the patterns it hunts for; it cannot scan itself.
-        if path.resolve() == Path(__file__).resolve():
-            continue
-        if re.search(r"\bftm\b|\bhlc\b|project-a|/Users/[a-z]+", text, re.I):
-            leaked.append(str(path.relative_to(REPO)))
+    for name in SCRUBBED_DIRS:
+        for path in (REPO / name).rglob("*"):
+            leaked.extend(_scan(path))
+    for name in PUBLISHED:
+        leaked.extend(_scan(REPO / name))
     check("no employer or personal strings in published surfaces", leaked, [])
 
     print()
