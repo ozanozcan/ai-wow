@@ -71,3 +71,25 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 
 Toolkit is advisory, never a gate: recommend or invoke, don't block on it.
 </important>
+
+## Verification habits
+
+Each of these cost a real session. One line each, distilled from a lessons ledger
+kept outside this repo — which is why the ids are not contiguous.
+
+- **Read the file before prescribing a fix for it** — no summary of a file is the file: not a directory listing, not a `MEMORY.md` index line, not a recalled description already sitting in your context. Before proposing a file be changed, retired, or deleted, open it in that same turn. (L01, L31)
+- **Never document wiring you have not built** — describe what exists, name the gap separately. (L02)
+- **Look at the rendered output before publishing** — static checks pass on defects only the eye catches. (L03)
+- **Verify a third-party capability against its primary docs *before* recommending it**, not after the user accepts. (L04)
+- **Changing a user-visible string isn't done until you grep for the old one** — docs quote output verbatim. (L05)
+- **Resolve the symlink chain before treating a config/skill/hook edit as live** — the repo you are cwd'd in may not be what the runtime loads. (L06)
+- **An unanchored grep is not an existence check** — a name that prefixes its siblings matches all of them. Anchor it, or prove it by import. (L15)
+- **Establish a baseline with the project's canonical command** — your narrowed or extra-flagged variant tests something else. Per-file linting says nothing about a repo-wide gate. (L16)
+- **Test a shell check by its exit status, not its text** — `grep -c` prints `0` *and* exits non-zero, so `$(cmd || echo 0)` yields two lines and every comparison against it is true. (L18)
+- **After a command that mutates repo state** (`stash`/`checkout`/`reset`), **confirm it applied** before drawing any conclusion from the resulting tree. (L23)
+- **Before crediting a fix with resolving a symptom reported elsewhere, reproduce that symptom's conditions** — a shared root-cause hypothesis is not evidence. (L24)
+- **Announce a substituted choice at the moment you make it** — when the documented routing doesn't cover your case and you pick something else, say which was expected, why it didn't apply, and what you chose. Discovered later, it reads as drift. (L26)
+- **In zsh, never name a variable `path`** (it is tied to `PATH`, and assigning it breaks every later command in that shell), **and never rely on an unquoted `$var` word-splitting** — a command held in a variable runs as one literal name. Write the command out, or use an array. When batching, let one real error through before concluding anything from exit codes. (L32)
+- **Before adding to an accumulating artifact** (a log, a registry, a backlog), **check something consumes it** — an artifact that only grows is a liability, and contributing to it feels like diligence. (L27)
+- **A parent-directory VCS check proves nothing about the directory you edited** — nested repos are invisible from above; run `git -C <dir>` there before declaring work unversioned or "nothing to commit". (L30)
+- **A guard is proven by making it fire, not by reading it** — after writing a check, test, or sandbox, break what it protects and confirm it fails, and confirm it fires in the environment it exists for rather than only the one you are standing on. A sweep whose fallback matched *anything anywhere* passed the very case it existed to catch; a `HOME=` sandbox did nothing on Windows, where `Path.home()` reads `USERPROFILE`. (L33)
