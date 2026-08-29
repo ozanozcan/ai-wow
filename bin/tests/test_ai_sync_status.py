@@ -41,6 +41,23 @@ NEEDED = ["skills", "agents", "commands", "hooks", "global", "bin",
 FAILURES = []
 
 
+def can_symlink():
+    """Same probe ai-sync uses. Windows denies symlinks without Developer Mode,
+    and corporate policy can pin that off — on such a box a plain install
+    legitimately falls back to copy, so the symlink case is not applicable
+    rather than failing."""
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.symlink(Path(d), Path(d) / "probe")
+            return True
+        except (OSError, NotImplementedError, AttributeError):
+            return False
+
+
+def skip(label, why):
+    print(f"  SKIP  {label} — {why}")
+
+
 def check(label, got, want):
     if got == want:
         print(f"  PASS  {label}")
@@ -107,16 +124,21 @@ def main():
         check("copy-mode status is stable across runs",
               run(root, home, "status").stdout, out)
 
-        # 2. A normal symlink install must be unaffected.
-        home = tmp / "h-link"
-        (home / ".agents").mkdir(parents=True)
-        (home / ".agents" / "skills").symlink_to(root / "skills")
-        run(root, home)
-        out = run(root, home, "status").stdout
-        check("symlink install reports symlink mode",
-              "link mode: symlink" in out, True)
-        check("symlink install reports every target linked",
-              len([ln for ln in out.splitlines() if ln.rstrip().endswith(" linked")]), 8)
+        # 2. A normal symlink install must be unaffected — where symlinks exist.
+        if not can_symlink():
+            skip("symlink install reports symlink mode",
+                 "this machine cannot create symlinks; a plain install "
+                 "correctly falls back to copy here")
+        else:
+            home = tmp / "h-link"
+            (home / ".agents").mkdir(parents=True)
+            (home / ".agents" / "skills").symlink_to(root / "skills")
+            run(root, home)
+            out = run(root, home, "status").stdout
+            check("symlink install reports symlink mode",
+                  "link mode: symlink" in out, True)
+            check("symlink install reports every target linked",
+                  len([ln for ln in out.splitlines() if ln.rstrip().endswith(" linked")]), 8)
 
         # 3. Nothing installed yet: fall back to the capability probe rather
         #    than crashing or inventing a mode.

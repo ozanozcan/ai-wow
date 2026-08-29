@@ -163,6 +163,18 @@ gitignored. Nothing in the tracked tree points at a particular machine or projec
 - **Windows** — Developer Mode for symlinks, Git Bash, and a `python3` on PATH.
   See Appendix A of the human guide.
 
+Check the harness itself after a fresh clone — no database, no dependencies, so
+this runs anywhere the core does, a locked-down Windows box included:
+
+```bash
+python3 hooks/tests/test_stamp_tracker.py && python3 bin/tests/test_ai_sync_status.py && python3 bin/tests/test_repo_shape.py
+```
+
+Those cover what a clone is most likely to get wrong: whether the mow board
+times a backgrounded lane correctly, whether `ai-sync status` reports the mode
+you actually installed with, and whether the inventory counts above still match
+what is on disk.
+
 Run the board's tests against a throwaway database:
 
 ```bash
