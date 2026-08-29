@@ -175,6 +175,17 @@ times a backgrounded lane correctly, whether `ai-sync status` reports the mode
 you actually installed with, and whether the inventory counts above still match
 what is on disk.
 
+Have git run them for you before every push — this repo is public, and the
+scrub test is what keeps employer and personal strings out of it:
+
+```bash
+git config core.hooksPath githooks
+```
+
+`githooks/pre-push` then blocks any push whose tests fail, and `git push
+--no-verify` bypasses it when you mean to. The setting is per-clone and not
+carried in the repo, so a fresh clone is unprotected until you run that line.
+
 Run the board's tests against a throwaway database:
 
 ```bash

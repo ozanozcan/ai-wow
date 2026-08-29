@@ -39,7 +39,8 @@ PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-P
 # the record rather than protect it. They are tracked and public, so that is a
 # standing decision, not an oversight — revisit it, do not silently widen this
 # list to make a red test green.
-SCRUBBED_DIRS = ["hooks", "bin", "agents", "commands", "global", "skills", "templates"]
+SCRUBBED_DIRS = ["hooks", "bin", "agents", "commands", "global", "skills", "templates",
+                 "githooks"]
 
 # The narrow form of this pattern gave a false green once already: a live
 # `project-b.example` domain sat in a page template while the grep looked

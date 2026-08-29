@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Block a push that would publish employer strings or a drifted inventory.
+#
+# This is the public tree, so pushing is the moment its contents become public
+# — the right place to gate. Until this hook existed, bin/tests ran only when
+# someone remembered to type the command, which is the same "discipline holds
+# the boundary" assumption that has already failed twice: once a live customer
+# domain reached a page template, and once a real project name sat in a skill's
+# worked example for weeks. A check nobody runs is not enforcement.
+#
+# Enable in a fresh clone:  git config core.hooksPath githooks
+# Bypass deliberately:      git push --no-verify
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: running harness tests..."
+python3 hooks/tests/test_stamp_tracker.py >/dev/null
+python3 bin/tests/test_ai_sync_status.py >/dev/null
+python3 bin/tests/test_repo_shape.py        # scrub output is worth seeing
+echo "pre-push: clean"
