@@ -17,5 +17,6 @@ cd "$(git rev-parse --show-toplevel)"
 echo "pre-push: running harness tests..."
 python3 hooks/tests/test_stamp_tracker.py >/dev/null
 python3 bin/tests/test_ai_sync_status.py >/dev/null
+python3 bin/tests/test_ai_sync_commit.py >/dev/null
 python3 bin/tests/test_repo_shape.py        # scrub output is worth seeing
 echo "pre-push: clean"

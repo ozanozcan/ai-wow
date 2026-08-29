@@ -837,15 +837,64 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     )
 
 
+def managed_paths() -> list[str]:
+    """Repo-relative paths this tool is allowed to commit.
+
+    Derived from the link tables rather than hardcoded, so adding a category to
+    LINK_DIRS/LINK_FILES extends the commit scope with it instead of silently
+    leaving the new content uncommitted.
+    """
+    owned = set(LINK_DIRS.values()) | set(LINK_FILES.values())
+    owned |= {REPO / "skills", REPO / "skills.lock.json"}
+    return sorted(str(p.relative_to(REPO)) for p in owned if p.exists())
+
+
+def _porcelain_path(line: str) -> str:
+    """Path out of a `git status --porcelain` line, rename destination included."""
+    raw = line[3:]
+    if " -> " in raw:
+        raw = raw.split(" -> ", 1)[1]
+    return raw.strip().strip('"')
+
+
+def _is_managed(rel: str, managed: list[str]) -> bool:
+    return any(rel == m or rel.startswith(m + "/") for m in managed)
+
+
 def do_commit() -> None:
-    git("add", "-A")
-    status = git("status", "--porcelain").stdout.strip()
+    # Path-scoped, never `git add -A`. A blanket add sweeps whatever else is in
+    # flight — plans, session reports, a half-finished refactor — into one
+    # `sync: <ts>` commit that tells none of their stories, and it races a
+    # second session working in the same checkout. Add by name so only managed
+    # content is staged, then commit by name so a peer's staged file cannot ride
+    # along either. (Add first: a path-limited commit alone cannot see an
+    # untracked file.)
+    managed = managed_paths()
+    if not managed:
+        log("  git: no managed paths present, nothing to commit")
+        return
+
+    git("add", "--", *managed)
+    status = git("status", "--porcelain", "--", *managed).stdout.strip()
+
+    unmanaged = [ln for ln in git("status", "--porcelain").stdout.splitlines()
+                 if ln.strip() and not _is_managed(_porcelain_path(ln), managed)]
+
     if not status:
         log("  git: clean, nothing to commit")
+    else:
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        git("commit", "-q", "-m", f"sync: {ts}", "--", *managed)
+        log(f"  git: committed ({len(status.splitlines())} change(s))")
+
+    # Say what was deliberately left behind. Narrowing the scope silently would
+    # just trade one surprise for a quieter one.
+    if unmanaged:
+        log(f"  git: left {len(unmanaged)} unmanaged path(s) uncommitted "
+            f"(e.g. {_porcelain_path(unmanaged[0])}) — commit those yourself")
+
+    if not status:
         return
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
-    git("commit", "-q", "-m", f"sync: {ts}")
-    log(f"  git: committed ({len(status.splitlines())} change(s))")
     # Backup: push if a remote exists; never fail (offline, hook mode, etc.).
     # local.config.json {"push": false} keeps commits local (locked-down machines).
     if local_config().get("push", True) is False:

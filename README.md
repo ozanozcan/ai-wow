@@ -167,13 +167,14 @@ Check the harness itself after a fresh clone — no database, no dependencies, s
 this runs anywhere the core does, a locked-down Windows box included:
 
 ```bash
-python3 hooks/tests/test_stamp_tracker.py && python3 bin/tests/test_ai_sync_status.py && python3 bin/tests/test_repo_shape.py
+python3 hooks/tests/test_stamp_tracker.py && python3 bin/tests/test_ai_sync_status.py && python3 bin/tests/test_ai_sync_commit.py && python3 bin/tests/test_repo_shape.py
 ```
 
 Those cover what a clone is most likely to get wrong: whether the mow board
 times a backgrounded lane correctly, whether `ai-sync status` reports the mode
-you actually installed with, and whether the inventory counts above still match
-what is on disk.
+you actually installed with, whether `ai-sync` commits only the paths it manages
+rather than sweeping the tree, and whether the inventory counts above still
+match what is on disk.
 
 Have git run them for you before every push — this repo is public, and the
 scrub test is what keeps employer and personal strings out of it:

@@ -14,8 +14,9 @@ failed install.
 
 These run a real install into a throwaway home against a throwaway copy of the
 repo. Never the caller's own home, and never the real checkout: `ai-sync`
-commits with `git add -A` and pushes, so the copy gets its own `git init` with
-no remote and a `{"push": false}` config.
+commits and pushes, so the copy gets its own `git init` with no remote and a
+`{"push": false}` config. (It no longer commits with `git add -A` — see
+test_ai_sync_commit.py — but it still commits, so the isolation stands.)
 
 Isolation must override USERPROFILE as well as HOME. `Path.home()` goes through
 `ntpath.expanduser` on Windows, which reads USERPROFILE (then HOMEDRIVE +
