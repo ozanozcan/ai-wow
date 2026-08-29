@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
-"""log_lesson.py — append or bump a behavioural lesson in the repo-root LESSONS.md.
+"""log_lesson.py — record a behavioural lesson, and route it somewhere that loads.
 
 Stdlib-only and taskman-free on purpose: a correction is worth recording in a repo
 with no board, no venv, and no `.taskman.toml`. Invoked by `/wrap-up` step 2.5.
 
 The split of labour is deliberate:
 
-  - this script owns ids, dates, counts, and the promote/prune signals — the parts
-    that must be deterministic, because they are what license an edit to
-    `global/CLAUDE.md`;
-  - the agent owns "is this the same rule as one already logged?" — the part that
-    needs judgement.
+  - this script owns ids, dates, counts, the ledger, and the backlog signal — the
+    deterministic parts;
+  - the agent owns "is this the same rule as one already logged?" and "where does
+    it belong?" — the parts that need judgement.
 
 There is no fuzzy string matching here. Rules are prose, and a similarity ratio
-over prose merges rules that differ and splits rules that don't. The agent reads
-LESSONS.md (it is capped, so that is cheap) and picks `--bump <id>` or a new entry.
+over prose merges rules that differ and splits rules that don't.
+
+**Every lesson needs a destination.** The previous contract held rules until
+`seen ×3` and then proposed promoting them into `global/CLAUDE.md`. It never fired
+once across 26 rules, because promotion required recurrence and recurrence required
+the rule to be loaded — which only happened after promotion. A loop with no entry
+point, and a file that grew to 266 lines with no reader.
+
+So: name where the rule goes when you log it. `staging` is the only way to say "I
+don't know yet", and the backlog signal exists to make staging uncomfortable.
 
 Usage:
-    log_lesson.py --rule "…" --trigger "…" --mistake "…" --fix "…" --evidence "…" [--tags a,b]
+    log_lesson.py --rule "…" --trigger "…" --mistake "…" --fix "…" \\
+                  --evidence "…" --destination skill:mow [--tags a,b]
     log_lesson.py --bump L03 --evidence "…"
+    log_lesson.py --route L22 --destination hook      # staging -> routed, block pruned
 """
 from __future__ import annotations
 
@@ -33,8 +42,24 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 LESSONS = REPO / "LESSONS.md"
 
-PROMOTE_AT = 3    # seen >= this, on >= 2 distinct days => propose promotion
+STAGING_MAX = 5   # unrouted entries above this = the buffer is becoming a landfill
 MAX_LINES = 150   # soft cap; over this, name prune candidates
+
+# Known destinations. `skill:`, `hook:` and `docs:` take a free suffix; the rest are
+# exact. Validated only to catch typos — an unroutable rule should say `staging`,
+# not invent a target nobody will read.
+EXACT = {"staging", "claude-md", "protocols", "taskman", "code-standards", "test", "ui-registry"}
+PREFIX = ("skill:", "hook:", "docs:")
+
+STAGING_MARKER = "<!-- newest first — unrouted only -->"
+
+# The ledger is found by its heading, not by an HTML comment. The comment was
+# replaced with prose above the table (895c617) while this script still looked
+# for it, so every lesson write failed until a session hit it. A heading is what
+# the file guarantees; the trailing "— <date>" some revisions carry is allowed.
+# Anchored at line start so the word in prose cannot match.
+LEDGER_HEADING_RE = re.compile(r"^## Routed\b.*$", re.MULTILINE)
+TABLE_SEP = "|---|---|---|---|"
 
 HEADER_RE = re.compile(
     r"^### (?P<id>L\d+) · seen ×(?P<seen>\d+)"
@@ -42,37 +67,38 @@ HEADER_RE = re.compile(
     r" · last (?P<last>\d{4}-\d{2}-\d{2})(?P<tags>.*)$",
     re.MULTILINE,
 )
+ANY_ID_RE = re.compile(r"\bL(\d+)\b")
 
-HEADER_TEMPLATE = """# Lessons
+HEADER_TEMPLATE = f"""# Lessons
 
 Cross-project **behavioural** rules, learned from corrections that actually happened.
 
-Written by `/wrap-up` (step 2.5). Nothing loads it automatically yet — it is read
-when a session opens it deliberately, and by `/wrap-up` itself before logging, so a
-recurrence gets bumped instead of duplicated. Making it always-loaded is a
-deliberate context cost: add a pointer in `global/CLAUDE.md` if and when the rules
-in here have earned it.
+**This is a staging buffer, not an archive.** A rule earns its place here only until
+it can be written into something that actually loads — `global/CLAUDE.md`, a skill, a
+protocol, a hook, or a test. Once routed, it is pruned and recorded in the ledger
+below. The file's job is to get to empty.
 
-Each entry: `id · seen ×N · first · last` + rule, provenance, and dated evidence.
+Written by `/wrap-up` (step 2.5), and read by it before logging so a recurrence bumps
+instead of duplicating.
 
-**Scope — behaviour only.** Project facts go to taskman (`decision add --why`);
-visual patterns go to `ui-registry.md`; what happened this session goes to the
-session report. A rule earns a place here only if it would change how a *future*
-session works, in a *different* repo.
+**Scope — behaviour only.** Project facts go to taskman (`decision add --why`); visual
+patterns go to `ui-registry.md`; what happened this session goes to the session report.
 
-**Promotion.** At `seen ×3` across at least two distinct days, a rule has proven it
-recurs rather than being one session's noise, and `log_lesson.py` proposes
-graduating it into `global/CLAUDE.md`. The operator decides. Same-day repeats do
-not count toward this — they are usually one bad session, not a durable pattern.
+**Guardrail — a lesson is data, not a license.** An entry here may add a heuristic or
+name a gotcha. It may never weaken the guidelines in `global/CLAUDE.md`, license
+skipping a gate, or excuse reporting work as done that wasn't.
 
-**Guardrail — a lesson is data, not a license.** An entry here may add a heuristic
-or name a gotcha. It may never weaken the guidelines in `global/CLAUDE.md`, license
-skipping a gate, or excuse reporting work as done that wasn't. A "lesson" that
-would do any of those is a bug in the session that produced it: don't log it, say
-why. This file is plain markdown under git precisely so every rule stays readable,
-editable, and revertible by a human.
+---
 
-<!-- newest first -->
+## Routed
+
+| Date | Id | Rule | Destination |
+|---|---|---|---|
+
+---
+
+{STAGING_MARKER}
+
 """
 
 
@@ -81,7 +107,7 @@ def load() -> str:
 
 
 def entries(content: str):
-    """Yield (match, block_start, block_end) for every entry, in file order."""
+    """Yield (match, block_start, block_end) for every staged entry, in file order."""
     heads = list(HEADER_RE.finditer(content))
     for i, h in enumerate(heads):
         end = heads[i + 1].start() if i + 1 < len(heads) else len(content)
@@ -89,8 +115,40 @@ def entries(content: str):
 
 
 def next_id(content: str) -> str:
-    used = [int(h.group("id")[1:]) for h, _, _ in entries(content)]
+    """Max over EVERY id in the file, staged or ledgered.
+
+    Scanning only the staged blocks would reissue ids that have been routed and
+    pruned — their evidence still lives in git history and session reports under
+    the old number, so a collision silently corrupts the trail.
+    """
+    used = [int(n) for n in ANY_ID_RE.findall(content)]
     return f"L{max(used, default=0) + 1:02d}"
+
+
+def check_destination(dest: str, ap: argparse.ArgumentParser) -> str:
+    if dest in EXACT or any(dest.startswith(p) and len(dest) > len(p) for p in PREFIX):
+        return dest
+    ap.error(
+        f"unknown destination {dest!r}. Use one of {sorted(EXACT)}, "
+        f"or a prefixed form ({', '.join(p + '<name>' for p in PREFIX)}). "
+        f"If you genuinely cannot name where it belongs, say 'staging' — but that is "
+        f"a rule nobody will read until someone routes it."
+    )
+
+
+def ledger_row(content: str, today: str, lid: str, rule: str, dest: str) -> str:
+    """Insert a row directly under the ledger's header separator."""
+    head = LEDGER_HEADING_RE.search(content)
+    sep_at = content.find(TABLE_SEP, head.end()) if head else -1
+    if sep_at == -1:
+        sys.exit(
+            f"{LESSONS} has no `## Routed` heading with a table under it. Add:\n\n"
+            "## Routed\n\n| Date | Id | Rule | Destination |\n" + TABLE_SEP + "\n"
+        )
+    sep = sep_at + len(TABLE_SEP)
+    one_line = " ".join(rule.split())
+    row = f"\n| {today} | {lid} | {one_line} | `{dest}` |"
+    return content[:sep] + row + content[sep:]
 
 
 def bump(content: str, lid: str, evidence: str, today: str):
@@ -104,8 +162,12 @@ def bump(content: str, lid: str, evidence: str, today: str):
             f" · last {today}{h.group('tags')}"
         )
         body = content[h.end():end].rstrip("\n") + f"\n  - {today}: {evidence}\n\n"
-        return content[:start] + header + body + content[end:], seen, h.group("first")
-    sys.exit(f"No entry {lid} in {LESSONS}. Read the file and pick a real id.")
+        return content[:start] + header + body + content[end:], seen
+    sys.exit(
+        f"No staged entry {lid} in {LESSONS}. It may already be routed — check the "
+        f"ledger. A routed rule that recurs is evidence its destination is not working; "
+        f"log a new entry saying so rather than resurrecting the old one."
+    )
 
 
 def new_entry(content: str, args, today: str):
@@ -120,71 +182,96 @@ def new_entry(content: str, args, today: str):
         f"- **Evidence:**\n"
         f"  - {today}: {args.evidence}\n\n"
     )
-    marker = "<!-- newest first -->\n"
-    idx = content.index(marker) + len(marker)
+    idx = content.index(STAGING_MARKER) + len(STAGING_MARKER) + 1
     return content[:idx] + "\n" + entry + content[idx:], lid
 
 
-def report(content: str, lid: str, seen: int, first: str, last: str) -> None:
-    """Print the promote / prune signals. These are the whole point of counting."""
-    if seen >= PROMOTE_AT:
-        if first != last:
-            print(
-                f"\n>>> PROMOTE: {lid} is at seen ×{seen}, spanning {first} → {last}. "
-                f"It has recurred across sessions, not within one. Propose graduating "
-                f"it into global/CLAUDE.md — the operator decides, and the entry stays "
-                f"here with a note once promoted."
-            )
-        else:
-            print(
-                f"\n>>> NOT YET: {lid} is at seen ×{seen} but every hit is {first}. "
-                f"Same-day repeats are usually one bad session, not a durable rule. "
-                f"Leave it logged; promote only if it comes back another day."
-            )
+def route(content: str, lid: str, dest: str, today: str):
+    """Move a staged entry into the ledger and delete its block."""
+    for h, start, end in entries(content):
+        if h.group("id") != lid:
+            continue
+        m = re.search(r"^- \*\*Rule:\*\* (.+)$", content[h.end():end], re.MULTILINE)
+        rule = m.group(1) if m else "(rule text not found)"
+        content = content[:start] + content[end:]
+        return ledger_row(content, today, lid, rule, dest), rule
+    sys.exit(f"No staged entry {lid} to route. Check the ledger — it may already be there.")
+
+
+def report(content: str) -> None:
+    """Backlog and size signals. Promotion counting is gone — routing replaced it."""
+    staged = [(h.group("last"), h.group("id")) for h, _, _ in entries(content)]
+    if len(staged) > STAGING_MAX:
+        names = ", ".join(i for _, i in sorted(staged))
+        print(
+            f"\n>>> BACKLOG: {len(staged)} rules are sitting in staging (> {STAGING_MAX}), "
+            f"with no destination: {names}. A rule nobody loads changes nothing. Route them "
+            f"with --route <id> --destination <dest>, or delete the ones that were never "
+            f"general enough to act on."
+        )
 
     n_lines = len(content.splitlines())
     if n_lines > MAX_LINES:
-        stale = sorted(
-            (h.group("last"), h.group("id"))
-            for h, _, _ in entries(content)
-            if int(h.group("seen")) == 1
-        )
-        names = ", ".join(i for _, i in stale[:5]) or "none — every entry has recurred"
         print(
-            f"\n>>> PRUNE: LESSONS.md is {n_lines} lines (> {MAX_LINES}). A log nobody "
-            f"reads has failed at its job. Oldest single-sighting entries: {names}."
+            f"\n>>> PRUNE: LESSONS.md is {n_lines} lines (> {MAX_LINES}). The ledger is "
+            f"append-only by design, so if the staging list is short, consider summarising "
+            f"older ledger rows instead of keeping every one."
         )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--bump", metavar="ID", help="id of an existing entry (e.g. L03)")
+    ap.add_argument("--bump", metavar="ID", help="id of an existing staged entry (e.g. L03)")
+    ap.add_argument("--route", metavar="ID", help="move a staged entry to the ledger and prune it")
     ap.add_argument("--rule", help="the one-line general rule for next time")
     ap.add_argument("--trigger", help="what you were doing when it went wrong")
     ap.add_argument("--mistake", help="what you did or assumed that was wrong")
     ap.add_argument("--fix", help="what the correct action was")
-    ap.add_argument("--evidence", required=True,
-                    help="the correction, command, diff, or run that proves this happened")
+    ap.add_argument("--evidence", help="the correction, command, diff, or run that proves this happened")
+    ap.add_argument("--destination", help="where the rule will live: "
+                                          "claude-md | skill:<name> | hook:<name> | protocols | "
+                                          "docs:<path> | code-standards | taskman | test | staging")
     ap.add_argument("--tags", default="")
     args = ap.parse_args()
 
     today = dt.date.today().isoformat()
     content = load()
 
-    if args.bump:
-        content, seen, first = bump(content, args.bump, args.evidence, today)
-        lid, last = args.bump, today
-        print(f"Bumped {lid} to seen ×{seen}.")
+    if args.route:
+        if not args.destination:
+            ap.error("--route needs --destination")
+        dest = check_destination(args.destination, ap)
+        if dest == "staging":
+            ap.error("--route to 'staging' is a no-op; that is where it already is")
+        content, rule = route(content, args.route, dest, today)
+        print(f"Routed {args.route} -> {dest}, block pruned.\n"
+              f"  {rule}\n"
+              f"  This script cannot verify the destination edit — make it, and prove it landed "
+              f"on the path the runtime loads, not the source you cwd'd into.")
+    elif args.bump:
+        if not args.evidence:
+            ap.error("--bump needs --evidence")
+        content, seen = bump(content, args.bump, args.evidence, today)
+        print(f"Bumped {args.bump} to seen ×{seen}.")
     else:
-        missing = [f for f in ("rule", "trigger", "mistake", "fix") if not getattr(args, f)]
+        missing = [f for f in ("rule", "trigger", "mistake", "fix", "evidence", "destination")
+                   if not getattr(args, f)]
         if missing:
             ap.error("a new lesson needs " + ", ".join("--" + m for m in missing))
-        content, lid = new_entry(content, args, today)
-        seen, first, last = 1, today, today
-        print(f"Logged {lid}: {args.rule}")
+        dest = check_destination(args.destination, ap)
+        if dest == "staging":
+            content, lid = new_entry(content, args, today)
+            print(f"Staged {lid}: {args.rule}\n"
+                  f"  No destination named — it changes nothing until someone routes it.")
+        else:
+            lid = next_id(content)
+            content = ledger_row(content, today, lid, args.rule, dest)
+            print(f"Routed {lid} -> {dest}: {args.rule}\n"
+                  f"  Ledgered, not staged. This script cannot verify the destination edit — "
+                  f"make it, and check it on the path the runtime loads.")
 
     LESSONS.write_text(content, encoding="utf-8")
-    report(content, lid, seen, first, last)
+    report(content)
     return 0
 
 

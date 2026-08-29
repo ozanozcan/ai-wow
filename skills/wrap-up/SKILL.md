@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: End-of-chat ritual — evidence gate, retroactive chat-vs-board sync, high-priority tasks for every leftover, automatic checkpoint bundling them toward /mow plan|ready, session report, offer harvest/commit. Invoke via /wrap-up at the end of every working session in a taskman-enabled repo; it owns the whole end-of-chat sequence, including the checkpoint.
+description: End-of-chat ritual — evidence gate, retroactive chat-vs-board sync (completed work and unbooked forward items), high-priority tasks for every leftover, automatic checkpoint bundling them toward /mow plan|ready, session report, offer commit. Invoke via /wrap-up at the end of every working session in a taskman-enabled repo; it owns the whole end-of-chat sequence, including the checkpoint.
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,7 @@ How this differs from checkpoint:
 ## Preconditions
 
 1. Find project root by walking up for `.taskman.toml`.
-2. If missing: run **step 2.5** (lessons — it needs no board, no venv, and no project slug) and write the session report only (steps under `docs/session-reports/` if the repo has that folder, else skip board sync), tell the user taskman sync/harvest are unavailable, and stop. Never guess a project slug.
+2. If missing: run **step 2.5** (lessons — it needs no board, no venv, and no project slug) and write the session report only (steps under `docs/session-reports/` if the repo has that folder, else skip board sync), tell the user taskman sync is unavailable, and stop. Never guess a project slug.
 
 Prefer running CLI as:
 ```bash
@@ -116,6 +116,8 @@ Apply board moves implied by step 0 receipts (`done` / `blocked`) plus any chat-
 
 The gate (step 0) catches work visible in the diff; this sweep catches the rest — actions whose evidence lives only in the transcript (CLI runs, external-system changes, verdicts). Skip only what is genuinely trivial (a one-line answer, a lookup). If everything already has an item, say so.
 
+**Forward capture (same pass — this replaced the retired `taskman harvest` transcript miner):** while walking the chat, also book what was *voiced but never landed* — a follow-up idea worth keeping → `task add` (backlog priority, tags), plan/QA material → `capture add`, a decision made in passing → `decision add`. The whole session is already in context at wrap-up time, so this costs ~nothing extra; archived transcripts are never re-mined by a second model, and a session that dies before wrap-up loses only its chat-only musings (accepted, rare). Do not double-book step 4's leftovers here — step 4 owns *unfinished work* (priority high); this books ideas and candidates that would otherwise evaporate (backlog). If nothing qualifies, say so — booking noise to look thorough poisons the board.
+
 Rules:
 - Prefer evidence from the gate + git over chat recall. Chat fills gaps the diff cannot see (decisions, requirements).
 - Prefer `--source` when a transcript path/line is known (`{relative_transcript_path}#L{line_number}`).
@@ -152,19 +154,44 @@ Route the rest to where it belongs, and do not double-log:
 python3 ~/.agents/skills/wrap-up/scripts/log_lesson.py --bump L03 \
   --evidence "<the correction: chat quote, failing test, commit sha, review note>"
 
-# new rule
+# new rule — --destination is REQUIRED
 python3 ~/.agents/skills/wrap-up/scripts/log_lesson.py \
   --rule "<one line, general, actionable next time>" \
   --trigger "<what you were doing>" \
   --mistake "<what you did or assumed>" \
   --fix "<what the correct action was>" \
   --evidence "<what proves this happened>" \
+  --destination "claude-md | skill:<name> | hook:<name> | protocols | docs:<path> | code-standards | taskman | test | staging" \
   --tags "scope,tests"
+
+# a rule already staged, now that you know where it belongs
+python3 ~/.agents/skills/wrap-up/scripts/log_lesson.py --route L22 --destination hook:pre-pr
 ```
 
 `--evidence` is mandatory in both modes, for the same reason step 0 refuses uncited `done`: a rule with no correction behind it is a preference someone typed, and preferences belong in `global/CLAUDE.md` by decision, not by accumulation.
 
-**On `>>> PROMOTE`:** the rule has recurred at `seen ×3` across at least two distinct days. Tell the user, quote the rule, and offer to move it into `global/CLAUDE.md`. **Never edit `global/CLAUDE.md` yourself here** — it loads into every session in every project, so it is the operator's call. On `>>> NOT YET` (three hits, all one day), say nothing and move on. On `>>> PRUNE`, name the stale entries in the session report; don't delete anything unasked.
+**Name a destination, then make the edit.** A rule that lives only in `LESSONS.md` changes nothing —
+nothing loads that file. So `--destination` is required, and anything other than `staging` writes a
+ledger row instead of a staged block. **The script cannot verify your edit landed; you must make it in
+the same pass**, and confirm it on the path the runtime loads rather than the source you happen to be
+cwd'd in (`~/.claude/skills` → `~/.agents/skills` → the canonical checkout). Commit the ledger row and
+the routed edit together, by explicit path, in a commit whose message tells the full case — the row
+keeps only the rule, and `global/CLAUDE.md` points at the repo's history for the rest. A row left
+uncommitted ends up carried by someone else's batch or a `sync:` commit, and the story is
+gone — L29–L32 survive only as rows.
+
+Where things go: general agent behaviour → `global/CLAUDE.md`. Orchestration rules → the relevant
+skill. Project engineering guidance → that repo's `docs/` **and it is not a lesson at all** — route it
+out. Anything mechanizable → a hook or a test, which is strictly better than a rule someone has to
+remember.
+
+**`staging` is the escape hatch, not the default.** Use it only when you genuinely cannot name a home.
+On `>>> BACKLOG`, the buffer is filling with rules nobody loads: route them with `--route`, or delete
+the ones that were never general enough to act on. On `>>> PRUNE`, summarise old ledger rows; say so in
+the session report and don't delete anything unasked.
+
+*(The old `seen ×3` promotion gate is gone. It never fired once across 26 rules — promotion required
+recurrence, and recurrence required the rule to be loaded, which only happened after promotion.)*
 
 **Guardrail:** a lesson may add a heuristic or name a gotcha. It may never weaken `global/CLAUDE.md`, license skipping a gate, or excuse reporting unfinished work as done. If this session's "lesson" is one of those, don't log it — say why in the report. The self-improving loop is allowed to make the harness sharper, never laxer.
 
@@ -232,7 +259,7 @@ start_sha: <anchor sha>
 [CLI commands run, or "none".]
 
 ## Lessons
-[Ids logged/bumped in step 2.5 + any PROMOTE or PRUNE signal. Omit if none.]
+[Ids logged/bumped/routed in step 2.5, each with where it went + any BACKLOG or PRUNE signal. Omit if none.]
 
 ## Decisions
 [Choices + rationale. Omit if none.]
@@ -246,15 +273,7 @@ start_sha: <anchor sha>
 
 Rules: reference artifacts by path; redact secrets; bullets not essays; omit empty optional sections.
 
-### 6. Offer harvest (never auto-run)
-
-Ask: **Run harvest now? [y/N]**
-
-- If yes: from project root, ` .venv/bin/python -m taskman harvest ` (interactive approve). Do not pass `--auto-approve` unless the user explicitly asks.
-- If no / no reply: skip.
-- Do not reimplement harvest — invoke the CLI only.
-
-### 7. Offer commit (never auto-run)
+### 6. Offer commit (never auto-run)
 
 If `git status` shows a dirty tree (modified / untracked / staged), **ask** before ending wrap-up:
 
@@ -265,11 +284,11 @@ If `git status` shows a dirty tree (modified / untracked / staged), **ask** befo
 - If the tree is clean: skip this ask (nothing to commit).
 - Never commit secrets, never `--no-verify`, never invent a commit without an explicit yes.
 
-### 8. Tell the user
+### 7. Tell the user
 
-Report path + summary of taskman commands run (including retroactive-sweep and leftover task ids) + the checkpoint created in step 4 (slug + its Next task), + whether harvest/commit were offered/run.
+Report path + summary of taskman commands run (including retroactive-sweep, forward-capture, and leftover task ids) + the checkpoint created in step 4 (slug + its Next task), + whether commit was offered/run.
 
-**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync incl. retroactive chat sweep) ran, step 3 (action report) ran when a plan shipped this session, step 4 ran (existing checkpoints reconciled — done/updated/untouched; every leftover has a high-priority task; a checkpoint bundling them exists whenever any were created), step 6 (harvest) was offered and not left declined-with-something-to-capture, and step 7 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
+**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync incl. the retroactive chat sweep and forward capture) ran, step 3 (action report) ran when a plan shipped this session, step 4 ran (existing checkpoints reconciled — done/updated/untouched; every leftover has a high-priority task; a checkpoint bundling them exists whenever any were created), and step 6 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
 
 **Resume pointer (skip only if nothing durable was written this session):** a short, copy-pasteable line naming exactly which files a fresh session should load — the session report path always; the active checkpoint path if one exists; the plan + dispatch path if this session's work ties to `docs/plans/<stem>/`.
 
@@ -284,7 +303,6 @@ Same ritual in both runtimes. Session markers come from:
 
 - Records + syncs + hands off (via the checkpoint skill in step 4); it does not *plan* the next epic — the checkpoint's Next task points at `/mow plan` / `/mow ready`, which own that.
 - **Gate before narrative.** Exit 1 means stop and clear lists — do not write the session report yet.
-- Never auto-run harvest without asking.
 - Never auto-commit without asking — wrap-up only *reminds* and waits for yes.
 - Never guess project identity without `.taskman.toml`.
 - Do not update GitHub Issues, PRDs, or `docs/checkpoints/` from here except via the checkpoint skill when closing an active one.
