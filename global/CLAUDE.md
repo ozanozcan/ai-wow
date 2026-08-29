@@ -93,3 +93,24 @@ kept outside this repo — which is why the ids are not contiguous.
 - **Before adding to an accumulating artifact** (a log, a registry, a backlog), **check something consumes it** — an artifact that only grows is a liability, and contributing to it feels like diligence. (L27)
 - **A parent-directory VCS check proves nothing about the directory you edited** — nested repos are invisible from above; run `git -C <dir>` there before declaring work unversioned or "nothing to commit". (L30)
 - **A guard is proven by making it fire, not by reading it** — after writing a check, test, or sandbox, break what it protects and confirm it fails, and confirm it fires in the environment it exists for rather than only the one you are standing on. A sweep whose fallback matched *anything anywhere* passed the very case it existed to catch; a `HOME=` sandbox did nothing on Windows, where `Path.home()` reads `USERPROFILE`. (L33)
+
+## Shared checkouts
+
+A git checkout has **one HEAD and one index**. When two sessions share one, a branch switch or a
+staging command in either reaches into the other's work — silently, and noticed only afterwards.
+
+**Nothing warns you.** No peer-session hook ships here, so treat a shared checkout as
+possibly-shared *by default* and look before doing git work — a commit in `git log` you
+did not make, or a modified file you did not touch, is the tell. Then:
+
+- **Offer the user a worktree of your own before doing any git work**, and wait for their answer.
+  If they accept, you are authorised to use **`EnterWorktree`** for this case specifically — that
+  is what this paragraph exists to permit. Never relocate unasked.
+- Check `worktree.baseRef` before assuming what you branched from: `fresh` (the default) branches
+  from `origin/<default-branch>`, **not** your current HEAD. If your work depends on uncommitted or
+  unpushed state, a fresh worktree will not have it — say so rather than starting from a base the
+  user did not expect.
+- If they decline, prefer **`git commit -- <paths>`** over `git add` + `git commit`: it commits
+  those paths and ignores the index entirely, so it cannot pick up a peer's staged file. Give
+  `git add` explicit paths, never switch branches, and never `git stash` / `reset --hard` /
+  `clean -fd`.
