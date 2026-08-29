@@ -106,3 +106,87 @@ gates (both wave gates re-run independently by the orchestrator) and by the trac
   skill's leftover-bundling path (step 4) does not apply. Open threads above are the handoff.
 - Resume pointer: `docs/plans/work-pc-readiness-followups/plan.md` ·
   `docs/plans/work-pc-readiness-followups/action-report.md` · this report.
+
+---
+
+## Post-wrap-up — same session, operator-directed
+
+Everything above was written at the formal wrap-up. Eight more commits landed after it, at the
+operator's direction, closing open thread 1 and then following it into dotfiles-ai. Recorded here
+rather than as a second report because it is one continuous thread of work.
+
+### What landed
+
+| Repo | Commit | Change |
+|---|---|---|
+| ai-wow | `b9de132` | `global/CLAUDE.md` carries `## Verification habits` (16 rules, L33 included) |
+| ai-wow | `3e0decc` | `global/CLAUDE.md` carries `## Shared checkouts` |
+| dotfiles-ai | `a0b2545` | peer-session guard + notice **registered and made to work** |
+| dotfiles-ai | `fcfb3c5` | `guard-destructive` returns no opinion, not an affirmative allow |
+| dotfiles-ai | `3e077e2` | file-type reviewer routing ported back; L29–L33 ledger rows |
+| dotfiles-ai | `f6b25f9` | `session-start-marker` marks **every git worktree**, not only board-backed ones |
+| global | — | `.session-markers/` added to `~/.config/git/ignore` |
+
+ai-wow is on `origin/master`. dotfiles-ai is local only (`push: false` there).
+
+### The operator's framing, which resolved the boundary question
+
+**dotfiles-ai is the personal AI workflow; ai-wow is the public/work-facing repo**, with a refactor
+of that boundary still to come. That reframes every difference between the two files from *drift* to
+*intent*, and is why the ports were adapted rather than copied:
+
+- ai-wow's Verification habits lead does not cite `LESSONS.md` — that ledger is private and absent there.
+- dotfiles-ai keeps a `django-reviewer` row; ai-wow has none. Django is out of the *public repo*,
+  not off this machine, and the agent is live here.
+- ai-wow's `## Shared checkouts` says **nothing warns you**, because that repo ships no peer hook.
+
+### Two corrections to claims made earlier in this session
+
+1. **"The claim in your CLAUDE.md is now true" was wrong.** Registering the peer-session hooks was
+   not enough. `session-start-marker.py` returned early unless the worktree had a `.taskman.toml`,
+   so in a board-less repo no marker was ever written and both hooks found nothing — in exactly the
+   two repos being worked in. Fixed in `f6b25f9`; the gate is now "is this a git worktree".
+2. **Two files reported as "phantom stat-cache modifications" were a live peer session's edits.**
+   A second session was working the ai-wow checkout for most of the day. It was found from an
+   unexplained commit, not from any warning — which is the concrete evidence behind correction 1.
+
+### Registering the hooks exposed two more reasons they could never have fired
+
+- `peer-session-notice` read `WRAPUP_SESSION_MARKER` from the environment, which
+  `session-start-marker` exports via `CLAUDE_ENV_FILE` — not sourced until the SessionStart event
+  is over, so a sibling hook in that event never sees it. Now re-derives from its own stdin payload.
+- `peer-session-guard` replied on **stderr with exit 2** — the *block* channel — while its payload
+  was the shape the *ask* channel expects. Now stdout with exit 0, matching `guard-destructive.sh`,
+  the sibling verified live on the same event. Operator confirmed `ask` is the intended decision.
+
+### Verify
+
+| Check | Result |
+|---|---|
+| Marker written in a repo with **no** `.taskman.toml` | yes, and gitignored, absent from `git status` |
+| Second session detected as a peer there | yes — notice prints, with no env vars set |
+| Guard: `git stash` / `git add -A` while a peer is live | `ask` on stdout, exit 0 |
+| Guard: `git commit -- <paths>` / `pytest` | no opinion |
+| Guard: same commands, peer gone | no opinion |
+| Notice with no peer | silent |
+| Marker hook run against ai-wow itself | marker written, invisible to git; probe removed |
+| ai-wow suites after both CLAUDE.md ports | 7/7 · 9/9 · 28/28 |
+
+### Open threads, restated
+
+1. ~~ai-wow lacks `## Verification habits`~~ — **closed**, both sections ported.
+2. **The personal/public boundary is the live design question** — whether ai-wow ships the
+   peer-session hooks, where `LESSONS.md` belongs, and which repo owns which reviewer rows. The
+   operator has flagged a refactor. Today's work made the seam visible, not settled.
+3. **The peer hooks protect nobody yet in an already-running session.** They fire at SessionStart
+   and both sides need a marker, so the first new session in a shared checkout still sees nothing.
+4. **"Peer live" means "touched within 15 minutes"** — possibly idle or closed, as L28 warns. The
+   warning text says so itself.
+5. `stamp-tracker` parity, copy-install drift misdiagnosis, and the two-repo reconciliation gap all
+   stand as written above.
+
+### Resume pointer
+
+`docs/plans/work-pc-readiness-followups/action-report.md` · this report ·
+`~/Desktop/dotfiles-ai/LESSONS.md` (L33) · `global/CLAUDE.md` in both repos, which now differ only
+by intent.
