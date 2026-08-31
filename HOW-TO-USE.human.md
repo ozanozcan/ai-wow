@@ -343,6 +343,32 @@ doesn't**.
 
 Adopt it when you have work spanning more sessions than you can hold in your head.
 
+### This repo has no board, deliberately
+
+ai-wow ships taskman as a **tool**, and carries no board of its own — there is no
+`.taskman.toml` at the root, and session reports here say `Board sync: n/a` because
+that is accurate, not because someone forgot.
+
+The reason is measured rather than assumed. With a root `.taskman.toml` present and no
+reachable Postgres, `taskman wrapup gate` exits **2** — which the wrap-up skill reads as
+"no session marker", the wrong diagnosis, pointing you at a command that fails the same
+way. A board here would therefore break `/wrap-up` on every machine without a database,
+and contradict this harness's own claim to need none. You would meet that on a locked-down
+work machine first, which is exactly where it hurts.
+
+Two consequences worth recognising when you see them:
+
+- **The SessionStart hook stays quiet about wrap-up** in a board-less repo. It names the
+  evidence gate only when it finds a `.taskman.toml` above the working directory. It still
+  writes its session marker either way.
+- **`taskman/.taskman.toml` exists and is not a contradiction.** It carries
+  `slug = "taskman-tests"` and scopes the package's own test suite — not a board for this
+  repo.
+
+None of this stops you working: [§5](#5-working-without-a-board) is the full board-less
+workflow. And if the board ever loses its database dependency, this decision is worth
+revisiting — it is a judgement about today's constraints, not a rule.
+
 ### Standing one up
 
 Four commands, once per machine. The board needs a Postgres it can reach and a role
@@ -649,11 +675,16 @@ to be capable of:
 ```
 link mode: copy
 .claude/agents    copied (in sync)
+.claude/skills    copied (stale — re-run ai-sync)
 ```
+
+`copied (stale …)` means the files were installed by `ai-sync` and have since drifted
+from the repo. It is not a failed install, and re-running `ai-sync` is the fix.
 
 **The one behavioural difference:** in symlink mode, editing a skill from inside the
 editor edits the repo. In copy mode it doesn't — the editor has a copy. Edit in the
-repo and re-run `ai-sync` to push changes out. Subagent and command edits made in
+repo and re-run `ai-sync` to push changes out — which is the drift the line above
+reports. Subagent and command edits made in
 the editor *are* recovered, because the import step pulls them back before copying
 out again; skills are not. Treat the repo as the place you edit.
 
