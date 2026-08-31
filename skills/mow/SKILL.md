@@ -26,7 +26,7 @@ Legacy `/maow` invocations use the same mode mapping as `/mow`.
 
 ### Automation hooks (mid-wave — not advisory)
 
-These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (a mature repo names concrete modules there).
+These are **mandatory** when the repo has the named skill/agent. Skip only with an explicit operator "skip X" or a written n/a justification in the Verification / action report. If the repo has `docs/agents/protocols.md`, that file's P0/P3/P4 tables refine triggers (a mature repo's tables name concrete modules).
 
 | When | Auto-invoke | Owner |
 |---|---|---|
@@ -38,7 +38,7 @@ These are **mandatory** when the repo has the named skill/agent. Skip only with 
 | **go** lane Verification (UI) | **`imprint`** after any UI/template change (always after impeccable) → `ui-registry.md` | lane |
 | **go** lane Verification (new/changed logic) | `test-coverage` on modified modules | lane (thin → expand) |
 | **go** lane Verification (pure math / domain logic) | `adversarial-tester` on named modules | lane when scope matches; else P3 batch |
-| **go** §1 + every run event | **live tracker** — copy `tracker.html`, maintain `dispatch/tracker.json` per the write-points table in [`TRACKER.md`](TRACKER.md) (same folder as this skill) | orchestrator |
+| **go** §1 + every run event | **live tracker** — copy `tracker.html` to `docs/plans/` (one board per repo), maintain `dispatch/tracker.json` per the write-points table in [`TRACKER.md`](TRACKER.md) (same folder as this skill) | orchestrator |
 | **go** Integrate (after final wave) | P3 post-build (`/verify`, `test-coverage`, adversarial batch) then **`ship-check` as auto-gate** before `Status: shipped` | orchestrator |
 | **go** Integrate (architecture-heavy / Wave 2+) | `improve-codebase-architecture` quick scan — **deferred by default** unless plan tags `refactor` or operator asks | orchestrator (optional) |
 
@@ -325,6 +325,13 @@ Each **brief** must be runnable by a blind agent — no reference to "this chat"
 
 ## Git rules
 - Stage **explicit paths only** from **Files in scope** — never `git add -A` or `git add .`.
+- Prefer **`git commit -- <paths>`** over `git add` + `git commit`: it commits those paths and
+  **ignores the index entirely**, so it cannot sweep up a file a peer session has staged.
+  **New files are the exception** — path-limited commit only sees *tracked* paths, so an untracked
+  file must be `git add`-ed first. Add only your own new paths by name, then still commit with
+  `-- <paths>`; that keeps the index touch as small as possible instead of skipping it entirely.
+  (A real collision, 2026-08-26: `git add` picked up another session's staged file, and
+  clearing it with `git reset` then destroyed *their* staging.)
 - **Forbidden** during parallel runs: `git stash`, `git reset --hard`, `git clean -fd`.
 - Before commit while parallel lanes are active, run `git status` and confirm only intended paths are staged.
 
@@ -377,11 +384,13 @@ Source plan: docs/plans/<stem>/plan.md
 Each wave ends with a **review gate** (see go mode) before the next starts.
 
 ## Lanes
-| Lane | Todos (in order) | PBI / Feature | Files owned | Role | Review flags | AFK | Background | Decisions / Specs | Brief |
-|---|---|---|---|---|---|---|---|---|---|
-| A | ... | #52 / #65 | ... | code-edit | django | yes | yes | d `#12` · req `#3` | 01-....md |
+| Lane | Todos (in order) | PBI / Feature | Files owned | Role | Model | Review flags | AFK | Background | Decisions / Specs | Brief |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A | ... | #52 / #65 | ... | code-edit | inherit | django | yes | yes | d `#12` · req `#3` | 01-....md |
 
 `PBI / Feature`: per-todo PBI id / Feature id (see Orchestration map section above for source) — `-` if untracked.
+
+`Model`: model tier for this lane's subagent at fan-out — `inherit` (default; omit the param so the lane runs on the go session's model) or an explicit tier the runtime accepts (Claude Code: `fable` / `opus` / `sonnet` / `haiku`). Pin above `inherit` only where the lane's failure mode is judgment a checklist cannot carry — integration surgery in live code, security/permission invariants, exploratory measurement. Paint-by-numbers lanes stay `inherit`.
 
 `Review flags`: which reviewers the wave gate must run for this lane's changes — from the repo's `docs/agents/protocols.md` P2 (e.g. `django`, `llm`, `frontend`), or `-` for none (docs/chore).
 
@@ -425,7 +434,7 @@ Confirm: no two same-wave lanes share a file. <list any risk>
 
 5. Report Feature/Task/Requirement ids to the user. Do not leave "run import yourself" as the primary next step.
 
-**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from a sibling repo that already has it after first ship; the dotfiles skill is global, scripts are per-repo.
+**All projects:** gates are runtime-agnostic — `mow_plan_import.py` and `mark-shipped` work the same in Cursor and Claude Code. Other taskman repos copy `scripts/mow_plan_import.py` from a sibling repo after first ship; the skill is global, scripts are per-repo.
 
 ---
 
@@ -487,7 +496,7 @@ Otherwise follow the **`grill-with-docs`** procedure against this stem's `plan.m
    If the grill found nothing to change: `**Grill write-back:** no changes — plan held <YYYY-MM-DD>`.
    Re-run `python scripts/mow_hydrate_specs.py docs/plans/<stem>` so `hydrated-specs.md` matches final pointers (skip if all cells are `-`).
 
-**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (e.g. 390px on a mobile-first project). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
+**Mockup offer (ui lanes only — operator may decline):** when the stem has a ui-tagged lane, offer once during the grill to write `docs/plans/<stem>/dispatch/mockups/<lane>.html` — plain HTML, no build step, at the project's target viewport (e.g. 390px mobile-first). Approving a layout in a browser before a lane starts is far cheaper than re-approving it out of a diff. When the operator approves one, point that lane's `## Acceptance check` at the file ("the built screen SHALL match `dispatch/mockups/<lane>.html` in structure and hierarchy"). On a decline, write nothing — the mockup is an option, never a gate, and a ui lane without one still passes the thin-brief gate.
 
 **Hard refuse:** never mark `done` after a grill that only summarized decisions in chat. `/mow go` lanes read **disk** (plan + briefs), not this conversation.
 
@@ -570,26 +579,41 @@ Read `INDEX.md` and every brief. Re-verify the conflicts check (no same-wave fil
 python scripts/mow_preflight.py docs/plans/<stem>
 ```
 
-**Live tracker (after preflight passes — Claude Code, or any runtime with a browser pane):** set up the run's live visual before wave 1 fan-out. Copy `~/.claude/skills/mow/tracker.html` → `dispatch/tracker.html`, write the initial `dispatch/tracker.json` skeleton from INDEX (every wave/lane/todo `pending`, `run_status: running`), then serve and open it:
+**Prove the toolchain runs in isolation before fanning out (L07).** When lanes will be isolated, run
+the project's test command once inside a throwaway worktree first. A repo that pins a dependency by
+relative path resolves it differently from `.claude/worktrees/<agent>`, and a lane that cannot run a
+test will still report a coverage number. Treat any verification claim from an environment you have not
+proven as unverified.
+
+**Live tracker (after preflight passes — Claude Code, or any runtime with a browser pane):** set up the live visual before wave 1 fan-out. The board is **one page per repo**, not one per run: it is served from `docs/plans/`, and every run in the repo is on it — live ones under `?runs=live`, shipped ones under `?runs=archive`. Copy `~/.claude/skills/mow/tracker.html` → `docs/plans/tracker.html`, write the initial `dispatch/tracker.json` skeleton from INDEX (every wave/lane/todo `pending`, `run_status: running`), then serve and open it:
 
 ```bash
-# one stable port per repo, so two projects' runs never land on each other
-PORT=$(python3 -c "import hashlib,os;print(8300+int(hashlib.md5(os.getcwd().encode()).hexdigest(),16)%80)")
-# clear this repo's own stale tracker from an earlier run (matches only that server)
-if command -v pkill >/dev/null 2>&1; then
-  pkill -f "http.server $PORT" || true
-elif command -v taskkill >/dev/null 2>&1; then
-  # Git Bash: netstat's local-address column gives the listener's PID
-  TRACKER_PID=$(netstat -ano | grep ":$PORT" | awk -v p=":$PORT" '$2 ~ p"$" {print $NF; exit}')
-  [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
-else
-  echo "warn: no pkill or taskkill — a stale server on $PORT may still be serving an older run"
+STEM=<stem>
+# One stable board per repo. A second `/mow go` reuses this server instead of
+# adding a port — sharing the page is the point, and `?runs=live` is where both
+# runs show up. `serve` also writes docs/plans/.board, naming this repo: that
+# marker is how the probe below tells our board from another project's.
+mkdir -p docs/plans && cp -f ~/.claude/skills/mow/tracker.html docs/plans/tracker.html
+TRACKER=$(python3 ~/.claude/skills/mow/tracker_port.py) || exit 1
+PORT=${TRACKER%% *}; ACTION=${TRACKER##* }
+# absolute -d: every repo's board serves a folder called docs/plans, so only the
+# full path tells two projects' server processes apart at close-out
+if [ "$ACTION" = serve ]; then
+  python3 -m http.server "$PORT" -d "$PWD/docs/plans"
 fi
-python3 -m http.server $PORT -d docs/plans/<stem>/dispatch
-# printed in every shell, so the board is always reachable by hand
-echo "tracker: http://localhost:$PORT/tracker.html"
+# Prove the board on $PORT is this repo's before handing out the URL. Empty output
+# plus a non-zero exit is the whole signal — never pipe this through `head`, which
+# exits 0 on empty input and would report another project's board as healthy.
+LIVE=$(python3 ~/.claude/skills/mow/tracker_port.py --owned --wait 5)
+if [ "$LIVE" = "$PORT" ]; then
+  # printed in every shell, so the board is always reachable by hand
+  echo "tracker: http://localhost:$PORT/tracker.html            (live runs)"
+  echo "         http://localhost:$PORT/tracker.html?runs=$STEM  (this run alone)"
+else
+  echo "warn: $PORT is not serving this repo's board (live: ${LIVE:-none}) — the board is not up"
+fi
 # terminal Claude Code has no pane to open it in — hand the page to the real browser
-if [ -n "$TERM_PROGRAM$SSH_TTY" ]; then
+if [ -n "$TERM_PROGRAM$SSH_TTY" ] && [ "$LIVE" = "$PORT" ]; then
   if command -v open >/dev/null 2>&1; then open "http://localhost:$PORT/tracker.html"
   elif command -v start >/dev/null 2>&1; then start "http://localhost:$PORT/tracker.html"
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$PORT/tracker.html"
@@ -597,20 +621,40 @@ if [ -n "$TERM_PROGRAM$SSH_TTY" ]; then
 fi
 ```
 
-(background the server). **Every runtime that can run that shell gets the board**, terminal Claude Code included — the page is a plain local server, nothing about it needs an in-app pane, and a real browser window on a second screen is the better home anyway (a hidden pane freezes the animation clock). Open the URL that `echo` printed in the browser pane — the page polls `tracker.json` every 2s. **Never skip the kill cascade and never hardcode 8377**: a server left running by an earlier run keeps serving *that* run's folder, so the board loads, looks live, and shows the wrong run. Because the port is derived from the repo path it is stable — the same project always gets the same URL, worth bookmarking on a second screen, where animation keeps running even when the browser pane is hidden. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
+(background the server). **Every runtime that can run that shell gets the board**, terminal Claude Code included — the page is a plain local server, nothing about it needs an in-app pane, and a real browser window on a second screen is the better home anyway (a hidden pane freezes the animation clock). Open the URL that `echo` printed in the browser pane — the page polls every 2s, and lands on `?runs=live` when no view is named. Record that `$PORT` in the skeleton as `board_port`, so the chat board links to the port this repo's board is really on. **Never hardcode a port, and never kill by port alone**: the port is keyed on the repo path, and ownership is confirmed by asking the server which repo it belongs to (`docs/plans/.board`). One board per repo is what makes the URL worth bookmarking — it outlives every individual run, where a per-run URL was dead by morning. The identity check is not optional decoration: `docs/plans/` looks identical from the outside whichever project it belongs to, so without the marker two repos whose paths collide would each serve the other's runs under their own URL, answering 200 the whole time. That is the same failure the per-run key was introduced to close on 2026-08-29 (`builder-restrictions` and `product-analysis-ui` both computed 8378, and a startup `pkill -f "http.server $PORT"` had each session killing the other's live server) — moved up a level and closed there instead. Trust the URL the block prints over a remembered one, since a collision with another project shifts it by a port. From here on, **update `tracker.json` at every run event** (fan-out, agent spawn, lane done/error/issues, gate verdicts, artifacts, findings) per the schema + write-points table in `~/.claude/skills/mow/TRACKER.md`. Findings render only with their taskman task ids — a lane goes `issues` only when its findings are filed on the board (§2b.3). Tracker files are disposable run state; never a gate — a missing tracker must not block fan-out.
 
-**Chat board (required when your tool list has a widget/visualization tool such as `show_widget`; if it has none, skip — the URL line already gave the operator the board):** post the board into the chat itself at **wave boundaries** — after fan-out, after each gate verdict, and at close-out. This is a row in TRACKER.md's write-points table, not an optional flourish: a real run crossed five boundaries posting nothing, and the operator watched an empty chat while the board was live on its port. Not per write, though — a widget per event buries the conversation. Do not hand-build a card: the board already exists, so embed it.
+**Chat board (every runtime — it is markdown, not a widget):** post the board into the chat itself on
+every event that changes the run's shape — **fan-out, each lane reporting terminal (`done` / `issues`
+/ `error`), each gate verdict, and close-out**. These are rows in TRACKER.md's write-points table, not
+an optional flourish: one run crossed five boundaries posting nothing, and the operator watched an
+empty chat while the board was live on its port. Post it *after* the tracker write, so the table
+carries the state you just recorded. Not on every write, though — a todo ticking over, an agent
+spawning, a pulse toggle change the board without changing the run's shape, and a post each would
+bury the conversation.
 
+```bash
+python3 ~/.claude/skills/mow/board_table.py docs/plans/<stem>/dispatch/tracker.json
 ```
-<h2 class="sr-only">Live mow board — <stem>, wave N of M</h2>
-<iframe src="http://localhost:$PORT/tracker.html?view=compact"
-  style="width:100%;height:380px;border:0.5px solid var(--border);border-radius:12px"
-  referrerpolicy="no-referrer"></iframe>
-```
 
-That is the whole widget — the page renders itself, stays live between posts, and can never drift from what the browser shows, because it *is* what the browser shows. Compact is the chat default: it carries each lane's todo id and title and the gate's status word, which is what the glance view is for. The reader can flip to detailed inside the frame.
+Paste its stdout verbatim. It reads `tracker.json` and prints one row per lane under its wave, plus
+the wave's gate row: **Wave · Lane · Todos · Agents · Status · Active · Findings**, a header line
+carrying run status, active time, token total and the board URL, a findings block under the table
+(criticals titled, everything else by taskman id), and the lane artifacts. It ports the page's own
+arithmetic — active time as agent spans intersected with the `.activity` trail, token rollup that
+prefers a lane's own figure over the sum of its agents — so the table and the page cannot disagree
+on a number. A run whose `tracker.json` is more than four minutes stale prints the same
+`board Nm behind` warning the page shows.
 
-The iframe dies with the server, so old transcripts would show an empty box. At **close-out only**, after the final `tracker.json` write and before the server is stopped, post a frozen snapshot instead — `python3 ~/.claude/skills/mow/widget.py docs/plans/<stem>/dispatch/tracker.json` prints a self-contained fragment (the same renderer, font stripped, board inlined) to pass as the widget. It is ~15k tokens, so it is worth it exactly once, as the run's record.
+**Never hand-type the table, and never post the board as a widget or an `iframe`.** Widget sandboxes
+enforce a CSP with a fixed CDN allowlist (`cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`,
+`unpkg.com`, and the two Google Fonts hosts); `http://localhost:$PORT` is not on it and the request
+fails silently, so an `iframe` at the tracker's URL renders as an empty white box — a run lost
+its whole chat surface that way, server healthy, page live, every post blank. Inlining the renderer
+instead worked but cost ~16k tokens a post. The table costs a few hundred and reads in a terminal.
+
+The live surface stays the browser board on the URL §1 printed; each table is a snapshot of the moment
+it was posted — chat does not re-render — and the only board a transcript still shows once the server
+is stopped.
 
 **In-progress pulse (operator chat):** seed `dispatch/tracker.json` with `"pulse": true`. If the operator asks to turn the heartbeat/pulse on or off (e.g. "pulse off", "turn the shine pulse back on"), Edit `pulse` in `tracker.json` **immediately** — do not wait for a wave event. Spin stays on; only the lub-dub glow toggles.
 
@@ -620,7 +664,7 @@ Refuse fan-out on exit 1. Preflight is the **single** go §1 gate — grill writ
 
 For each wave, in order:
 
-- **Background / AFK fan-out:** issue all of the wave's AFK-yes lanes as Task/Agent subagents **in a single message** so they run concurrently. Resolve each lane's **Role** via **Runtime resolution** above, then set `subagent_type` (or the Claude Code equivalent) and `run_in_background: true`. On Claude Code, an AFK-yes `code-edit` lane also gets `isolation: "worktree"` on its `Agent` call (see **Worktree isolation** in Runtime resolution) so parallel lanes are actually isolated, not just conventionally disjoint — Cursor and any other runtime with no equivalent primitive keep today's shared-tree behavior; note that downgrade in the go summary. A sequential lane's brief instructs the subagent to do its steps in order internally. Pass the brief file path + its contents as the prompt — and instruct the lane to **Read** `docs/plans/<stem>/dispatch/hydrated-specs.md` (its Lane section) — including its `## Toolkit` section, when present, so the subagent knows which skills/agents to reach for mid-build rather than after; never assume inherited context.
+- **Background / AFK fan-out:** issue all of the wave's AFK-yes lanes as Task/Agent subagents **in a single message** so they run concurrently. Resolve each lane's **Role** via **Runtime resolution** above, then set `subagent_type` (or the Claude Code equivalent) and `run_in_background: true`. On Claude Code, an AFK-yes `code-edit` lane also gets `isolation: "worktree"` on its `Agent` call (see **Worktree isolation** in Runtime resolution) so parallel lanes are actually isolated, not just conventionally disjoint — Cursor and any other runtime with no equivalent primitive keep today's shared-tree behavior; note that downgrade in the go summary. Pass `model` on the `Agent` call when the lane's INDEX **Model** cell is anything other than `inherit`; on `inherit` — or a dispatch written before the column existed — omit the param so the lane runs on the go session's model; a runtime with no per-subagent model selection ignores the cell. A sequential lane's brief instructs the subagent to do its steps in order internally. Pass the brief file path + its contents as the prompt — and instruct the lane to **Read** `docs/plans/<stem>/dispatch/hydrated-specs.md` (its Lane section) — including its `## Toolkit` section, when present, so the subagent knows which skills/agents to reach for mid-build rather than after; never assume inherited context.
 - **`shell` role in Claude Code:** do not Task — run the lane yourself in the foreground with Bash, with the user watching.
 - **Foreground / AFK-no / `needs-review` lanes:** do these yourself or one at a time, with the user watching — do not background destructive or out-of-repo work.
 - Do not start wave N+1 until wave N's lanes report done **and the review gate passes**.
@@ -632,6 +676,11 @@ When any of the wave's lanes ran with `isolation: "worktree"` (Claude Code, AFK-
 
 1. Create one disposable integration worktree + branch from the wave's starting commit (e.g. `git worktree add .claude/worktrees/<stem>-integrate -b mow/<stem>/integrate HEAD`) — fully throwaway, deleted at the end of this procedure.
 2. For each isolated lane that reports done and returned a worktree path + branch: commit that lane's own changes on its own worktree branch (`git -C <lane-worktree> add <files>` then `commit` with a throwaway message) — this commit never leaves the disposable worktree/branch and is never pushed, so it does not touch the operator's real history any more than the worktree itself does. Then merge that lane's branch into the integration branch with a real commit (`git -C <integrate-worktree> merge --no-ff <lane-branch> -m "..."`) — a real commit here is required for the *next* lane's merge to compose cleanly; skip a lane that made no changes (the `Agent` tool already auto-cleaned it — no path/branch was returned).
+2b. **Diff a lane against its OWN base, never the main tree's HEAD (L13).** An isolated worktree does
+   not branch from where you are standing, so `git diff <main-HEAD> <lane-branch>` reports every file the
+   main tree gained since that base as a deletion by the lane. One such diff claimed 5,628 deletions
+   across 41 files for a lane that created exactly one. Use the lane's own commit range, and treat a
+   diffstat naming files outside the lane's `Files in scope` as the tell.
 3. **Real merge conflict on any lane's integration step → stop the wave right there and ask the operator.** Never auto-resolve — not with a `Files in scope` tie-breaker, not with any other silent rule, and do not proceed to merge remaining lanes. A conflict here means the plan-time disjoint-`Files in scope` check failed, or isolation was applied to lanes that weren't actually independent; that's an upstream planning bug to surface, not a routine event to smooth over. Show the conflicting hunks (the integration worktree is left mid-merge, exactly as git normally shows a conflict) and wait.
 4. Once every lane has merged into the integration branch cleanly: diff the integration branch against the wave's starting commit (`git diff <start-commit> <integrate-branch>`) and apply that single combined diff to the operator's actual working tree with `git apply` — this lands the result as plain uncommitted changes, never a commit on the operator's real branch, exactly like a non-isolated lane's edit would look. If `git apply` itself fails (should not happen given the conflict check in step 3, but is a real possible edge case if the wave's tree diverged mid-run), stop and ask — do not force it.
 5. **Fail-closed teardown:** never discard/remove a lane's worktree (or the integration worktree) while it holds unmerged commits or uncommitted changes. Only remove worktrees and delete every throwaway branch (lane branches + the integration branch) after the diff has landed in step 4 and this wave's review gate has passed (or the lane reported failure and the orchestrator has explicitly decided to abandon it — say so and preserve the branch rather than silently deleting work).
@@ -640,9 +689,15 @@ When any of the wave's lanes ran with `isolation: "worktree"` (Claude Code, AFK-
 
 When a wave's lanes report done:
 
+1. **A reviewer a lane spawned is not optional (L09).** If a lane's report says its own reviewer had
+   not returned by the time it finished, the lane is **not done** — that is an unmet contract item, not
+   a footnote. Wait for it, or run that review yourself at the gate and say in the record that the lane
+   shipped unreviewed. A lane once reported success while its reviewer was still running; the reviewer
+   came back with four Criticals.
 1. **Check each lane's `## Verification` block** against its brief's QA contract **and** its Decisions / Specs pointers: every pointed id must have a `Decisions honored:` line (`d#N: how, file:line`, or `none pointed`). A lane without Verification (or with unmet contract items / missing honored lines and no justification) is **not done** — send it back or finish the checks yourself in the foreground.
-2. **Spawn the wave's reviewers in parallel, in isolated contexts, on the combined wave diff** — union of the INDEX `Review flags` for the wave's lanes (roster per the repo's `docs/agents/protocols.md` P2; default: the stack reviewer for code changes, `llm-sec-review` when prompts/tools/model endpoints changed). Builder lanes never review their own work.
+2. **Spawn the wave's reviewers in parallel, in isolated contexts, on the combined wave diff** — union of the INDEX `Review flags` for the wave's lanes (roster per the repo's `docs/agents/protocols.md` P2; default: the stack reviewer for code changes, `llm-sec-review` when prompts/tools/model endpoints changed). **Reviewers run at `model: "fable"`** — the top tier, regardless of the lanes' `Model` cells: a reviewer weaker than the builder it checks turns the gate into a rubber stamp, and the gate is the only thing standing between a parallel wave and unreviewed code. Runtimes without per-subagent model selection run them inherited. Builder lanes never review their own work.
 3. **Triage findings:** Critical → fix now (new lane or foreground) and re-review the fix before the next wave. Warning/Suggestion → file to the tracker (taskman: tasks tagged `review-finding`, severity in title); they queue, they don't block.
+3b. **A reviewer's scope advice is scoped to the diff it saw (L37).** Before applying a finding that *removes* something — "this is dead code", "nothing emits this", "the next lane should add its own" — open the `## Files in scope` and `## Do NOT` of every lane that has not run yet. A reviewer sees one wave's diff, never the run's file-ownership map, so it will confidently tell you to delete something a later lane is forbidden from re-adding. If a pending lane needs it and cannot own that file, keep it and say why in the gate record.
 4. Record the gate: per verified lane, `taskman capture add --kind verify --summary "<task-id>: <one-line>" --source-ref <brief path>` (when the repo has taskman).
 
 ### 3. Paste-ready alternative
@@ -664,6 +719,10 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
 1. **Finding-triage (required — before the action report):** for every Critical/Major finding from this run's review gates, classify before writing the action report:
    - **(a) mechanizable** — the check is **added in this same run** (rule file / pytest / protocols P1 row). A follow-up task instead of adding the check is only acceptable with an operator-approved deferral reason.
    - **(b) convention** — `decision add -t <area/path tags>` (d#852 conventions) so Q5 surfacing carries it into future briefs.
+   - **Never give a finding a dispatch-brief `source_ref` (L21).** `plan mark-shipped` matches on that
+     prefix and will close the leftover when the run ships. Point `--source` at the production file or
+     `plan.md`. Audit every row `mark-shipped` moved — in both directions: it has silently closed
+     follow-ups, and it has also moved nothing when it should have moved eight.
    - **(c) one-off** — capture only (`taskman capture add --kind qa` — wave-gate verify records; this CLI has no separate `verify` kind).
    The action report's **Verify** section records each finding → classification ((a)/(b)/(c)).
 
@@ -690,18 +749,40 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
 
    **Tracker reconcile (required when a tracker ran):** before closing it out, spawn one `general-purpose` subagent to audit the board against reality. It is deliberately a *fresh* reader: the orchestrator wrote `tracker.json` from memory and is blind to its own dropped writes. Brief it to read `dispatch/tracker.json` plus every lane's `## Verification` block, the gate verdicts, and the findings filed on the board, then report **only discrepancies** — lanes/agents left `running` that actually finished, missing or invented artifacts, findings without taskman ids, skills never reconciled, `tokens` the runtime reported but the board never got, **any agent missing `started`/`ended`** (the per-subagent duration beside its name comes from nothing else), wave `started`/`ended` gaps. It reports; it does not edit. Apply its list yourself, then close out. A clean report is a one-line "board matches".
 
-   **Tracker close-out:** set `tracker.json` → `run_status: shipped`, finalize remaining statuses, and stop the tracker HTTP server if you started one — same cascade as §1, never a bare `pkill` (Git Bash has none):
+   **Tracker close-out:** set `tracker.json` → `run_status: shipped` **first** — that is what moves this run from `?runs=live` to `?runs=archive`, and what the count below reads — then finalize remaining statuses. The server is the *repo's*, not this run's: every other run in `docs/plans/` is on the same page, so **stop it only when no run is still `running`**. Match it by this repo's absolute plans path, never by port — every board serves a folder named `docs/plans`, so only the full path tells two projects' processes apart. Never a bare `pkill` (Git Bash has none):
 
    ```bash
-   if command -v pkill >/dev/null 2>&1; then
-     pkill -f "http.server $PORT" || true
+   # a fresh shell — §1's variables are long gone
+   LEFT=$(python3 - <<'PY'
+import glob, json
+n = 0
+for p in glob.glob("docs/plans/*/dispatch/tracker.json"):
+    try:
+        n += json.load(open(p)).get("run_status") == "running"
+    except Exception:
+        pass
+print(n)
+PY
+   ) || LEFT=""
+   if [ -z "$LEFT" ]; then
+     echo "warn: could not count live runs — leaving the board up"     # fail safe: a lingering server beats a killed peer
+   elif [ "$LEFT" -gt 0 ]; then
+     echo "board left up: $LEFT run(s) still live on it"
+   elif command -v pkill >/dev/null 2>&1; then
+     pkill -f "http.server .* -d $PWD/docs/plans" || true
    elif command -v taskkill >/dev/null 2>&1; then
-     TRACKER_PID=$(netstat -ano | grep ":$PORT" | awk -v p=":$PORT" '$2 ~ p"$" {print $NF; exit}')
-     [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
+     # Windows kills by PID, so confirm the listener is ours before touching it
+     OWNED=$(python3 ~/.claude/skills/mow/tracker_port.py --owned)
+     if [ -n "$OWNED" ]; then
+       TRACKER_PID=$(netstat -ano | grep ":$OWNED" | awk -v p=":$OWNED" '$2 ~ p"$" {print $NF; exit}')
+       [ -n "$TRACKER_PID" ] && taskkill //F //PID "$TRACKER_PID" || true
+     fi
    else
-     echo "warn: no pkill or taskkill — stop the server on port $PORT by hand"
+     echo "warn: no pkill or taskkill — stop the board by hand (tracker_port.py --owned prints its port)"
    fi
    ```
+
+   A run abandoned while still `running` holds the board up for good; the page already says "board Nm behind" for it, and setting its `run_status` is the fix.
 
 3. **Print the done summary (required — do not skip):** a short human-readable block matching the Operator summary shape, in past tense. Prefer rewriting from what actually shipped (lanes + review gate + verify), not only copying the forward-looking plan text.
 

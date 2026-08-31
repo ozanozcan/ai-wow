@@ -386,14 +386,40 @@ let lastRuns = null;
 let PANEL_STYLE = new URLSearchParams(location.search).get("panels") === "tint" ? "tint" : "chip";
 /* "detailed" = the full tree; "compact" = wave plates and lane letters only */
 let VIEW = new URLSearchParams(location.search).get("view") === "compact" ? "compact" : "detailed";
-/* ?runs=stemA,stemB (or ?runs=all) puts every run on one page, served from docs/plans/ */
-const RUNS_PARAM = new URLSearchParams(location.search).get("runs");
+/* Which of this repo's runs the page shows, served from docs/plans/: "live"
+   (the default) = every run that has not shipped, "archive" = the ones that
+   have, "all" = both, or a comma-separated stem list. One board per repo, so
+   the filter *is* the view — a finished run stays exactly where it was written
+   and is never moved, copied or condensed to get onto the archive page. */
+let RUNS_MODE = new URLSearchParams(location.search).get("runs");
+const KEEP = {
+  live: (d) => d.run_status !== "shipped",
+  archive: (d) => d.run_status === "shipped",
+  all: () => true,
+};
+const EMPTY = {
+  live: "No live runs — every run here has shipped. Switch to archive.",
+  archive: "No finished runs yet. Switch to live.",
+  all: "No runs found. Serve docs/plans/ and start a /mow go.",
+};
 /* null = follow tracker.json's `pulse`; true/false = operator override from the legend */
 let PULSE_OVERRIDE = null;
 
 document.addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-view], button[data-panels], button[data-pulse]");
+  const b = e.target.closest("button[data-view], button[data-panels], button[data-pulse], button[data-runs]");
   if (!b) return;
+  /* the runs filter changes which runs are fetched, not how they are drawn — so
+     it re-polls rather than redraws, and writes itself into the URL so the view
+     you are looking at is the view you can bookmark */
+  if (b.dataset.runs) {
+    RUNS_MODE = b.dataset.runs;
+    const url = new URL(location.href);
+    url.searchParams.set("runs", RUNS_MODE);
+    history.replaceState(null, "", url);
+    lastPayload = "";
+    poll();
+    return;
+  }
   if (b.dataset.view) VIEW = b.dataset.view;
   else if (b.dataset.panels) PANEL_STYLE = b.dataset.panels;
   else {
@@ -644,7 +670,7 @@ function spanNow(now) {
 /* ---------- the activity trail ----------
    A span is when an agent was open; the trail is when anyone was working. They
    are not the same: a background agent left open overnight reported 12.7h on a
-   real lane while every other agent that day ran 4–13 minutes. The hook
+   one real lane while every other agent that day ran 4–13 minutes. The hook
    samples every tool call — including a subagent's own, which fire under the
    parent session — so the trail is dense while work happens and empty while it
    does not. Intersecting the two throws the night out of the middle of the span.
@@ -1164,8 +1190,9 @@ function seg(label, name, options, current) {
     `<button type="button" data-${name}="${val}"${val === current ? ' class="on"' : ""}>${text}</button>`).join("")}</span>`;
 }
 
-function controls(data) {
+function controls(data, multi) {
   return `<span class="meta">
+      ${multi ? seg("runs", "runs", [["live", "live"], ["archive", "archive"], ["all", "all"]], RUNS_MODE) : ""}
       ${seg("view", "view", [["detailed", "detailed"], ["compact", "compact"]], VIEW)}
       ${seg("waves", "panels", [["chip", "buttons"], ["tint", "tinted"]], PANEL_STYLE)}
       ${seg("pulse", "pulse", [["1", "on"], ["0", "off"]], pulseOn(data) ? "1" : "0")}
@@ -1202,19 +1229,27 @@ function render(data) {
 
 /* several runs on one page — every /mow go this server can see */
 function renderMulti(runs) {
-  applyPulse(runs.length ? runs[0].data : {});
+  const first = runs.length ? runs[0].data : {};
+  applyPulse(first);
   const live = runs.filter((r) => r.data.run_status === "running").length;
-  app.innerHTML = `<header class="top">
+  const head = `<header class="top">
       <h1>mow runs</h1>
       <span class="stem">${runs.length} run${runs.length === 1 ? "" : "s"}${live ? ` · ${live} live` : ""}</span>
-      ${controls(runs.length ? runs[0].data : {})}
-    </header>`
+      ${controls(first, true)}
+    </header>`;
+  /* an empty filter keeps its header: otherwise the switch that walked you into
+     an empty archive is the one control the page no longer offers */
+  if (!runs.length) {
+    app.innerHTML = head + `<div class="empty"><p>${esc(EMPTY[RUNS_MODE] || EMPTY.all)}</p></div>`;
+    return;
+  }
+  app.innerHTML = head
     + runs.map((r) => {
       SPAN_CEIL = spanCeiling(r.data);          /* each run capped by its own last write */
       ACTIVITY = r.activity || [];              /* and measured against its own trail */
       return `<section class="run">${runHead(r.data, "h2")}${boardMarkup(r.data)}</section>`;
     }).join("")
-    + legend(runs.length ? runs[0].data : {});
+    + legend(first);
   refreshDurations();
 }
 
@@ -1285,6 +1320,23 @@ async function fetchRun(url) {
   return r.json();
 }
 
+/* Sweeping the folder is the expensive half of a poll: a plans root carries a
+   directory per plan and most have no dispatch/tracker.json at all, so probing
+   every one of them every 2s is dozens of requests and a console full of 404s
+   that hides real ones. Sweep on the first poll and every SWEEP_MS after; in
+   between, re-poll only the stems that answered. A run that starts inside the
+   window joins the board at the next sweep. */
+const SWEEP_MS = 30000;
+let sweptAt = 0;
+let knownStems = null;
+
+async function stemsToPoll() {
+  if (knownStems && Date.now() - sweptAt < SWEEP_MS) return knownStems;
+  sweptAt = Date.now();
+  knownStems = null;
+  return await discoverStems();
+}
+
 /* sibling runs, when this page is served from docs/plans/ */
 async function discoverStems() {
   const html = await (await fetch("./", { cache: "no-store" })).text();
@@ -1296,20 +1348,26 @@ async function discoverStems() {
 }
 
 async function pollMulti() {
-  const named = RUNS_PARAM && RUNS_PARAM !== "all"
-    ? RUNS_PARAM.split(",").map((s) => s.trim()).filter(Boolean)
-    : await discoverStems();
-  const runs = [];
+  /* a named stem list is taken as given; live/archive/all sweep the folder */
+  const filter = KEEP[RUNS_MODE];
+  const named = filter ? await stemsToPoll()
+    : RUNS_MODE.split(",").map((s) => s.trim()).filter(Boolean);
+  const runs = [], found = [];
   for (const stem of named) {
     try {
-      runs.push({
-        stem,
-        data: await fetchRun(`${stem}/dispatch/tracker.json`),
-        activity: await fetchActivity(`${stem}/dispatch/`),
-      });
+      const data = await fetchRun(`${stem}/dispatch/tracker.json`);
+      found.push(stem);                       /* has a tracker, whatever the filter says */
+      if (filter && !filter(data)) continue;
+      runs.push({ stem, data, activity: await fetchActivity(`${stem}/dispatch/`) });
     } catch { /* not a mow run, or its tracker isn't written yet */ }
   }
-  if (!runs.length) { renderEmpty("No runs found. Serve docs/plans/ and start a /mow go."); return; }
+  if (filter) knownStems = found;
+  if (!runs.length) {
+    lastOk = Date.now();                      /* an empty filter is a poll that worked */
+    if (lastPayload !== "[]") { lastPayload = "[]"; lastRuns = []; renderMulti([]); }
+    markFresh([]);
+    return;
+  }
   const rank = (r) => (r.data.run_status === "running" ? 0 : 1);
   runs.sort((a, b) => rank(a) - rank(b) || String(b.data.started || "").localeCompare(String(a.data.started || "")));
   lastOk = Date.now();
@@ -1324,8 +1382,11 @@ async function pollMulti() {
 
 async function poll() {
   try {
-    if (RUNS_PARAM != null) return await pollMulti();
+    if (RUNS_MODE != null) return await pollMulti();
     const res = await fetch("tracker.json", { cache: "no-store" });
+    /* no tracker.json beside the page means this is the repo's plans root and
+       not one run's dispatch folder — so the bare board URL lands on live */
+    if (res.status === 404) { RUNS_MODE = "live"; return await pollMulti(); }
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     ACTIVITY = await fetchActivity("");
