@@ -2,6 +2,10 @@
 local.config.json
 
 .backups/
+# mow's go mode creates one worktree per isolated lane here, so this fills up on
+# every parallel run. Scoped to worktrees/ rather than .claude/ so real config in
+# that directory stays visible to git.
+.claude/worktrees/
 .DS_Store
 __pycache__/
 *.pyc
