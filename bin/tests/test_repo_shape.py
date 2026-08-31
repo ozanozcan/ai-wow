@@ -21,6 +21,7 @@ Two design notes:
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -54,6 +55,24 @@ LEAK = re.compile(
     r"|/Users/[a-z]+",
     re.I,
 )
+
+
+def _tracked_under(dirs):
+    """Every git-tracked file under `dirs`, as absolute paths.
+
+    Tracked, not on-disk: the question this test asks is "what does publishing
+    this repo expose", and an ignored file exposes nothing. Walking the working
+    tree instead answers a different question and gets it wrong — adding docs/
+    to SCRUBBED_DIRS made the scan reach docs/brainstorms/, which .gitignore
+    keeps out of the repo entirely, and the push gate blocked on a file that
+    could never leak. Everything under the original scrubbed dirs is tracked,
+    which is the only reason the on-disk walk survived as long as it did.
+    """
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "-z", "--", *dirs],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    return [REPO / rel for rel in out.split("\0") if rel]
 
 
 def _scan(path):
@@ -195,9 +214,8 @@ def main():
 
     # --- nothing employer-specific leaked into the published repo ---------
     leaked = []
-    for name in SCRUBBED_DIRS:
-        for path in (REPO / name).rglob("*"):
-            leaked.extend(_scan(path))
+    for path in _tracked_under(SCRUBBED_DIRS):
+        leaked.extend(_scan(path))
     for name in PUBLISHED:
         leaked.extend(_scan(REPO / name))
     check("no employer or personal strings in published surfaces", leaked, [])
