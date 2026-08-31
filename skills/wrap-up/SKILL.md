@@ -34,8 +34,7 @@ from the project root.
 **Do not** invent finished work from the chat log. Run the gate first:
 
 ```bash
-.venv/bin/python scripts/wrapup_reconcile.py
-# equiv: .venv/bin/python -m taskman wrapup gate
+.venv/bin/python -m taskman wrapup gate
 ```
 
 | Exit | Meaning |

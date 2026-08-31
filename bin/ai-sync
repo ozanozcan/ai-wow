@@ -909,6 +909,13 @@ def do_commit() -> None:
 # status / checks
 # ---------------------------------------------------------------------------
 
+# One wording for both the directory and the file branch below. A copy install
+# that no longer matches the repo has drifted, and `ai-sync` is what fixes it;
+# "NOT linked" reads as a failed install and sends the operator back to the
+# installer instead — the one response that does not fix drift.
+COPY_STALE = "copied (stale — re-run ai-sync)"
+
+
 def _is_copy_of(link: Path, canonical: Path) -> bool:
     """True if link is a real dir/file mirroring canonical — i.e. a copy install."""
     if link.is_symlink() or not link.exists():
@@ -954,8 +961,8 @@ def _dir_link_state(link: Path, canonical: Path, mode: str) -> str:
         return f"OTHER REPO ({foreign})"
     if link.is_symlink() and link.resolve() == canonical.resolve():
         return "linked"
-    if mode == "copy" and link.is_dir() and _trees_equal(canonical, link):
-        return "copied (in sync)"
+    if mode == "copy" and link.is_dir():
+        return "copied (in sync)" if _trees_equal(canonical, link) else COPY_STALE
     if link.exists():
         return "NOT linked (real dir)"
     return "missing"
@@ -976,8 +983,9 @@ def do_status() -> int:
             state = f"OTHER REPO ({foreign})"
         elif link.is_symlink() and link.resolve() == canonical.resolve():
             state = "linked"
-        elif mode == "copy" and link.is_file() and link.read_bytes() == canonical.read_bytes():
-            state = "copied (in sync)"
+        elif mode == "copy" and link.is_file():
+            in_sync = link.read_bytes() == canonical.read_bytes()
+            state = "copied (in sync)" if in_sync else COPY_STALE
         elif link.exists():
             state = "NOT linked (real file)"
         else:

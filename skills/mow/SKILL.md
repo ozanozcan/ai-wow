@@ -523,7 +523,7 @@ Do **not** fan out from ready — go owns execution.
 | `llm-sec-review` | `llm-sec-review` | `llm-sec-review` |
 | `ui-design` | `ui-designer` | `ui-designer` |
 | `backend-review` | `backend-reviewer` | `backend-reviewer` |
-| `django-review` | `django-reviewer` | `django-reviewer` |
+| `django-review` (if project has the agent) | `django-reviewer` | `django-reviewer` |
 | `frontend-review` | `frontend-reviewer` | `frontend-reviewer` |
 
 If a role has no mapping in the current runtime, fall back to `code-edit` / `general-purpose` / `generalPurpose` and note the downgrade in the go summary.
@@ -802,7 +802,7 @@ Next: `/wrap-up` (board sync + session report).
 ```
 
 4. **Close the session yourself — but only when it is provably safe.** Run the repo's
-   wrap-up evidence gate if it has one (`python scripts/wrapup_reconcile.py`), then check
+   wrap-up evidence gate if it has one (`python -m taskman wrapup gate`), then check
    the three safety conditions below. All three green → follow
    `~/.claude/skills/wrap-up/SKILL.md` directly (that skill is
    `disable-model-invocation: true`, so read it from disk and execute its steps; do not try

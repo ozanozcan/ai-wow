@@ -18,6 +18,12 @@ commits and pushes, so the copy gets its own `git init` with no remote and a
 `{"push": false}` config. (It no longer commits with `git add -A` — see
 test_ai_sync_commit.py — but it still commits, so the isolation stands.)
 
+The second bug, same reporting surface: a copy install whose files had since
+drifted from the repo fell through to that same `NOT linked (real dir)` branch —
+so the label misdiagnosed precisely when something was wrong, and sent the
+operator back to the installer instead of to `ai-sync`. Sections 5 and 6 pin the
+drifted copy and the genuinely never-installed directory apart.
+
 Isolation must override USERPROFILE as well as HOME. `Path.home()` goes through
 `ntpath.expanduser` on Windows, which reads USERPROFILE (then HOMEDRIVE +
 HOMEPATH) and ignores HOME entirely — so a HOME-only sandbox is a no-op there
@@ -65,6 +71,15 @@ def check(label, got, want):
     else:
         print(f"  FAIL  {label} — got {got!r}, want {want!r}")
         FAILURES.append(label)
+
+
+def state_of(out, target):
+    """The state `status` printed for one target line, e.g. ".claude/agents"."""
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(target + " "):
+            return stripped[len(target):].strip()
+    return None
 
 
 def build_repo(root):
@@ -155,6 +170,43 @@ def main():
         #    the privilege.
         check("label makes no claim about symlink privilege",
               "no symlink privilege" in run(root, tmp / "h-copy", "status").stdout, False)
+
+        # 5. A copy install whose contents drifted from the repo. This is the
+        #    second half of the same bug: a drifted copy fell through to the
+        #    same branch a never-installed directory hits, so the one moment
+        #    something IS wrong is the moment the label misdiagnoses it — and
+        #    "NOT linked" sends the operator back to the installer, which is
+        #    the one response that does not fix drift.
+        home = tmp / "h-drift"
+        (home / ".agents").mkdir(parents=True)
+        run(root, home, "--copy")
+        (home / ".claude" / "agents" / "edited-after-install.md").write_text("drift\n")
+        (home / ".claude" / "CLAUDE.md").write_text("hand-edited\n")
+        out = run(root, home, "status").stdout
+        check("drifted copy dir reports stale",
+              state_of(out, ".claude/agents"), "copied (stale — re-run ai-sync)")
+        check("drifted copy file reports stale in the same words",
+              state_of(out, ".claude/CLAUDE.md"), "copied (stale — re-run ai-sync)")
+        check("drifted copy is not called unmanaged",
+              "NOT linked" in out, False)
+
+        # 6. The counterpart the stale wording must not swallow. In symlink
+        #    mode a real directory at a managed path was never installed by
+        #    ai-sync at all, and "NOT linked (real dir)" stays the honest word
+        #    for it — only the copy-mode fall-through changed.
+        if not can_symlink():
+            skip("never-installed real dir still reports NOT linked",
+                 "symlink mode is unreachable on this machine")
+        else:
+            home = tmp / "h-foreign"
+            (home / ".claude" / "agents").mkdir(parents=True)
+            (home / ".claude" / "agents" / "someone-elses.md").write_text("not ours\n")
+            (home / ".claude" / "commands").symlink_to(root / "commands")
+            out = run(root, home, "status").stdout
+            check("never-installed dir case runs in symlink mode",
+                  "link mode: symlink" in out, True)
+            check("never-installed real dir still reports NOT linked",
+                  state_of(out, ".claude/agents"), "NOT linked (real dir)")
 
     print()
     if FAILURES:

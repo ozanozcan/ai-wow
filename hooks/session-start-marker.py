@@ -39,6 +39,14 @@ def _git(cwd: Path, *args: str) -> str | None:
     return proc.stdout.strip() or None
 
 
+def _has_board(start: Path) -> bool:
+    """True when a `.taskman.toml` sits at or above `start`.
+
+    Message text only — never a reason to skip the marker (see main()).
+    """
+    return any((d / ".taskman.toml").is_file() for d in (start, *start.parents))
+
+
 def _read_stdin_json() -> dict:
     try:
         raw = sys.stdin.read()
@@ -183,9 +191,15 @@ def main() -> int:
 
     ctx = (
         f"Session marker written at {marker_path} "
-        f"(start_sha={start_sha[:12] or 'unknown'}). "
-        f"/wrap-up must run: python scripts/wrapup_reconcile.py"
+        f"(start_sha={start_sha[:12] or 'unknown'})."
     )
+    # Name the evidence gate only where a board is actually installed. The gate
+    # is a taskman entry point, so on a clone without one this sentence would be
+    # an instruction the session cannot follow. Text only — never an early
+    # return: a board-less worktree still needs its marker, or the peer-session
+    # hooks see no one.
+    if _has_board(cwd):
+        ctx += " /wrap-up must run: python -m taskman wrapup gate"
 
     if runtime == "claude":
         # Claude SessionStart: stdout context + optional hookSpecificOutput.

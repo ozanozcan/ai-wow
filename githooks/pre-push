@@ -16,6 +16,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 echo "pre-push: running harness tests..."
 python3 hooks/tests/test_stamp_tracker.py >/dev/null
+python3 hooks/tests/test_session_start_marker.py >/dev/null
 python3 hooks/tests/test_redact_private.py >/dev/null
 python3 hooks/tests/test_peer_session_notice.py >/dev/null
 python3 bin/tests/test_ai_sync_status.py >/dev/null
