@@ -45,6 +45,12 @@ Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
+**Explore does not load `CLAUDE.md`.** It and Plan are the only subagents that skip it, so the verification habits never reach the agent doing the actual searching. Restate these three in the prompt you hand it — all three govern exactly what it does:
+
+- **A summary of a file is not the file.** Before reporting a module as shallow, dead, or a deletion candidate, open it. A directory listing, a filename, or a matched excerpt is not evidence about what the file contains. (L01, L31)
+- **An unanchored grep is not an existence check** — a name that prefixes its siblings matches all of them. Anchor it, or prove it by import. (L15)
+- **A grep answers the pattern you typed, not the question you meant.** Never report absence from your own filtered output as absence in the codebase, and never count a proxy pattern as a count of the thing — for counts, ask the authoritative source rather than a regex. (L40)
+
 ### 2. Present candidates
 
 Present a numbered list of deepening opportunities. For each candidate:

@@ -25,6 +25,13 @@
       "copilot": { "event": "SessionStart" }
     },
     {
+      "_comment": "MUST stay ordered after session-start-marker: it reports on the markers that hook writes. It re-derives WRAPUP_* from its own stdin payload because CLAUDE_ENV_FILE is not sourced until the SessionStart event is over.",
+      "id": "peer-session-notice",
+      "script": "peer-session-notice.sh",
+      "claude": { "event": "SessionStart" },
+      "cursor": { "event": "sessionStart", "failClosed": false }
+    },
+    {
       "id": "archive-session",
       "script": "archive-session.sh",
       "claude": { "event": "SessionEnd" },
@@ -51,6 +58,13 @@
       "claude": { "event": "SessionEnd" },
       "cursor": { "event": "sessionEnd", "failClosed": false },
       "copilot": { "event": "Stop" }
+    },
+    {
+      "_comment": "asks before checkout-wide git ops, but only while another session is live in this worktree; fails open",
+      "id": "peer-session-guard",
+      "script": "peer-session-guard.sh",
+      "claude": { "event": "PreToolUse", "matcher": "Bash" },
+      "cursor": { "event": "beforeShellExecution", "failClosed": false }
     }
   ]
 }
