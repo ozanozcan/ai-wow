@@ -734,8 +734,7 @@ Next: `/wrap-up` (board sync + session report).
    | Sole writer | `git status` shows no uncommitted/untracked work outside this stem's paths | A parallel session's files in the tree cannot be attributed for them |
    | No competing handoff | no `open`/`in-progress` checkpoint in `docs/checkpoints/INDEX.md` names this stem | That checkpoint's owner closes it, not you |
 
-   **Never auto-run harvest** — it costs provider calls and needs a human yes; offer it and
-   stop. Suggest **`/checkpoint`** only if handing off unfinished work to a future agent.
+   Suggest **`/checkpoint`** only if handing off unfinished work to a future agent.
 
    After any `taskman plan mark-shipped`, **audit what it closed**: it matches on
    `source_ref` prefix, so follow-up tasks filed *during* the run that merely cite a brief

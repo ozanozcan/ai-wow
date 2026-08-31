@@ -30,7 +30,7 @@ Full design rationale: the project's own design notes (Scope note v0.3).
 | Harvest | Scan transcripts → LLM candidates → approve → commit with `source_ref` |
 | Plan bridge | `plan from-decisions` / `plan to-dispatch` ⇄ `mow` (Work-Item JSON) |
 | Capture hook | `scripts/archive-session.sh` + SessionEnd hooks → `project=<slug>/…` hive paths |
-| End-of-chat | `/wrap-up` skill (home) — **evidence gate** (`taskman wrapup gate` / `scripts/wrapup_reconcile.py`) then report + board sync + offer harvest. Session markers from Claude `SessionStart` / Cursor `sessionStart`. |
+| End-of-chat | `/wrap-up` skill (home) — **evidence gate** (`taskman wrapup gate` / `scripts/wrapup_reconcile.py`) then report + board sync (incl. in-context capture of unbooked chat items). Session markers from Claude `SessionStart` / Cursor `sessionStart`. |
 
 ## Usage
 
@@ -70,9 +70,6 @@ Full design rationale: the project's own design notes (Scope note v0.3).
 .venv/bin/python -m taskman session record --file path/to/archived.jsonl
 
 # Harvest (safety net — not a substitute for live task add during chats)
-.venv/bin/python -m taskman harvest            # scan + interactive approve
-.venv/bin/python -m taskman harvest --dry-run  # candidates only
-.venv/bin/python -m taskman harvest --feature 16  # default Feature for requirement candidates
 ```
 
 Statuses: `backlog → todo → in_progress → blocked → done`.
@@ -141,9 +138,6 @@ Global Claude/Cursor SessionEnd hooks call thin wrappers that exec this repo's
 ## Harvest
 
 ```bash
-.venv/bin/python -m taskman harvest            # scan + interactive approve
-.venv/bin/python -m taskman harvest --dry-run  # candidates only
-.venv/bin/python -m taskman harvest --feature 16  # default Feature for requirement candidates
 ```
 
 LLM model: `TASKMAN_HARVEST_MODEL` (default `openai:gpt-4o-mini`; for Anthropic
@@ -163,10 +157,9 @@ It will:
 2. Sync via `python -m taskman …` (never writes Postgres directly)
 3. Write `docs/session-reports/<YYYY-MM-DD-HHMM>-<slug>.md`
 4. Close an active checkpoint if one was picked up
-5. Ask **Run harvest now? [y/N]** — never auto-runs harvest
 
 If `.taskman.toml` is missing, it still writes a report when possible and skips
-board sync / harvest.
+board sync.
 
 ## Dropping it into another project
 
@@ -215,5 +208,5 @@ place; **does not overwrite** board status — use `task move` / `/wrap-up`).
 - **Recommender / planner** — "what to work on next" (spec Phase 2).
 - **Kanban web UI**
 - **Cross-project `board --all-projects`**
-- **Phase 3 bridge** — harvest → plan → dispatch as one flow; status-close on wrap-up
+- **Phase 3 bridge** — wrap-up capture → plan → dispatch as one flow; status-close on wrap-up
   (see spec §8; still design-only).

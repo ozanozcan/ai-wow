@@ -20,8 +20,7 @@ This is the practical map for: *think of something → grill/plan in any chat �
 | **`/mow go`** | Fan out briefs to subagents wave by wave; ends with past-tense **what we did / what you have now** | Rewrite the plan |
 | **`taskman` CLI** | Durable Feature→PBI→Task + **Requirement** living spec | Spawn agents (skills call it) |
 | **`taskman plan from-decisions/to-dispatch`** | Translate between board ↔ `dispatch/` folder | Decide *what* to work on |
-| **`/wrap-up`** | End of chat: **evidence gate** (unattributed paths + stale `in_progress`) then board sync (incl. retroactive chat sweep) + **requirements** + high-priority tasks for every leftover + **auto-checkpoint** bundling them toward `/mow plan`/`ready` + session report | Replace live capture during work |
-| **`taskman harvest`** | Safety net: mine archived transcripts → approve → board | Primary capture path |
+| **`/wrap-up`** | End of chat: **evidence gate** (unattributed paths + stale `in_progress`) then board sync (incl. retroactive chat sweep + in-context capture of items voiced but never booked) + **requirements** + high-priority tasks for every leftover + **auto-checkpoint** bundling them toward `/mow plan`/`ready` + session report | Replace live capture during work |
 | **`/checkpoint`** | Forward handoff for the *next* agent — auto-invoked by `/wrap-up` when leftovers exist; manual only for mid-session swaps | Board sync (that's wrap-up) |
 
 **Rule of thumb:** you invoke skills; **agents** run taskman CLI; the board + living-spec remember work; `docs/plans/<stem>/dispatch/` is the handoff format.
@@ -65,7 +64,7 @@ Canonical paths are under `docs/plans/<stem>/` (Cursor + Claude Code). `.cursor/
 **1. Capture thinking** — Plan mode, `/grill-with-docs`, or a random chat.  
 Output you want: locked decisions + a plan file with todos (or a clear list of actionable items). Prefer writing `docs/plans/<stem>/plan.md`.
 
-Before context gets long, persist the session in the [**compact template**](./mow-compact-template.md) — fill it at the end of the origin grilling/planning chat (or when running **`taskman harvest`** on archived transcripts) so Goal, Key Decisions, and file lists have a fixed shape instead of scattered chat bullets.
+Before context gets long, persist the session in the [**compact template**](./mow-compact-template.md) — fill it at the end of the origin grilling/planning chat so Goal, Key Decisions, and file lists have a fixed shape instead of scattered chat bullets.
 
 **2. Make it orchestratable** — in the *same* chat while context is hot:
 
@@ -115,7 +114,7 @@ Prefer `plan to-dispatch` when the board is the source of truth; otherwise go wi
 /wrap-up
 ```
 
-Runs `uv run wrapup-reconcile` first (exit 1 until unattributed paths and session-touched `in_progress` are cleared with citations), then syncs board / requirements, writes a session report, offers harvest.
+Runs `uv run wrapup-reconcile` first (exit 1 until unattributed paths and session-touched `in_progress` are cleared with citations), then syncs board / requirements, writes a session report, offers commit.
 
 ---
 
@@ -132,7 +131,7 @@ Use when the plan is fresh and rich (files, roles, waves).
 
 ### B — “I already have board rows; I want to execute a slice”
 
-Use for backlog Features that came from harvest or manual `task add` (may have thin briefs).
+Use for backlog Features that came from wrap-up capture or manual `task add` (may have thin briefs).
 
 1. `taskman board` / `taskman feature list` — pick a Feature id  
 2. `taskman plan to-dispatch --feature <id> --dir <dir>`  
@@ -150,7 +149,6 @@ Use for backlog Features that came from harvest or manual `task add` (may have t
 .venv/bin/python -m taskman task add "…" -t tag1,tag2
 .venv/bin/python -m taskman task move <id> in_progress
 .venv/bin/python -m taskman decision add "…" --why "…"
-.venv/bin/python -m taskman harvest
 .venv/bin/python -m taskman task add "…?" -t kind:decision,plan:<stem>
 .venv/bin/python -m taskman task link <build-id> --blocked-by <decision-id>
 .venv/bin/python -m taskman task set <id> -t kind:decision,plan:<stem>,scope:out
@@ -226,7 +224,7 @@ Get this wrong and the question is silently marked `done` at Integrate, claiming
 | End of every working chat | `/wrap-up` |
 | Hand off to a *future* agent mid-epic (mid-session swap) | `/checkpoint` — end-of-chat handoff happens automatically inside `/wrap-up` |
 | Resume after a break | `/pick-up-where-i-left-off` |
-| Missed items in old transcripts | `taskman harvest` |
+| Missed items from a session that died before `/wrap-up` | open its archived transcript (`docs/chat-history/…`) in a live session and book items with `task add` / `decision add` |
 
 ---
 
@@ -246,7 +244,7 @@ These gates are enforced by repo scripts + taskman CLI (runtime-agnostic — sam
 - **Mark shipped** — `/mow go` Integrate runs `taskman plan mark-shipped` before registry flip
 - **Recommend next** — `taskman recommend next` ranks 1–3 unblocked next actions with reasons
 
-Still manual: **to-dispatch before `/mow go`** when the board moved since dispatch was written. **Wrap-up gate is automatic** (nonzero exit until evidence lists clear); the session report / harvest ask remain operator-facing.
+Still manual: **to-dispatch before `/mow go`** when the board moved since dispatch was written. **Wrap-up gate is automatic** (nonzero exit until evidence lists clear); the session report / commit ask remain operator-facing.
 
 ---
 
@@ -269,7 +267,7 @@ taskman plan to-dispatch    → fresh dispatch/ from board
         ↓
 /mow go <stem>              → agents run
         ↓
-/wrap-up                    → statuses + leftover tasks + auto-checkpoint + report (+ optional harvest)
+/wrap-up                    → statuses + leftover tasks + auto-checkpoint + report (+ commit offer)
 ```
 
 Legacy: `/dispatch-plan` = `/mow plan`, `/dispatch-plan dispatch` = `/mow go`; `/maow` = `/mow` (same modes).

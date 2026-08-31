@@ -147,7 +147,7 @@ Route the rest to where it belongs, and do not double-log:
 | "here's what this session did" | the session report (step 5) |
 | "I claimed done without running the verify command" | **here** |
 
-**How:** read `LESSONS.md` at the dotfiles-ai root first — it is capped, so this is cheap — and decide whether the correction is a rule already logged or a new one. That judgement is yours; the script does no fuzzy matching and will happily store a near-duplicate.
+**How:** read `LESSONS.md` at the repo root first — it is capped, so this is cheap — and decide whether the correction is a rule already logged or a new one. That judgement is yours; the script does no fuzzy matching and will happily store a near-duplicate.
 
 ```bash
 # already there — same rule, new occurrence
@@ -197,15 +197,31 @@ recurrence, and recurrence required the rule to be loaded, which only happened a
 
 **The common case is nothing.** A session where you were not corrected logs no lesson, and that is the expected outcome. Manufacturing one to look diligent poisons the file for every session after it.
 
-### 3. Action report (safety net — when a plan shipped)
+### 3. Action report (safety net — when something durable shipped)
 
-If this chat completed (or clearly finished) work tied to `docs/plans/<stem>/`:
+The trigger is **"did durable work ship?"**, not "was there a plan folder?". Those came apart on
+2026-08-30: a two-repo refactor with a rewritten test suite and a locked decision produced no action
+report at all, because it had never been through `/mow plan` and so had no stem folder for the old
+trigger to fire on. Its only record was chat-scoped.
+
+**A. Work tied to a stem** — this chat completed (or clearly finished) work under `docs/plans/<stem>/`:
 
 1. Check whether `docs/plans/<stem>/action-report.md` exists and reflects what shipped in **this** chat.
 2. If missing or stale: write or update it **before** the session report (step 5). Use the same shape as `mow` Integrate (outcome, wave results, decisions, open/deferred, verify). Link from `dispatch/INDEX.md` if that folder exists.
 3. Session report stays under `docs/session-reports/`; action report stays next to the plan.
 
-Skip when the chat did not touch any `docs/plans/<stem>/` work (pure refactor, unrelated bugfix, etc.).
+**B. Durable work with no stem** — shipped outside mow (direct build, `/mow`-less refactor, a fix that
+grew). Write `docs/action-reports/<YYYY-MM-DD>-<slug>.md`, same shape as A minus wave results, plus a
+line saying why it has no stem. Do **not** invent a stem folder for it: `docs/plans/` means mow runs,
+and adding a row to its registry both pollutes that meaning and touches a file live sessions contend for.
+
+Durable means it shipped commits **and** at least one of: a locked decision, a new or rewritten test
+suite, a schema/contract/interface change, a change spanning more than one repo, or work that
+supersedes an existing board task. One of those, or it is not an action report.
+
+Skip — and say so — when the chat shipped nothing durable: a question answered, a one-line fix, an
+exploration that landed no commits, or housekeeping inside someone else's folder (deleting a stale
+artifact from a shipped stem is not that stem's work, and must not be written into its report).
 
 ### 4. Leftovers → board + checkpoint (automatic)
 

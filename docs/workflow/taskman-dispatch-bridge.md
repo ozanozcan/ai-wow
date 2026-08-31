@@ -113,15 +113,15 @@ Phase 2 (see §7).
    (lanes/waves/files) + each `NN-*.md` brief into items; if given JSON, use it
    directly.
 2. Upsert the **Feature** by `plan.slug` (idempotent).
-3. For each item, upsert a **Task** keyed on `source_ref` (never duplicate — same
-   dedup rule as `harvest`). Set title/priority/status/tags; write `dispatch.*`
+3. For each item, upsert a **Task** keyed on `source_ref` (never duplicate). Set
+   title/priority/status/tags; write `dispatch.*`
    into `Task.brief` (JSONB, Phase 2) or fold `role:`/`wave:` into tags (Phase 1).
 4. Second pass: resolve `depends_on` (item ids) → `Task.blocked_by` links now that
    all tasks have real ids.
 5. Print a summary board slice.
 
 **Idempotency:** re-importing an edited plan updates existing rows in place and
-adds only new items. Matches `harvest`'s `source_ref`-keyed dedup.
+adds only new items, deduped by `source_ref`.
 
 ## 5. Direction B — to-dispatch (taskman board slice → dispatch)
 
@@ -176,7 +176,7 @@ Both are additive, mirror the `0003_strategic_lens` migration style, and are
 2. **Phase 2:** add `Task.brief` JSONB; implement `taskman plan to-dispatch` with wave
    recomputation + the disjoint-file-set guard; teach `mow` to prefer a
    taskman export as its brief source.
-3. **Phase 3:** harvest → plan → dispatch as one flow (a grilled plan is captured,
+3. **Phase 3:** wrap-up capture → plan → dispatch as one flow (a grilled plan is captured,
    imported, executed, and its task statuses close automatically on wrap-up).
 
 ## 9. Open questions

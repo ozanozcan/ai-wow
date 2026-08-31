@@ -76,10 +76,6 @@ class Project(Base):
     slug: Mapped[str] = mapped_column(String, unique=True, index=True)
     name: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    # Cursor for `taskman harvest` — advanced only after a successful (non-dry-run) harvest.
-    last_harvest_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None
-    )
 
 
 class Tag(Base):

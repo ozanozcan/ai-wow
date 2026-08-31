@@ -14,7 +14,6 @@ from sqlalchemy.orm import selectinload
 from taskman.config import find_project, find_toolkit
 from taskman import db as _db
 from taskman.db import Session, upgrade_head
-from taskman.harvest import run_harvest
 from taskman.matching import decisions_touching
 from taskman.metrics import (
     build_meta,
@@ -1352,33 +1351,6 @@ def cmd_board(args) -> None:
             _board_flat(proj, session, statuses)
         else:
             _board_hierarchical(proj, session, statuses)
-
-
-def cmd_harvest(args) -> None:
-    since = None
-    if args.since:
-        try:
-            since = dt.date.fromisoformat(args.since)
-        except ValueError as e:
-            raise SystemExit(f"taskman: invalid --since DATE (use YYYY-MM-DD): {e}") from e
-    if args.dry_run and args.auto_approve:
-        raise SystemExit("taskman: --dry-run and --auto-approve are mutually exclusive.")
-
-    default_feature_id = getattr(args, "feature", None)
-    with Session() as session:
-        proj = _project(session)
-        if default_feature_id is not None:
-            _get_feature(session, proj, default_feature_id)
-        run_harvest(
-            session,
-            proj,
-            dry_run=args.dry_run,
-            auto_approve=args.auto_approve,
-            since=since,
-            default_feature_id=default_feature_id,
-        )
-        if not args.dry_run:
-            session.commit()
 
 
 # --- Plan bridge: from-decisions / to-dispatch ---
@@ -2843,34 +2815,6 @@ def main(argv=None) -> None:
     p_list = ssub.add_parser("list", help="list sessions + cost summary")
     p_list.add_argument("--since", default="", help="YYYY-MM-DD filter on recorded_at")
     p_list.set_defaults(func=cmd_session_list)
-
-    # harvest
-    p_harvest = sub.add_parser(
-        "harvest",
-        help="mine transcripts into tasks/decisions/captures/requirements (interactive approve)",
-    )
-    p_harvest.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="show candidates only; do not write or advance cursor",
-    )
-    p_harvest.add_argument(
-        "--since",
-        default="",
-        help="YYYY-MM-DD — override harvest cursor (mtime filter)",
-    )
-    p_harvest.add_argument(
-        "--auto-approve",
-        action="store_true",
-        help="approve all candidates without prompting (tests / automation)",
-    )
-    p_harvest.add_argument(
-        "--feature",
-        type=int,
-        default=None,
-        help="default Feature id for harvested requirement candidates",
-    )
-    p_harvest.set_defaults(func=cmd_harvest)
 
     # plan (dispatch bridge)
     p_plan = sub.add_parser("plan", help="from-decisions/to-dispatch Work-Item plans (dispatch bridge)")
