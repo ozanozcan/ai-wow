@@ -32,6 +32,8 @@ claim it makes about itself true.
 - **Wave 1 (parallel):** A ‖ B ‖ C — A and B backgrounded in isolated worktrees; **C runs foreground**
   (it inspects a tree holding a peer session's uncommitted work).
 - **Wave 2 (after wave 1, foreground):** Z — depends on A's shipped wording.
+- **Wave 3 (foreground, added mid-run by the ship-check gate):** Z2 — closes a Critical Layer-1
+  miss plus a defect it exposed in already-pushed work.
 
 Each wave ends with a **review gate** before the next starts.
 
@@ -43,6 +45,7 @@ Each wave ends with a **review gate** before the next starts.
 | B | copy-drift diagnosis | - / - | `bin/ai-sync`, `bin/tests/test_ai_sync_status.py` | code-edit | inherit | - | yes | yes | `-` | [02-copy-drift-diagnosis.md](02-copy-drift-diagnosis.md) |
 | C | tree hygiene | - / - | `.gitignore`, `docs/session-reports/2026-08-21-…-mow-go-and-harness-fixes.md` | shell | inherit | - | no | no | `-` | [03-tree-hygiene.md](03-tree-hygiene.md) |
 | Z | board posture | - / - | `HOW-TO-USE.human.md` | code-edit | inherit | - | no | no | `-` | [04-board-posture.md](04-board-posture.md) |
+| Z2 | invocation truth | - / - | `HOW-TO-USE.human.md`, `skills/wrap-up/SKILL.md`, `skills/grill-with-docs/SKILL.md`, `skills/bs/SKILL.md`, `bin/tests/test_repo_shape.py` | code-edit | inherit | - | no | no | `-` | [05-invocation-truth.md](05-invocation-truth.md) |
 
 `PBI / Feature` is `-` throughout: this repo is deliberately board-less (see `plan.md` →
 Decisions locked), so no taskman rows exist and no import gate runs.
@@ -56,7 +59,10 @@ markdown, one hook string and one guide section. The wave gate still reads every
 **Within this plan:** no two same-wave lanes share a file.
 
 - Wave 1: A owns `hooks/` + `hooks/tests/` + `githooks/` + `skills/`, B owns `bin/`, C owns `.gitignore` — disjoint. (A's `githooks/pre-push` and `hooks/tests/` ownership was added by grill Q3; no other lane touches either.)
-- Wave 2: Z owns `HOW-TO-USE.human.md`, touched by no other lane.
+- Wave 2: Z owns `HOW-TO-USE.human.md`, touched by no other lane in its wave.
+- Wave 3: Z2 re-opens `HOW-TO-USE.human.md` after Z shipped — sequential, not concurrent, so no
+  same-wave overlap. `Z2`'s letter breaks the A→Z rule because `Z` had already shipped when the
+  ship-check gate added this wave; renaming a shipped lane would falsify the record.
 
 **Across plans:** `docs/plans/INDEX.md` lists no other `planned`/`running`/`paused` stem at the
 time of writing. **However — a live peer session is planning `taskman-no-db` in this same
@@ -69,6 +75,12 @@ that stem will obviously own:
 | `taskman/**` | `taskman-no-db` | The storage rewrite's whole surface |
 | `README.md` | `taskman-no-db` | Line 161 asserts Postgres outright |
 | `HOW-TO-USE.agent.md` | `taskman-no-db` | Invariant I10, "Never propose SQLite" |
+
+**Cross-plan re-checked 2026-09-01 after wave 3 was added.** The sibling stem's own INDEX
+attributes `hooks/`, `bin/ai-sync`, `bin/tests/`, `skills/*/SKILL.md`, `.gitignore` and
+`HOW-TO-USE.human.md` to this stem, and reserves `.github/workflows/`,
+`taskman/taskman/eventlog/` for itself. **Disjoint — parallel go is safe**, which both stems
+recorded independently.
 
 **Before `/mow go` on either stem, re-run the cross-plan overlap check** — `HOW-TO-USE.human.md`
 (owned here by lane Z) is the most likely genuine collision, since the storage stem may want §6's

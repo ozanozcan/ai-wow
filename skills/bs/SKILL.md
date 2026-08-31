@@ -118,11 +118,11 @@ When the repo has `.taskman.toml` + `taskman/`:
 
 ```bash
 # reject — so the board carries the "don't" and mow surfacing can cite it:
-.venv/bin/python -m taskman decision add "Don't <idea>" --why "<why>" \
+taskman decision add "Don't <idea>" --why "<why>" \
   --implications "reopen if: <condition>" --source docs/brainstorms/<stem>.md -t <area>
 
 # park — a sharp re-trigger is a decision task, so the board resurfaces it:
-.venv/bin/python -m taskman task add "<re-trigger question>" \
+taskman task add "<re-trigger question>" \
   -t kind:decision,brainstorm:<stem> --source docs/brainstorms/<stem>.md
 ```
 

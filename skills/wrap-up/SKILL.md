@@ -21,7 +21,7 @@ How this differs from checkpoint:
 
 Prefer running CLI as:
 ```bash
-.venv/bin/python -m taskman …
+taskman …
 # fallback:
 python -m taskman …
 ```
@@ -34,7 +34,7 @@ from the project root.
 **Do not** invent finished work from the chat log. Run the gate first:
 
 ```bash
-.venv/bin/python -m taskman wrapup gate
+taskman wrapup gate
 ```
 
 | Exit | Meaning |
@@ -53,15 +53,15 @@ The gate uses the worktree session marker written at session open
    - open a retroactive ticket, or
    - ignore with an explicit reason
    ```bash
-   .venv/bin/python -m taskman wrapup record --attach <path> --task <id>
-   .venv/bin/python -m taskman wrapup record --opened <path> --task <id>
-   .venv/bin/python -m taskman wrapup record --ignore <path> --reason "…"
+   taskman wrapup record --attach <path> --task <id>
+   taskman wrapup record --opened <path> --task <id>
+   taskman wrapup record --ignore <path> --reason "…"
    ```
    Then `task add` / `task set` / update brief files as needed so the claim is real.
 
 2. **Stale candidates** — session-touched `in_progress` tickets (updated/claimed since marker `started_at`, or `brief.files` intersects the session diff). For each, record **done** / **still-open** / **blocked** with a **citation** (commit sha, file path, or test output). No citation → not cleared.
    ```bash
-   .venv/bin/python -m taskman wrapup record --stale <id> --verdict done|still-open|blocked --citation "…"
+   taskman wrapup record --stale <id> --verdict done|still-open|blocked --citation "…"
    ```
    - **Code tickets with a verify command** (from `brief.verify` or Acceptance): run it; pass `--verify-ok` only when it passed. Then `task move <id> --status done` when verdict is done.
    - **Design / spike tickets** (`kind:design`, `spike`, explore-without-verify): `--operator-ack` required for `done` — ask the user; do not self-ack.
@@ -89,28 +89,28 @@ Optional full-board hygiene: `wrapup gate --all-stale` (every `in_progress`, not
 Apply board moves implied by step 0 receipts (`done` / `blocked`) plus any chat-only decisions/requirements:
 
 ```bash
-.venv/bin/python -m taskman feature add "…" -t tags
-.venv/bin/python -m taskman pbi add "…" --feature <id>
-.venv/bin/python -m taskman task add "…" [--pbi <id>] [-t tags] [--source "<path>#L<n>"]
-.venv/bin/python -m taskman task move <id> --status <status>
-.venv/bin/python -m taskman task link <id> --blocked-by <id>
-.venv/bin/python -m taskman decision add "…" --why "…" [--source "…"]
-.venv/bin/python -m taskman capture add --kind qa|grill|plan --summary "…" [--body "…"] [--source "…"]
+taskman feature add "…" -t tags
+taskman pbi add "…" --feature <id>
+taskman task add "…" [--pbi <id>] [-t tags] [--source "<path>#L<n>"]
+taskman task move <id> --status <status>
+taskman task link <id> --blocked-by <id>
+taskman decision add "…" --why "…" [--source "…"]
+taskman capture add --kind qa|grill|plan --summary "…" [--body "…"] [--source "…"]
 
 # Living spec — REQUIRED when this chat locked durable system behavior
-.venv/bin/python -m taskman requirement list --feature <id>
-.venv/bin/python -m taskman requirement add "…" --feature <id> \
+taskman requirement list --feature <id>
+taskman requirement add "…" --feature <id> \
   --statement "The system SHALL …" \
   --scenario "name|given|when|then" [--pbi <id>]
-.venv/bin/python -m taskman requirement modify <id> --statement "…" [--scenario "…"] [--pbi <id>]
-.venv/bin/python -m taskman requirement remove <id>
+taskman requirement modify <id> --statement "…" [--scenario "…"] [--pbi <id>]
+taskman requirement remove <id>
 ```
 
 **Retroactive chat sweep (required):** walk the chat history and compare it against the board (`task list`, `decision list` for the touched features). For every substantive action this chat *completed* that has no board item — a fix shipped, a doc written, a config changed, a decision acted on — create the item retroactively and close it in one stroke:
 
 ```bash
-.venv/bin/python -m taskman task add "…" [-t tags] [--source "…"]   # then:
-.venv/bin/python -m taskman task move <id> --status done
+taskman task add "…" [-t tags] [--source "…"]   # then:
+taskman task move <id> --status done
 ```
 
 The gate (step 0) catches work visible in the diff; this sweep catches the rest — actions whose evidence lives only in the transcript (CLI runs, external-system changes, verdicts). Skip only what is genuinely trivial (a one-line answer, a lookup). If everything already has an item, say so.
@@ -229,7 +229,7 @@ This step owns everything left behind. The operator should never have to run `/c
 1. **Collect the leftovers** — unfinished tasks, decisions made but not yet acted on, open questions, deferred fixes, anything the chat started and did not finish (the same material as the report's "Open threads").
 2. **Every leftover becomes a board task, priority high:**
    ```bash
-   .venv/bin/python -m taskman task add "…" -p high [-t tags] [--source "…"]
+   taskman task add "…" -p high [-t tags] [--source "…"]
    ```
    Use `-p keystone` (the highest level) only when the leftover blocks everything else or continues an existing keystone thread. A leftover that is purely a decision to record goes through `decision add` in step 2 instead — but if it implies follow-up work, it *also* gets a task here.
 3. **Reconcile existing checkpoints (always)** — read `docs/checkpoints/INDEX.md` and compare this chat's work against **every** `open` / `in-progress` checkpoint, not only one formally resumed via `/pick-up-where-i-left-off` — a chat can work on a checkpoint's task without ever picking it up. For each checkpoint this chat touched:

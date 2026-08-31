@@ -142,27 +142,27 @@ If the question turns out to sit past the plan's goal, it is neither — it belo
 If the repo has `.taskman.toml` + `taskman/`, **you** (the agent) run these from project root before ending. Do not ask the user to paste commands.
 
 ```bash
-.venv/bin/python -m taskman capture add --kind grill --summary "…" [--body "…"] [--source "…"]
-.venv/bin/python -m taskman decision add "…" --why "…" [--alternatives "…"] [--implications "…"] [--source "…"] \
+taskman capture add --kind grill --summary "…" [--body "…"] [--source "…"]
+taskman decision add "…" --why "…" [--alternatives "…"] [--implications "…"] [--source "…"] \
   -t area,path:<glob>
 # Tags (d#852): plain area tags match lane Review flags / area tags; path:<glob>
 # matches Files in scope (fnmatch). Prefer tagging at add time so mow preflight
 # can surface candidates per lane.
 
 # For each drafted durable requirement:
-.venv/bin/python -m taskman requirement list --feature <id>   # skip / modify if duplicate
-.venv/bin/python -m taskman requirement add "<title>" --feature <id> \
+taskman requirement list --feature <id>   # skip / modify if duplicate
+taskman requirement add "<title>" --feature <id> \
   --statement "The system SHALL …" \
   --scenario "name|given|when|then" [--pbi <id>]
 
 # For each SHARP open question — the title IS the question:
-.venv/bin/python -m taskman task add "<the question>" -t kind:decision[,plan:<stem>] \
+taskman task add "<the question>" -t kind:decision[,plan:<stem>] \
   [--notes "<why it matters / what it blocks>"] [--source "…"]
-.venv/bin/python -m taskman task link <build-task-id> --blocked-by <decision-id>   # if it blocks work
+taskman task link <build-task-id> --blocked-by <decision-id>   # if it blocks work
 ```
 
 Rules:
-- Prefer `.venv/bin/python -m taskman`. Never write Postgres directly.
+- Prefer `taskman`. Never write Postgres directly.
 - A **decision task** is a question, not work: its title is the question, it is resolved by an answer rather than a diff, and its `blocked_by` edges are what stop dependent build work being recommended. Resolve it with `task set <id> --notes "Answer: …"` → `decision add "<answer>" --why "…"` → `task move <id> --status done`, then write the answer into the plan's `## Decisions locked`. If it turns out to sit past the plan's goal, `task move <id> --status disabled` + tag `scope:out` — **not** `done`, which would falsely claim the work happened.
 - Before `requirement add`, always `requirement list --feature <id>` — `modify` if the behavior already exists.
 - If Feature id is unknown and the grill was about existing board work, resolve via `taskman board` / `feature list`.

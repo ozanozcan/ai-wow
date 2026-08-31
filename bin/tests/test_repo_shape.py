@@ -212,6 +212,31 @@ def main():
     check("impeccable's install line is still documented",
           "npx skills add pbakaus/impeccable" in (REPO / "THIRD-PARTY.md").read_text(), True)
 
+    # --- every instruction names a path this repo actually has ------------
+    # A shipped file that tells you to run `.venv/bin/python …` or
+    # `scripts/wrapup_reconcile.py` is naming something ai-wow does not contain,
+    # so the reader's first session fails on an instruction the repo gave it.
+    # Both patterns shipped for months. The grep that was supposed to catch the
+    # second one searched `\.venv/bin/python scripts/` — which requires
+    # `scripts/` immediately after and so could only ever match the two
+    # together, never a bare `.venv/bin/python`. It passed while 29 survived
+    # (L40: a grep answers the pattern you typed, not the question you meant).
+    # Hence a test rather than a command someone remembers to run.
+    #
+    # Markdown only, deliberately. A `.md` line is an instruction someone runs
+    # verbatim, so naming an absent path is a defect. A shell script can *test*
+    # for one first — `hooks/guard-migrations.sh` probes `[ -x .venv/bin/alembic ]`
+    # with two fallbacks and a `pass`, which is correct defensive code, and the
+    # first draft of this check flagged it. Scope the rule to the files where the
+    # path is a promise rather than a probe.
+    DEAD_PATHS = re.compile(r"\.venv/bin|scripts/wrapup_reconcile")
+    dead = []
+    for path in _tracked_under(["hooks", "skills"]):
+        if path.suffix == ".md":
+            if DEAD_PATHS.search(path.read_text(encoding="utf-8", errors="replace")):
+                dead.append(str(path.relative_to(REPO)))
+    check("no shipped instruction names a path this repo lacks", sorted(dead), [])
+
     # --- nothing employer-specific leaked into the published repo ---------
     leaked = []
     for path in _tracked_under(SCRUBBED_DIRS):

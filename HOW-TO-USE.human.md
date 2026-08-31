@@ -371,9 +371,10 @@ revisiting — it is a judgement about today's constraints, not a rule.
 
 ### Standing one up
 
-Four commands, once per machine. The board needs a Postgres it can reach and a role
-that may create tables — it does **not** need a database of its own, because every
-table is prefixed `taskman_` and sits happily beside an application's own schema.
+Install the CLI once per machine, then do steps 1, 2 and 4 once per project. The
+board needs a Postgres it can reach and a role that may create tables — it does
+**not** need a database of its own, because every table is prefixed `taskman_` and
+sits happily beside an application's own schema.
 
 **1. Name the project.** Put a `.taskman.toml` at the repo root:
 
@@ -397,25 +398,47 @@ export TASKMAN_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/mydb"
 The driver must be `psycopg`, not `asyncpg`. If your app already sets a `DATABASE_URL`
 using `+asyncpg`, taskman rewrites it for you and reuses the same credentials.
 
-**3. Install the CLI's dependencies:**
+**3. Install the CLI — once per machine, from your ai-wow clone.**
 
 ```bash
-cd taskman && uv sync
+cd ~/ai-wow/taskman && uv sync
 ```
 
-**4. Create the schema:**
+That installs a `taskman` command into `taskman/.venv/bin/`. Put that directory on
+your `PATH` so you can run it from any project:
 
 ```bash
-uv run python -m taskman init-db
+export PATH="$HOME/ai-wow/taskman/.venv/bin:$PATH"
 ```
 
-That runs the Alembic migrations to head and registers the project. It prints
-`taskman: schema ready. project 'my-service' (id=1).`
+**This is the only place the CLI's location is written down.** Every `taskman …`
+command in this guide and in the skills assumes it is on `PATH`, which is what lets
+the same instruction be correct in every repo.
 
-**Verify** — this should print the board's header and `(empty)`:
+**4. Create the schema — from your project's root, not from ai-wow.**
 
 ```bash
-uv run python -m taskman board
+cd ~/projects/my-service
+taskman init-db
+```
+
+taskman identifies the project by **walking up from the directory you run it in**,
+looking for `.taskman.toml`. So this has to happen inside the repo you set up in
+step 1. It runs the Alembic migrations to head, registers the project, and prints:
+
+```
+taskman: schema ready. project 'my-service' (id=1).
+```
+
+If it names a slug you did not expect, you are in the wrong directory — that is the
+check worth doing, because taskman will happily set up whichever project it finds
+first on the way up.
+
+**Verify** — from the same directory, this should print the board's header and
+`(empty)`:
+
+```bash
+taskman board
 ```
 
 If it does, the board works. From here `/mow` and `/wrap-up` can reach it.

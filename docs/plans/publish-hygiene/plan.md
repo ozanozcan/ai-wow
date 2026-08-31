@@ -50,6 +50,9 @@ landed in `3ad521f`. Verified in the tree, not read from the reports. No lane sh
    stops depending on the orchestrator remembering.
 4. **Write the board-less decision down as a decision**, so `Board sync: n/a` reads as a choice
    rather than an omission, and a cloner knows to bring their own `.taskman.toml`.
+5. **Make `taskman` invocable the same way everywhere** — one PATH line in the bootstrap instead
+   of 29 relative venv prefixes, and a bootstrap that targets the reader's project rather than
+   taskman's own test project. Added mid-run by the ship-check gate (wave 3).
 
 ## What you'll have at the end
 
@@ -131,6 +134,30 @@ claim it makes about itself true.
   are **n/a** — they require a root `.taskman.toml`, which the decision above declines. There is
   also no `scripts/` directory, so `mow_preflight.py` / `mow_hydrate_specs.py` do not exist here;
   their checks are performed manually at go.
+
+- **Wave 3 was added mid-run by the ship-check gate** (operator, 2026-09-01). The gate found a
+  Critical Layer-1 miss: the plan promised no repo-root `.venv/` path would survive in a shipped
+  file, and **29 did** — `skills/wrap-up` (20), `skills/grill-with-docs` (7), `skills/bs` (2).
+  ai-wow has no root `.venv/`, so `/wrap-up` still named an unrunnable path. The lane-A grep that
+  "verified" this searched `\.venv/bin/python scripts/`, which requires `scripts/` immediately
+  after and so could only ever match the combination — never a bare `.venv/bin/python`. The check
+  passed; the criterion did not hold (L40). The defect was in the brief I wrote, not in the lane.
+
+- **Investigating that found a second, worse defect in already-pushed work.** The `### Standing one
+  up` bootstrap shipped in `1693827` tells the reader to put a `.taskman.toml` at *their* repo root,
+  then run `cd taskman && uv run python -m taskman init-db` — which executes in **ai-wow's** taskman
+  directory. `find_project()` walks up from cwd, so that registers `taskman-tests`, not the reader's
+  project. Proven directly: `resolved from my-service dir -> ('my-service', …)` vs
+  `resolved from ai-wow/taskman -> ('taskman-tests', …)`. It was "verified" on the rehearsal, but
+  only against taskman's own test project — the single case where the bug cannot show. Same shape as
+  the grep miss: a check that passed because it checked the easy case.
+
+- **The fix for both is one thing: put the console script on PATH.** `uv sync` installs
+  `taskman/.venv/bin/taskman`. On PATH, every skill line becomes a bare `taskman …`, true in every
+  repo. This is strictly better than a relative venv prefix, because `find_project()` resolves the
+  project by walking up from cwd — the CLI *must* be run from the reader's project directory, and a
+  relative `.venv/bin/python` prefix quietly fights that. The "where does the CLI live" hint moves
+  from 29 fragile prefixes to one PATH line in the bootstrap.
 
 ## Not yet specified
 
