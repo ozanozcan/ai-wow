@@ -10,16 +10,26 @@ Two jobs, both mechanical, both previously left to the orchestrator's memory:
 
 2. Per-agent `started` / `ended` — the board draws `duration · tokens` beside
    every subagent name, but a whole run shipped with 8 of 8 agents unstamped, so
-   the column was blank everywhere. The wall-clock bounds of a subagent are
-   exactly the bounds of its Task tool call, so take them from the tool call.
+   the column was blank everywhere. A *foreground* subagent's wall-clock bounds
+   are exactly the bounds of its tool call, so take them from the tool call.
 
-Job 2 runs in two halves because a Task's spawn and its return are two separate
-hook events. PreToolUse records the start in a disposable ledger beside the
-board (`dispatch/.agent-times.json`); PostToolUse pairs the return with it and
-merges the finished span into the matching agent. A span that has no agent entry
-to land on yet — the orchestrator appends agents on its own schedule — stays in
-the ledger and is retried on every later tracker write, so the merge does not
-depend on the two happening in any particular order.
+Job 2 runs in two halves because a spawn and its return are two separate hook
+events. PreToolUse records the start in a disposable ledger beside the board
+(`dispatch/.agent-times.json`); PostToolUse pairs the return with it and merges
+the span into the matching agent. A span that has no agent entry to land on yet
+— the orchestrator appends agents on its own schedule — stays in the ledger and
+is retried on every later tracker write, so the merge does not depend on the two
+happening in any particular order.
+
+**A backgrounded subagent only ever gets `started` from this hook.** Its
+PostToolUse fires when the *launch* returns, not when the agent finishes, so the
+return carries no information about completion. Stamping `ended` there reported
+every AFK lane as finishing seconds after it started: the board froze that lane's
+clock at ~20s and a live multi-minute run read as dead. The real `ended` comes
+from the orchestrator when the lane's report lands, which TRACKER.md already
+requires of it. Background is the `Agent` tool's *default*, so an absent
+`run_in_background` key is async there; Cursor's `Task` is synchronous unless it
+opts in.
 
 Matching a Task call to a board entry is the one heuristic part, and unlike the
 `updated` stamp it can be wrong: it prefers the lane whose `brief` path appears
@@ -121,7 +131,7 @@ def _returns_at_launch(tool_name, tool_input) -> bool:
     return bool(flag)
 
 
-def _find_board(cwd):
+def _find_board(cwd, prompt):
     """The running mow board this Task most likely belongs to, or None.
 
     No tracker in flight is the common case — the hook stays inert for every
@@ -141,7 +151,46 @@ def _find_board(cwd):
     if not live:
         return None
     live.sort()
-    return live[-1][1]              # most recently written board
+
+    # More than one run can be `running` at once — mow allows parallel go on
+    # disjoint files, and separate chats each have their own board. "Most
+    # recently written" then attributes a spawn to whichever board some *other*
+    # session happened to touch last: a kill-calls-review-queue run collected an
+    # llm-sec-review span it never spawned (flag-football-usable's), and lost
+    # three backend-reviewers of its own. A misattributed span is worse than no
+    # span, because it is indistinguishable from a real one.
+    #
+    # So the prompt has to name the run. A mow lane prompt carries its brief
+    # path, and TRACKER.md has the orchestrator name the stem in gate prompts —
+    # both contain the stem. No name, no stamp.
+    if len(live) > 1:
+        named = [path for _mtime, path in live if _prompt_names_run(path, prompt)]
+        if not named:
+            return None             # cannot attribute — better blank than wrong
+        return named[-1]
+    only = live[-1][1]
+    return only if _prompt_names_run(only, prompt) else None
+
+
+def _stem_of(board_path) -> str:
+    """`docs/plans/<stem>/dispatch/tracker.json` -> `<stem>`."""
+    dispatch = os.path.dirname(board_path)
+    return os.path.basename(os.path.dirname(dispatch))
+
+
+def _prompt_names_run(board_path, prompt) -> bool:
+    """Does this spawn's prompt actually reference the run that owns the board?
+
+    Two signals, either sufficient: the dispatch directory itself (a lane prompt
+    points at its brief and hydrated-specs), or the stem name (a gate or P3
+    prompt names the run it is gating). Both are cheap substring checks.
+    """
+    if not prompt:
+        return False
+    dispatch = os.path.dirname(board_path).replace("\\", "/")
+    tail = "/".join(dispatch.split("/")[-3:])   # docs/plans/<stem>/dispatch
+    stem = _stem_of(board_path)
+    return bool(stem) and (tail in prompt.replace("\\", "/") or stem in prompt)
 
 
 def _lane_hint(data, prompt):
@@ -206,9 +255,10 @@ def on_task(payload, event) -> None:
     if not subagent:
         return                      # not a subagent spawn we can name
 
-    board_path = _find_board(payload.get("cwd") or os.getcwd())
+    prompt = str(tool_input.get("prompt") or "")
+    board_path = _find_board(payload.get("cwd") or os.getcwd(), prompt)
     if not board_path:
-        return                      # no live mow board — nothing to stamp
+        return                      # no live board this spawn can be tied to
 
     ledger_path = os.path.join(os.path.dirname(board_path), LEDGER)
     ledger = _read_json(ledger_path)
@@ -222,6 +272,16 @@ def on_task(payload, event) -> None:
         open_calls[key] = _now()
         ledger["open"], ledger["spans"] = open_calls, spans
         _write_json(ledger_path, ledger)
+        # Retry spans the board could not accept yet. The orchestrator appends
+        # its agent entries *after* spawning, so a span recorded at launch has
+        # nowhere to land at that moment; and a board written by a shell
+        # heredoc rather than Write/Edit never fires the file-write drain at
+        # all. Draining on each new spawn is the one hook event guaranteed to
+        # recur while a wave is in flight.
+        board = _read_json(board_path)
+        if _is_board(board) and drain(board_path, board):
+            stamp_updated(board_path, board)
+            _write_json(board_path, board)
         return
 
     data = _read_json(board_path)
@@ -232,7 +292,7 @@ def on_task(payload, event) -> None:
     # orchestrator, which writes it when the lane's report lands.
     spans.append({
         "agent": subagent,
-        "lane": _lane_hint(data, str(tool_input.get("prompt") or "")),
+        "lane": _lane_hint(data, prompt),
         "started": open_calls.pop(key, None),
         "ended": None if _returns_at_launch(payload.get("tool_name"), tool_input) else _now(),
     })

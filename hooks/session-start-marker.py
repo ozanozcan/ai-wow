@@ -39,11 +39,6 @@ def _git(cwd: Path, *args: str) -> str | None:
     return proc.stdout.strip() or None
 
 
-def _worktree_root(cwd: Path) -> Path:
-    top = _git(cwd, "rev-parse", "--show-toplevel")
-    return Path(top) if top else cwd.resolve()
-
-
 def _read_stdin_json() -> dict:
     try:
         raw = sys.stdin.read()
@@ -156,10 +151,15 @@ def main() -> int:
     if isinstance(roots, list) and roots:
         cwd = Path(str(roots[0])).resolve()
 
-    worktree = _worktree_root(cwd)
-    # Only mark taskman-backed projects (web-app / demo / others with .taskman.toml).
-    if not (worktree / ".taskman.toml").is_file():
+    # Mark every git worktree, not only taskman-backed ones. The marker is the
+    # only thing that makes a peer session visible to hooks/peer-session-*.py,
+    # and one HEAD shared by two sessions is a hazard wherever it happens — the
+    # board is beside the point. Gated on git explicitly: outside a
+    # repo there is no worktree to share, and no directory to litter.
+    top = _git(cwd, "rev-parse", "--show-toplevel")
+    if top is None:
         return 0
+    worktree = Path(top)
 
     session_id = _session_id(payload, worktree)
     runtime = _runtime(payload)
