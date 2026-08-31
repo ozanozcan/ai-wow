@@ -13,7 +13,7 @@ start_sha: 965750f (pre-session tip; session commits d372165, d58def4)
 - `/bs` audit of the UI anti-slop machinery → verdict **pursue**, recorded in `docs/brainstorms/ui-anti-slop-pipeline.md` (+ `INDEX.md`, both gitignored-local). Finding: capability existed, per-project instantiation didn't.
 - Harness fixes: P2 design-review row (`skill:impeccable critique` for ui lanes) in `templates/protocols.template.md`; design-consistency + anti-slop pass in `skills/ship-check/SKILL.md` Layer 2; new `templates/ui-designer.template.md` (stack-agnostic, carries the ban list, is the impeccable-absent fallback); 8-step "UI bootstrap (frontend repos only)" section in `templates/BOOTSTRAP.md`; HOW-TO-USE fallback updated.
 - Workflow rework: `/wrap-up` gained the retroactive chat sweep, leftover→`-p high` tasks, checkpoint reconcile (done-with-evidence / update-in-place / untouched), and auto-invokes checkpoint save bundling leftovers toward `/mow ready` (plan exists) or `/mow plan`. Checkpoints carry `from:` + `mow:` + `## Board tasks`; pick-up lists newest-first with provenance and previous `/mow go` state. `docs/workflow/work-loop.md` updated to match.
-- **Everything ported to the live farm** `/Users/ozan/Desktop/dotfiles-ai` (runtime loads skills from there, not from ai-wow) and verified present in its HEAD.
+- **Everything ported to the live farm** `~/Desktop/dotfiles-ai` (runtime loads skills from there, not from ai-wow) and verified present in its HEAD.
 - Committed + pushed in both repos: ai-wow `d372165` (UI harness) and `d58def4` (workflow); dotfiles-ai via its auto-sync commits (`1a40f92`, `40f0afb`, `4a12efe`).
 - Memory saved: `two-repo-skill-farm` (ai-wow edits aren't live; port to both).
 
@@ -35,7 +35,7 @@ None — board unavailable here. Retroactive record of this session's work is th
 - Leftover-task priority vocabulary: `-p high` default, `keystone` reserved for blockers.
 
 ## Open threads / not finished
-- **The pilot UI bootstrap has not run anywhere.** Checklist A (BOOTSTRAP.md "UI bootstrap" steps 1–8) needs a pilot repo — FitnessManager (Django SSR) vs a Next.js app is undecided — then `/grill-with-docs` in that repo, seeded from the brainstorm's Decisions section. No board task exists for this (no taskman here); this report + the brainstorm doc are the record.
+- **The pilot UI bootstrap has not run anywhere.** Checklist A (BOOTSTRAP.md "UI bootstrap" steps 1–8) needs a pilot repo — a Django SSR app vs a Next.js app is undecided — then `/grill-with-docs` in that repo, seeded from the brainstorm's Decisions section. No board task exists for this (no taskman here); this report + the brainstorm doc are the record.
 - Operator's own in-flight work uncommitted in ai-wow: django-reviewer re-add (`agents/django-reviewer.md`, `agents/backend-reviewer.md`, `global/CLAUDE.md`, `hooks/*`, `local.config.example.json`, remaining HOW-TO-USE hunks).
 
 ## Next steps

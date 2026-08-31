@@ -142,7 +142,7 @@
           "artifacts": [
             {
               "label": "guard-destructive.sh (dotfiles-ai)",
-              "path": "/Users/ozan/Desktop/dotfiles-ai/hooks/guard-destructive.sh"
+              "path": "~/Desktop/dotfiles-ai/hooks/guard-destructive.sh"
             }
           ],
           "detail": "foreground orchestrator lane \u2014 no hook instruments Bash the way it does an agent spawn, so bounds are the surrounding commit timestamps, not measured"

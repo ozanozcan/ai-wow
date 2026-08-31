@@ -33,7 +33,7 @@ ai-wow already carries; the machine the operator works on every day does not.
 
 ## Files in scope
 
-- `/Users/ozan/Desktop/dotfiles-ai/hooks/guard-destructive.sh` — modify (final `echo` + the comment above it)
+- `~/Desktop/dotfiles-ai/hooks/guard-destructive.sh` — modify (final `echo` + the comment above it)
 
 ## Depends on
 

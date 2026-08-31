@@ -343,6 +343,57 @@ doesn't**.
 
 Adopt it when you have work spanning more sessions than you can hold in your head.
 
+### Standing one up
+
+Four commands, once per machine. The board needs a Postgres it can reach and a role
+that may create tables — it does **not** need a database of its own, because every
+table is prefixed `taskman_` and sits happily beside an application's own schema.
+
+**1. Name the project.** Put a `.taskman.toml` at the repo root:
+
+```toml
+[project]
+slug = "my-service"
+name = "My Service"
+```
+
+Without it taskman stops rather than guess, which is how two projects sharing one
+Postgres never mix their rows.
+
+**2. Point it at the database.** Either export `TASKMAN_DATABASE_URL`, or put it in a
+`.env` beside the `.taskman.toml` — taskman walks up from the working directory to
+find that file and loads the `.env` next to it.
+
+```bash
+export TASKMAN_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/mydb"
+```
+
+The driver must be `psycopg`, not `asyncpg`. If your app already sets a `DATABASE_URL`
+using `+asyncpg`, taskman rewrites it for you and reuses the same credentials.
+
+**3. Install the CLI's dependencies:**
+
+```bash
+cd taskman && uv sync
+```
+
+**4. Create the schema:**
+
+```bash
+uv run python -m taskman init-db
+```
+
+That runs the Alembic migrations to head and registers the project. It prints
+`taskman: schema ready. project 'my-service' (id=1).`
+
+**Verify** — this should print the board's header and `(empty)`:
+
+```bash
+uv run python -m taskman board
+```
+
+If it does, the board works. From here `/mow` and `/wrap-up` can reach it.
+
 ### Shape of the data
 
 ```mermaid
@@ -671,4 +722,6 @@ cooperate, delete the `hooks` key from `settings.json` and run `ai-sync` by hand
 | `status` exits 1 on managed-doc drift | `local.config.json` points at a repo that moved | Fix the path, or drop the entry |
 | `taskman` refuses to run | No `.taskman.toml` in the tree | Add one at the project root |
 | `taskman` can't connect | No Postgres, or no `TASKMAN_DATABASE_URL` | Start one; set the URL |
+| `password authentication failed for user "taskman"` | Nothing set the URL, so the built-in default was used — it assumes a `taskman` role that your Postgres probably has no reason to have | Set `TASKMAN_DATABASE_URL` to a role that exists (section 6) |
+| Board tests fail to collect, same auth error | `TASKMAN_TEST_DATABASE_URL` unset — the suite falls back to the same default | Pass a reachable URL whose role may `CREATE DATABASE` |
 | Alembic "Can't locate revision" | Two taskman copies, one database, different migrations | Bring both to the same revision set |

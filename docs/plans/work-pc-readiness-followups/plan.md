@@ -19,7 +19,7 @@ harness installs and runs. Four things stood between it and a working work PC:
 1. **Nothing is published.** `origin/master` is `8cc65f4`; the 16-skill state (the
    `impeccable` removal, 113 files, −50,506 lines) is staged-only. A work-PC clone today
    gets the old repo. The session-end sync hook runs
-   `/Users/ozan/Desktop/dotfiles-ai/bin/ai-sync`, whose `REPO` is dotfiles-ai — so
+   `~/Desktop/dotfiles-ai/bin/ai-sync`, whose `REPO` is dotfiles-ai — so
    **nothing auto-commits ai-wow**. This will not resolve itself.
 2. **The `stamp-tracker` fix never reached ai-wow.** `_returns_at_launch` has 2 hits in
    `dotfiles-ai/hooks/stamp-tracker.py` and **0** in ai-wow's. Its regression test lives
@@ -70,7 +70,8 @@ truth about how it installed, and actually be on GitHub.
 
 - **The divergence is triaged per file, not synced wholesale.** ai-wow is the *scrubbed,
   publishable* repo; dotfiles-ai carries employer-specific names. `session-start-marker.py`
-  differs only in a comment naming real projects (`project-a / project-b` vs `web-app / demo`) — that
+  differs only in a comment naming real projects (employer codenames vs `web-app /
+  demo`) — that
   is deliberate sanitization, so **ai-wow's version stands and nothing is ported**. Any
   port into ai-wow must keep the scrub (this is why lane A takes the fix but not the
   docstring).

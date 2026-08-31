@@ -54,6 +54,6 @@ Grill was run as one batched checkpoint in the origin chat rather than four roun
 No two same-wave lanes share a file.
 - Wave 1: A owns `hooks/stamp-tracker.py` + `hooks/tests/`; B owns `bin/ai-sync` + the two `HOW-TO-USE` files. Disjoint — no shared path, and neither owns a directory that is a prefix of the other's.
 - Wave 2: C writes only outside the repo; Z writes only to scratch. Disjoint.
-- A reads `/Users/ozan/Desktop/dotfiles-ai/hooks/*` read-only; C writes one file there. Different waves, and A's brief forbids writing there — no collision.
+- A reads `~/Desktop/dotfiles-ai/hooks/*` read-only; C writes one file there. Different waves, and A's brief forbids writing there — no collision.
 - Cross-plan: `docs/plans/INDEX.md` has one other row, `work-pc-readiness`, status `shipped`. No active run to overlap with.
 **Action report:** [`../action-report.md`](../action-report.md)

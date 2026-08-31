@@ -112,7 +112,7 @@ the wrong tree.
 | `python3 hooks/tests/test_stamp_tracker.py` | 7/7, exit 0 (2 failures pre-fix) |
 | `python3 bin/tests/test_ai_sync_status.py` | 9/9, exit 0 (3 failures pre-fix) |
 | `grep -c _returns_at_launch hooks/stamp-tracker.py` | 2 |
-| `grep -riE 'project-a\|project-b\|fitness' hooks/` | 0 hits — scrub intact |
+| employer-string scrub grep over `hooks/` | 0 hits — scrub intact |
 | `python3 -m py_compile bin/ai-sync hooks/stamp-tracker.py` | exit 0 |
 | Copy install → status | `link mode: copy`, 8× `copied (in sync)`, **0** `NOT linked` |
 | Symlink install → status | `link mode: symlink`, 8× `linked` — unchanged |

@@ -26,9 +26,9 @@ machine has both the fix and the test — today it has neither.
   `~/Desktop/dotfiles-ai` and never propagated. `bin/ai-sync`'s `foreign_repo_root()`
   guard makes `_copy_scripts` return 0 when the source symlinks into another repo, which
   is this Mac's exact layout — so no sync will ever carry it. It has to be ported by hand.
-- **ai-wow is the scrubbed, publishable repo.** dotfiles-ai's copy names real employer
-  projects in prose (e.g. "A live FTM run was observed…"); ai-wow's working tree has
-  already rewritten that line to "A live run was observed…". **Take the code, keep
+- **ai-wow is the scrubbed, publishable repo.** dotfiles-ai's copy names a real employer
+  project in prose where ai-wow's working tree reads the generic "A live run was
+  observed…". **Take the code, keep
   ai-wow's wording.** Do not let the port re-introduce a project name — that is a
   publication defect, not a style nit.
 - The test file itself was checked and is already scrub-clean: no project names, no
@@ -42,9 +42,9 @@ machine has both the fix and the test — today it has neither.
 
 ## Source to port from (read-only, outside this worktree)
 
-- `/Users/ozan/Desktop/dotfiles-ai/hooks/stamp-tracker.py` — has `_returns_at_launch`
+- `~/Desktop/dotfiles-ai/hooks/stamp-tracker.py` — has `_returns_at_launch`
   (definition near line 121, call site near line 297)
-- `/Users/ozan/Desktop/dotfiles-ai/hooks/tests/test_stamp_tracker.py` — 115 lines, 7 checks
+- `~/Desktop/dotfiles-ai/hooks/tests/test_stamp_tracker.py` — 115 lines, 7 checks
 
 **Read those paths. Never write to them.** Another lane in wave 2 owns dotfiles-ai; a
 write from here is a cross-lane collision.
@@ -55,7 +55,7 @@ write from here is a cross-lane collision.
 
 ## Do NOT
 
-- **Do NOT write anything under `/Users/ozan/Desktop/dotfiles-ai/`.** Read-only source.
+- **Do NOT write anything under `~/Desktop/dotfiles-ai/`.** Read-only source.
 - **Do NOT copy the whole file over.** ai-wow's `hooks/stamp-tracker.py` has scrubbed
   prose that dotfiles-ai's does not. Port the `_returns_at_launch` helper and its call
   site; leave every other line of ai-wow's file alone. A wholesale copy silently reverts
@@ -92,7 +92,8 @@ write from here is a cross-lane collision.
   naming the backgrounded cases. A lane that reports only green has not proved anything.
 - Verify: `python3 hooks/tests/test_stamp_tracker.py` → exit 0, 7/7 pass.
 - Verify: `grep -c _returns_at_launch hooks/stamp-tracker.py` → `2` or more.
-- Verify: `grep -riE 'project-a|project-b|fitness' hooks/` → **no matches** (scrub intact).
+- Verify: the employer-string scrub grep (the `LEAK` pattern in
+  `bin/tests/test_repo_shape.py`) over `hooks/` → **no matches** (scrub intact).
 - Verify: `python3 -m py_compile hooks/stamp-tracker.py` → exit 0.
 
 ## QA contract

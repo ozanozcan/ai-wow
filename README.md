@@ -159,7 +159,10 @@ gitignored. Nothing in the tracked tree points at a particular machine or projec
 
 - **Core** — Python 3 and git. That's it.
 - **Board** — Postgres (the schema uses `ARRAY` and `JSONB`; SQLite is not a
-  substitute) and Python 3.12+.
+  substitute) and Python 3.12+. Standing one up is four commands, in
+  [§6 of the human guide](HOW-TO-USE.human.md#standing-one-up). The board is
+  optional: the harness itself needs no database, and
+  [§5](HOW-TO-USE.human.md#5-working-without-a-board) covers working without one.
 - **Windows** — Developer Mode for symlinks, Git Bash, and a `python3` on PATH.
   See Appendix A of the human guide.
 

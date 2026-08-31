@@ -34,13 +34,16 @@ PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-P
 # worked-example survived in skills/checkpoint/SKILL.md: the leak was never in
 # the two directories being watched.
 #
-# docs/ is deliberately NOT here. Session reports and plan folders narrate real
-# runs and name the projects those runs touched; scrubbing them would falsify
-# the record rather than protect it. They are tracked and public, so that is a
-# standing decision, not an oversight — revisit it, do not silently widen this
-# list to make a red test green.
+# docs/ was deliberately NOT here until 2026-09-01, on the argument that session
+# reports narrate real runs and scrubbing them would falsify the record. The
+# operator revisited that ahead of publishing the repo, and it does not hold: a
+# reader of the published repo learns the employer codenames either way, and the
+# record survives the scrub intact — every site was rewritten to say the same
+# thing generically ("a real project lane", "employer codenames"), not deleted.
+# What the old comment got right is the process: this list was widened by a
+# decision, not to turn a red test green.
 SCRUBBED_DIRS = ["hooks", "bin", "agents", "commands", "global", "skills", "templates",
-                 "githooks"]
+                 "githooks", "docs"]
 
 # The narrow form of this pattern gave a false green once already: a live
 # `project-b.example` domain sat in a page template while the grep looked

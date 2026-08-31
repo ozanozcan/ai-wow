@@ -61,7 +61,8 @@ before this plan existed, now against the merged result rather than the pre-fix 
   lane A's test proven to ship *in the clone*, not merely to exist on this Mac.
 - Verify: `ls skills | wc -l` → 16; `test ! -d skills/impeccable`; `ls agents/*.md | wc -l` → 8.
 - Verify: the two `guard-destructive` payload smoke tests against the **clone's** copy.
-- Verify: `grep -riE 'project-a|project-b|fitness|/Users/ozan' hooks/ bin/ *.md` in the clone → no hits.
+- Verify: the employer/personal-string scrub grep (the `LEAK` pattern in
+  `bin/tests/test_repo_shape.py`) over `hooks/ bin/ *.md` in the clone → no hits.
 
 ## QA contract
 
