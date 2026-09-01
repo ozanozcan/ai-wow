@@ -36,6 +36,14 @@ GAP = 0.05    # seconds between per-round rendezvous deadlines
 FAILURES = []
 
 
+def _tail(err: str, n: int = 400) -> str:
+    """Last n chars of stderr. A traceback names its exception on the final
+    line, so head-truncation reports the harness and hides the failure — which
+    is exactly what happened on the first Windows red (CI 33484818579)."""
+    err = err.strip()
+    return err if len(err) <= n else "..." + err[-n:]
+
+
 def check(name, cond, detail=""):
     mark = "ok" if cond else "FAIL"
     print(f"  {mark}  {name}" + ("" if cond else f"  [{detail}]"))
@@ -125,7 +133,7 @@ def contested_claim():
             wins[agent] = {int(l.split()[1]) for l in out.splitlines() if l.startswith("WON")}
 
         for agent, (code, err) in exits.items():
-            check(f"claim worker {agent} exited 0", code == 0, f"exit={code} stderr={err[:300]}")
+            check(f"claim worker {agent} exited 0", code == 0, f"exit={code} stderr={_tail(err)}")
         every = set(range(1, ROUNDS + 1))
         both = wins["alpha"] & wins["beta"]
         check("no round won by both processes", not both, f"double wins: {sorted(both)}")
@@ -161,7 +169,7 @@ def concurrent_creates():
             ids[agent] = [int(l) for l in out.splitlines()]
 
         for agent, (code, err) in exits.items():
-            check(f"add worker {agent} exited 0", code == 0, f"exit={code} stderr={err[:300]}")
+            check(f"add worker {agent} exited 0", code == 0, f"exit={code} stderr={_tail(err)}")
         allocated = ids["alpha"] + ids["beta"]
         check("100 ids allocated", len(allocated) == 100, f"got {len(allocated)}")
         check("all 100 ids distinct", len(set(allocated)) == 100,

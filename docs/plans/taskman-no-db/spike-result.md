@@ -3,17 +3,46 @@
 **Date:** 2026-09-01
 **Stem:** `taskman-no-db`
 **Plan:** [`plan.md`](plan.md) · **Dispatch:** [`dispatch/INDEX.md`](dispatch/INDEX.md)
-**CI run:** https://github.com/ozanozcan/ai-wow/actions/runs/33479579913 (commit `b0fe9ad`)
+**CI runs:** [33479579913](https://github.com/ozanozcan/ai-wow/actions/runs/33479579913) (`b0fe9ad`, run 1) · [33484818579](https://github.com/ozanozcan/ai-wow/actions/runs/33484818579) (`57b310c`, run 2 — the one that overturned the verdict)
 
-## Verdict — C3 is viable. Build the port.
+## Verdict — NOT PROVEN. Promising, but do not start the port yet.
 
-A dbless, append-only event log **can** be trusted under two concurrent processes on Windows.
-`O_EXCL` makes both id allocation and `claim` safe without a transaction, and the contested suite
-is green on the platform this effort exists for. **Shape B (SQLite) is not needed and stays
-retired as the documented fallback.**
+> **Amended 2026-09-01, after a second CI run.** An earlier version of this file read
+> "C3 is viable. Build the port." That verdict rested on a single Windows run. A second run
+> ([33484818579](https://github.com/ozanozcan/ai-wow/actions/runs/33484818579)) contradicted it.
+> The original wording is corrected here rather than quietly edited away.
 
-This is the answer the spike was commissioned to get, and it was not assumed — the guarantee was
-seen to fail before it passed, twice.
+Split the question in two, because the two halves now have different answers:
+
+- **`claim` — holds.** The contested-claim scenario passed on Windows in **both** runs, all six
+  checks each time: no round won twice, exactly one winner per round, one claim event per task in
+  the log, and replay agreeing with every reported winner. This is the half the spike most doubted,
+  and it is the half that survived.
+- **Id allocation — intermittent failure on Windows.** In run 2, `concurrent creates` failed: one
+  of the two worker processes **crashed** (exit 1) partway through, so 50 ids were allocated
+  instead of 100. Run 1 had passed the same scenario.
+
+**The distinction that matters: no id collision has ever been observed.** The failure is a crash,
+not two processes receiving the same id — the *safety* property held, the *liveness* property did
+not. That is a materially better position than "ids collide", and still not good enough to bet a
+port on.
+
+**Shape B (SQLite) therefore stays live as the fallback, not retired.**
+
+### Why the cause is not named here
+
+The test truncated the crashed worker's stderr with `err[:300]` — the head of a traceback, which is
+the harness, not the exception. The exception type was on the line that got cut. That reporting bug
+is fixed (`_tail()`), so the next Windows run will name it.
+
+**Leading hypothesis, unconfirmed and deliberately not acted on yet:** `add_task` takes the board
+lock *twice* — once in `next_id`, once in `append` — so 100 creates churn the same lock filename
+through 200 rapid create/delete cycles. On Windows, deletion is not always synchronous, and a
+subsequent `os.open(..., O_CREAT | O_EXCL)` on a name whose handle is still closing raises
+**`PermissionError`, not `FileExistsError`** — and `exclusive()` catches only `FileExistsError`, so
+it would propagate and kill the worker exactly as observed. If that is confirmed, the fix is small
+(catch `PermissionError` in the acquire loop, and give `add_task` one critical section instead of
+two). It is not being written before the evidence arrives.
 
 ## The evidence
 
@@ -21,7 +50,9 @@ seen to fail before it passed, twice.
 |---|---|
 | The guarantee is real, not incidental | Against a deliberately lockless store, two OS processes double-won **all 50** contested rounds and produced 50 distinct ids where 100 were required |
 | The test has kill power | Orchestrator removed `os.O_EXCL` from the shipped `locking.py`: suite went red, 50/50 double wins. Restored: 3 consecutive clean runs |
-| It holds on Windows | CI run above, `windows-latest`: `test_concurrency.py` **18 checks, 0 failures**; `test_store.py` **23 checks, 0 failures** |
+| `claim` holds on Windows | **Two** runs, `windows-latest`: contested claim green both times (6 checks each) |
+| Id allocation on Windows | **Run 1 green, run 2 red** — a worker crashed, 50 of 100 ids allocated. Intermittent; no collision ever seen |
+| `test_store.py` on Windows | 23 checks, 0 failures, both runs |
 | The tests actually ran, not skipped | Windows log names each file under `=== <path>` and prints each check; `WINDOWS_SKIP` is empty, so nothing was quarantined |
 | No hidden dependency | Independent AST sweep over all four modules: every import resolves to `sys.stdlib_module_names`. No `fcntl` outside a docstring explaining the ban |
 

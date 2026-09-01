@@ -16,8 +16,8 @@ Commit: `b0fe9ad`
 |---|---|
 | CI matrix on Linux + Windows, discovering tests by directory scan | **shipped** |
 | Dbless append-only `Task` store (`O_EXCL` id allocation + claim) | **shipped** |
-| Contested-concurrency suite green on Windows | **shipped** — 18 checks, 0 failures |
-| The spike's verdict, in writing | **shipped** — `spike-result.md`: **C3 is viable, build the port** |
+| Contested-concurrency suite green on Windows | **partially — see amendment.** `claim` green on Windows in both runs; id allocation red in run 2 |
+| The spike's verdict, in writing | **shipped, then amended** — `spike-result.md`: **NOT PROVEN, do not start the port yet** |
 | `test_repo_shape.py` cp1252 fix | **shipped** (operator-approved scope widening) |
 | Windows job green overall | **not achieved** — red on two pre-existing harness bugs, deliberately not quarantined |
 | CLI wiring, other entities, board migration | **not started** — the port, explicitly out of scope |
@@ -51,8 +51,10 @@ non-zero under lane A's driver — the silent-false-pass risk lane A had flagged
 
 ## Decisions locked
 
-- **C3 is viable. Shape B (SQLite) stays retired as the documented fallback.** `O_EXCL` makes id
-  allocation and `claim` trustworthy without a transaction, on Windows as well as POSIX.
+- ~~**C3 is viable. Shape B stays retired.**~~ **Overturned by CI run 33484818579** (see
+  `spike-result.md` amendment). `claim` is trustworthy on Windows across two runs; **id
+  allocation crashed a worker in run 2**. No id collision was ever observed — the failure is a
+  crash, not a double-allocation. **Shape B stays live as the fallback.**
 - **Nothing was weakened to get green.** `WINDOWS_SKIP` is empty by choice. The Windows job is red
   on master, on two real pre-existing bugs, and that is the honest state.
 - **The cross-lane seam worked unprompted.** Lane A's discover-don't-enumerate decision picked up
@@ -88,6 +90,23 @@ non-zero under lane A's driver — the silent-false-pass risk lane A had flagged
 policy, migration of the two live Postgres boards, CLI wiring, relativizing
 `AgentSession.transcript_path` (`taskman/taskman/metrics.py:250`), and amending I10 + `README.md:161`
 in the change that lands the port.
+
+
+## Amendment — 2026-09-01, after CI run 2
+
+This report was written after a single Windows CI run. A second run on a later commit
+([33484818579](https://github.com/ozanozcan/ai-wow/actions/runs/33484818579)) changed the outcome,
+and the change is recorded here rather than by rewriting history:
+
+- **Both Windows fixes from this session worked.** `test_ai_sync_commit.py` and
+  `test_tracker_port.py` both left the FAILED list, confirming the `as_posix()` and `sandbox()`
+  fixes on the platform they were written for.
+- **`taskman/taskman/eventlog/tests/test_concurrency.py` failed** — a `concurrent creates` worker
+  crashed, 50 of 100 ids allocated. The contested-claim half passed, as it did in run 1.
+- **The cause is not yet known**, because the test truncated the worker's stderr from the head
+  (`err[:300]`), discarding the exception line. Fixed to report the tail; the next run will name it.
+- **Consequence:** the spike's question is *not* settled. `claim` looks sound; id allocation is
+  unresolved on Windows. The port should not start on this evidence.
 
 ## Verify
 
