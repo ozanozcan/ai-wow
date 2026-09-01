@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 16 skills · 8 subagents · 1 command · 3 hooks · 1 board package
+inventory: 16 skills · 8 subagents · 1 command · 9 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness

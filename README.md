@@ -31,7 +31,7 @@ python3 ~/ai-wow/bin/ai-sync status
 | **Skills** | 16 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 8 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
-| **Hooks** | 3 | Guarantees that fire on lifecycle events, not on the agent's judgment |
+| **Hooks** | 9 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
 
 Everything except the board runs on a bare clone: **no configuration, no API keys,
@@ -151,7 +151,7 @@ before fan-out, not discovered afterwards.
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
-| `taskman/` | The board package — CLI, models, migrations, 142 tests |
+| `taskman/` | The board package — CLI, models, migrations, 135 tests |
 | `docs/workflow/` | Work-loop, dispatch bridge, compact template |
 | `templates/` | Bootstrap checklist for adopting the harness in a new repo |
 | `bin/ai-sync` | The sync tool |

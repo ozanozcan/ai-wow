@@ -20,6 +20,7 @@ Two design notes:
   the first place, so a new phrasing must be classified, not ignored.
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -109,6 +110,9 @@ CLAIMS = [
     ("third_party", r"([A-Z][a-z]+)\s+bundled skills come from other projects"),
     ("original",    r"[Tt]he\s+([a-z]+)\s+remaining skills"),
     ("original",    r"the\s+([a-z]+)\s+original\s+skills"),
+    ("hooks",       r"\|\s*\*\*Hooks\*\*\s*\|\s*(\d+)\s*\|"),
+    ("hooks",       r"inventory:.*?(\d+)\s+hooks"),
+    ("taskman_tests", r"\|\s*`taskman/`\s*\|[^|\n]*?(\d+)\s+tests"),
 ]
 
 # Count-shaped phrases that are not inventory claims. Tested against the whole
@@ -150,9 +154,17 @@ def main():
 
     third_party = re.findall(r"^\|\s*`skills/([a-z0-9-]+)/`\s*\|",
                              (REPO / "THIRD-PARTY.md").read_text(encoding="utf-8"), re.M)
+    # hooks.def.json's "hooks" array is the registration surface — one entry
+    # per registered hook (a script wired to two events is two entries), which
+    # is what the docs' hook counts describe. Both rotted while unguarded.
+    hook_defs = json.loads((REPO / "hooks.def.json").read_text(encoding="utf-8"))["hooks"]
+    taskman_tests = sum(
+        len(re.findall(r"^\s*(?:async )?def test_", p.read_text(encoding="utf-8"), re.M))
+        for p in (REPO / "taskman" / "tests").rglob("*.py"))
     expected = {"skills": len(skill_dirs), "subagents": len(agents),
                 "third_party": len(third_party),
-                "original": len(skill_dirs) - len(third_party)}
+                "original": len(skill_dirs) - len(third_party),
+                "hooks": len(hook_defs), "taskman_tests": taskman_tests}
 
     # --- every stated count agrees with the disk --------------------------
     # One pass produces both the assertions and the coverage map, so a claim
@@ -165,16 +177,17 @@ def main():
                 found.append((m.start(), m.end(), kind, m.group(0), m.group(1)))
         return found
 
-    seen = 0
+    seen = {kind: 0 for kind in expected}
     coverage = {}
     for name in PUBLISHED:
         raw = (REPO / name).read_text(encoding="utf-8")
         coverage[name] = spans = claim_spans(raw)
         for _, _, kind, whole, token in spans:
-            seen += 1
+            seen[kind] += 1
             check(f"{name}: {kind} count in {re.sub(r"\\s+", " ", whole)[:44].strip()!r}",
                   number(token), expected[kind])
-    check("claim patterns actually matched something", seen > 0, True)
+    for kind, n in seen.items():
+        check(f"claim patterns for {kind} actually matched something", n > 0, True)
 
     # --- nothing count-shaped escapes classification ----------------------
     # A count-shaped phrase is only "checked" if it sits inside a claim match.
