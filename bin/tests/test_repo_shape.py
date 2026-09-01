@@ -83,7 +83,7 @@ def _scan(path):
     if path.resolve() == Path(__file__).resolve():
         return []
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
         return []
     return [str(path.relative_to(REPO))] if LEAK.search(text) else []
@@ -149,7 +149,7 @@ def main():
     agents = sorted(p.stem for p in (REPO / "agents").glob("*.md"))
 
     third_party = re.findall(r"^\|\s*`skills/([a-z0-9-]+)/`\s*\|",
-                             (REPO / "THIRD-PARTY.md").read_text(), re.M)
+                             (REPO / "THIRD-PARTY.md").read_text(encoding="utf-8"), re.M)
     expected = {"skills": len(skill_dirs), "subagents": len(agents),
                 "third_party": len(third_party),
                 "original": len(skill_dirs) - len(third_party)}
@@ -168,7 +168,7 @@ def main():
     seen = 0
     coverage = {}
     for name in PUBLISHED:
-        raw = (REPO / name).read_text()
+        raw = (REPO / name).read_text(encoding="utf-8")
         coverage[name] = spans = claim_spans(raw)
         for _, _, kind, whole, token in spans:
             seen += 1
@@ -181,7 +181,7 @@ def main():
     # Anything else fails loudly and must be classified, never skipped.
     unclassified = []
     for name in PUBLISHED:
-        raw = (REPO / name).read_text()
+        raw = (REPO / name).read_text(encoding="utf-8")
         spans = coverage[name]
         for m in COUNT_SHAPED.finditer(raw):
             if any(s <= m.start() and m.end() <= e for s, e, *_ in spans):
@@ -201,7 +201,7 @@ def main():
               (REPO / "skills" / name / "LICENSE").is_file(), True)
 
     listed = set(re.findall(r"`([a-z0-9-]+)`",
-                            re.sub(r"\s+", " ", (REPO / "THIRD-PARTY.md").read_text())
+                            re.sub(r"\s+", " ", (REPO / "THIRD-PARTY.md").read_text(encoding="utf-8"))
                             .split("remaining skills")[-1].split("are original")[0]))
     check("THIRD-PARTY's originals + third-party == what is on disk",
           sorted(listed | set(third_party)), skill_dirs)
@@ -210,7 +210,7 @@ def main():
     check("impeccable is referenced but not bundled",
           (REPO / "skills" / "impeccable").exists(), False)
     check("impeccable's install line is still documented",
-          "npx skills add pbakaus/impeccable" in (REPO / "THIRD-PARTY.md").read_text(), True)
+          "npx skills add pbakaus/impeccable" in (REPO / "THIRD-PARTY.md").read_text(encoding="utf-8"), True)
 
     # --- every instruction names a path this repo actually has ------------
     # A shipped file that tells you to run `.venv/bin/python …` or

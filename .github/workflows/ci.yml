@@ -1,0 +1,118 @@
+# Run the harness's database-free tests on Linux and Windows, on every push and
+# pull request to master.
+#
+# Windows is in the matrix because it is a platform this harness is actually
+# installed on, and the bugs that motivated that — `Path.home()` reading
+# USERPROFILE rather than HOME, and `ai-sync status` reporting symlink
+# *capability* instead of installed mode — were both found by reasoning about
+# Windows rather than by running there. A runner ends that.
+#
+# githooks/pre-push runs these same tests before a push, but only in a clone
+# where someone typed `git config core.hooksPath githooks`. A fresh clone has no
+# hook, and `--no-verify` has no hook either; CI covers both.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  harness-tests:
+    name: harness tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both platforms always report. A Linux failure must not hide what Windows
+      # would have said, which is the half of this matrix that is here to tell
+      # us something new.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned to the interpreter the harness is developed against, so a new
+          # release cannot turn CI red with no change in this repo. Bump it
+          # deliberately.
+          python-version: '3.14'
+
+      - name: Run harness tests
+        shell: python
+        run: |
+          """Discover and run every database-free test in this repo.
+
+          Discovery, not enumeration. githooks/pre-push names its eight tests by
+          hand, which is fine for a hook edited alongside the test it lists, but
+          the same list here would go stale silently: a test added next week
+          would never run, and the job would still be green. Scanning means a new
+          test file under any directory below is picked up by the next run with
+          no edit to this workflow.
+
+          taskman/tests/ is deliberately absent from the scan. taskman/conftest.py
+          calls psycopg.connect() at import time, unconditionally, so that suite
+          hard-requires a reachable Postgres and cannot run on either runner.
+          """
+          import glob
+          import os
+          import subprocess
+          import sys
+
+          # A directory that does not exist yet is skipped silently - glob simply
+          # returns nothing for it. taskman/taskman/eventlog/tests is listed
+          # before it exists on purpose, so landing it needs no edit here.
+          SCAN = [
+              "hooks/tests",
+              "bin/tests",
+              "skills/*/tests",
+              "taskman/taskman/eventlog/tests",
+          ]
+
+          # Tests known to fail on the Windows runner, mapped to the failure they
+          # name. Quarantine, not deletion: an entry here is a Windows bug still
+          # owed a fix, and the test keeps running everywhere else.
+          #
+          # Empty today. No Windows run has been observed yet, so no entry is
+          # justified - guessing one would quarantine a test that passes.
+          WINDOWS_SKIP = {}
+
+          paths = sorted({p.replace(os.sep, "/")
+                          for pattern in SCAN
+                          for p in glob.glob(pattern + "/test_*.py")})
+
+          # An empty scan is the one failure a green job would hide: if these
+          # directories move, "no tests" must not read as "nothing broken".
+          if not paths:
+              sys.exit("no tests discovered - the scan list is stale")
+
+          print(f"discovered {len(paths)} test file(s):")
+          for rel in paths:
+              print(f"  {rel}")
+          print(flush=True)
+
+          ran, failed = 0, []
+          for rel in paths:
+              if os.name == "nt" and rel in WINDOWS_SKIP:
+                  print(f"SKIP {rel} - {WINDOWS_SKIP[rel]}", flush=True)
+                  continue
+              print(f"=== {rel}", flush=True)
+              # sys.executable rather than the literal `python3` that
+              # githooks/pre-push uses: the name python3 is not guaranteed on the
+              # Windows runner, and what pre-push means by it is "this
+              # interpreter, running this file as a script" - which this is.
+              if subprocess.run([sys.executable, rel]).returncode != 0:
+                  failed.append(rel)
+              ran += 1
+
+          print(flush=True)
+          if failed:
+              print("FAILED: " + ", ".join(failed))
+              sys.exit(1)
+          print(f"all {ran} test file(s) passed")

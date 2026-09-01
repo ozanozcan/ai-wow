@@ -1,0 +1,205 @@
+{
+  "schema": 1,
+  "stem": "taskman-no-db",
+  "title": "Dbless board — the C3 event-log spike",
+  "run_status": "running",
+  "board_port": 8362,
+  "pulse": true,
+  "started": "2026-08-31T23:35:03Z",
+  "updated": "2026-09-01T06:52:15Z",
+  "waves": [
+    {
+      "wave": 1,
+      "status": "done",
+      "parallelism": "parallel",
+      "gate": {
+        "status": "done",
+        "detail": "Both Verification blocks met their QA contracts. No stack reviewer spawned (INDEX Review flags '-': no roster agent covers plain Python). Orchestrator verified independently: O_EXCL removed -> suite red (50/50 double wins), restored -> 3 clean runs; AST sweep finds zero third-party imports; injected failure proves the tests exit non-zero under CI's driver. Merge-back clean, no conflicts. Integrated seam proven: the driver discovers 11 test files (8 pre-existing + 2 from lane B + 1 from the peer stem) with no workflow edit."
+      },
+      "lanes": [
+        {
+          "lane": "A",
+          "brief": "01-ci-matrix.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "ci-matrix",
+              "title": "CI on both platforms, discovering the harness tests",
+              "status": "done"
+            }
+          ],
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-31T23:37:05Z",
+              "detail": "isolated worktree",
+              "skills": [],
+              "tools": [
+                {
+                  "name": "8 harness tests (python3 <path>)",
+                  "status": "done",
+                  "detail": "8/8 pass, macOS py3.14"
+                },
+                {
+                  "name": "yaml.safe_load(ci.yml)",
+                  "status": "done",
+                  "detail": "PyYAML 6.0.3 + ruby psych cross-check"
+                },
+                {
+                  "name": "mutation kills on extracted driver",
+                  "status": "done",
+                  "detail": "3 mutants killed: enumerated / swallow / noguard"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "ci.yml",
+                  "path": ".github/workflows/ci.yml"
+                }
+              ],
+              "ended": "2026-08-31T23:43:50Z",
+              "tokens": 67174
+            }
+          ],
+          "started": "2026-08-31T23:37:05Z",
+          "ended": "2026-08-31T23:43:50Z",
+          "tokens": 67174
+        },
+        {
+          "lane": "B",
+          "brief": "02-eventlog-store.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "eventlog-store",
+              "title": "A dbless Task store — append-only log, state by replay",
+              "status": "done"
+            }
+          ],
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-31T23:37:05Z",
+              "detail": "isolated worktree · model: fable",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done",
+                  "detail": "red first: 50/50 rounds double-won pre-lock"
+                },
+                {
+                  "name": "adversarial-tester",
+                  "status": "done",
+                  "detail": "manual procedure — 4 mutants killed, 1 equivalent"
+                },
+                {
+                  "name": "parallel-debug",
+                  "status": "pending",
+                  "detail": "n/a — failures shared one root cause"
+                }
+              ],
+              "tools": [
+                {
+                  "name": "test_concurrency.py",
+                  "status": "done",
+                  "detail": "19 checks, 3 runs = 150 contested rounds"
+                },
+                {
+                  "name": "test_store.py",
+                  "status": "done",
+                  "detail": "23 checks"
+                },
+                {
+                  "name": "mutation pass on locking.py",
+                  "status": "done",
+                  "detail": "M1/M2b/M3/M4 killed; M2 equivalent"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "locking.py",
+                  "path": "taskman/taskman/eventlog/locking.py"
+                },
+                {
+                  "label": "log.py",
+                  "path": "taskman/taskman/eventlog/log.py"
+                },
+                {
+                  "label": "store.py",
+                  "path": "taskman/taskman/eventlog/store.py"
+                },
+                {
+                  "label": "__init__.py",
+                  "path": "taskman/taskman/eventlog/__init__.py"
+                },
+                {
+                  "label": "test_store.py",
+                  "path": "taskman/taskman/eventlog/tests/test_store.py"
+                },
+                {
+                  "label": "test_concurrency.py",
+                  "path": "taskman/taskman/eventlog/tests/test_concurrency.py"
+                },
+                {
+                  "label": "__init__.py",
+                  "path": "taskman/taskman/eventlog/tests/__init__.py"
+                }
+              ],
+              "ended": "2026-08-31T23:54:24Z",
+              "tokens": 108944
+            }
+          ],
+          "started": "2026-08-31T23:37:05Z",
+          "ended": "2026-08-31T23:54:24Z",
+          "tokens": 108944
+        }
+      ],
+      "started": "2026-08-31T23:37:05Z",
+      "ended": "2026-08-31T23:54:24Z",
+      "tokens": 176118
+    },
+    {
+      "wave": 2,
+      "status": "running",
+      "parallelism": "sequential",
+      "gate": {
+        "status": "pending"
+      },
+      "lanes": [
+        {
+          "lane": "Z",
+          "brief": "03-windows-proof.md",
+          "role": "code-edit",
+          "afk": false,
+          "status": "running",
+          "todos": [
+            {
+              "id": "windows-proof",
+              "title": "Take the contested suite green on Windows, and answer the spike",
+              "status": "running"
+            }
+          ],
+          "agents": [
+            {
+              "name": "orchestrator (foreground)",
+              "status": "running",
+              "started": "2026-09-01T06:52:15Z",
+              "detail": "AFK:no — push requires operator consent",
+              "skills": [],
+              "tools": [],
+              "artifacts": []
+            }
+          ],
+          "started": "2026-09-01T06:52:15Z"
+        }
+      ],
+      "started": "2026-09-01T06:52:15Z"
+    }
+  ]
+}
