@@ -99,9 +99,16 @@ registered as a session-end hook so it happens on its own.
 > sync — it's the one step that fails silently.
 
 > [!WARNING]
-> `ai-sync` commits with `git add -A` and pushes without prompting. Keep secrets out
-> of the working tree. On machines that must never push (a corporate laptop), set
-> `{ "push": false }` in `local.config.json` — commits stay local.
+> `ai-sync` **pushes without prompting** when a remote exists. On machines that must
+> never push (a corporate laptop), set `{ "push": false }` in `local.config.json` —
+> commits stay local.
+>
+> It commits **only the paths it manages** — the linked category directories plus
+> `skills/` and `skills.lock.json`, derived from the link tables rather than
+> hardcoded — staged and committed by name, never `git add -A`. Anything else in the
+> tree is left alone, and it logs what it left behind rather than narrowing scope
+> silently. So a half-finished refactor or a peer session's staged file cannot ride
+> along in a `sync:` commit.
 
 ---
 
