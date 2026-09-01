@@ -112,3 +112,80 @@ rather than silently skipped.
 3. **Uncommitted:** `docs/plans/work-pc-readiness/action-report.md` is dirty and belongs to the peer
    session, not this one. Left untouched deliberately — attributing another session's file is exactly
    what the wrap-up gate exists to prevent.
+
+---
+
+## Addendum — after the first wrap-up
+
+The session continued past its own report. Recorded here rather than in a second file, since it
+is one session with one `session_id`.
+
+### Pushing exposed a second tree with the same bug
+
+`git push` on dotfiles-ai was **refused by that repo's own `test_tree_drift` guard**: four shared
+files had drifted. The guard was right, and one of the four was mine — `bin/tests/test_ai_sync_commit.py`,
+drifted the moment I fixed ai-sync's copy and not the sibling.
+
+Investigating the other three showed **none was a deliberate public/private split**; every one was
+"the published tree got fixed, this one didn't":
+
+| File | Why it had drifted |
+|---|---|
+| `hooks/session-start-marker.py` | Told every session `/wrap-up must run: python scripts/wrapup_reconcile.py` — a path absent from *both* trees. It misled this session at startup |
+| `skills/bs/SKILL.md`, `skills/grill-with-docs/SKILL.md` | Still said `.venv/bin/python -m taskman`; dotfiles-ai has no root `.venv`, so that prefix was wrong there too |
+
+**The `ai-sync` separator bug was live in dotfiles-ai as well** — the tree that actually holds
+`global/CLAUDE.md`, the exact file it would silently refuse to commit on Windows. The copy fixed
+first was the less important one.
+
+Commits: `1abef7e` (my drift + the ai-sync fix), `2e90517` (the other three), `392b7c6` (the test).
+
+### Porting a hook without its test
+
+`2e90517` shipped `session-start-marker.py` with no test, leaving that tree with fixed behaviour and
+nothing enforcing it. The drift guard could not catch this: the test existed in only one tree, so it
+was not a shared path at all. Closing it took three steps, not one —
+
+1. the file, ported verbatim;
+2. a line in `githooks/pre-push`, since that tree has no CI and its hook enumerates suites by name,
+   so an unlisted test never runs;
+3. a `match` row in `tree-drift.json`, because porting created a new shared path and the guard fails
+   any it cannot classify.
+
+Verified it fires rather than merely passes: stubbing `_has_board()` to `False` took the suite to
+exit 1, restoring returned 0.
+
+### `taskman` on PATH
+
+Both trees now instruct a bare `taskman ...`, which resolved nowhere on this machine. `uv sync` turned
+out to have been run already — console scripts existed in both trees since August — so the only gap
+was PATH. Added one `export` to `~/.zshrc` pointing at the dotfiles-ai tree, since that is where the
+live skills load from.
+
+**Left unmanaged deliberately.** `~/.zshrc` is not a symlink, `$HOME` is not a repo, and `ai-sync`'s
+`LINK_FILES` covers only `CLAUDE.md` and `rules`. The file is machine-specific in three places
+(conda's hardcoded prefix, an Apple-Silicon homebrew path, a `$HOME/Desktop/...` tree location), so
+tracking it wholesale would ship a config that breaks on the work PC — the same defect class as the
+`.venv/bin/python` prefix removed earlier today.
+
+### Lessons — none new
+
+Two candidates considered and both declined:
+
+- **Porting a fix without its test.** Close to L42, and I flagged the gap myself before it was raised.
+  A rule for something self-caught is the padding the skill warns against.
+- **`zsh -l -c` reported the PATH change as broken** when it had worked — a non-interactive login
+  shell sources `.zprofile`, never `.zshrc`, so the probe skipped the file under test. A real
+  mistake, but an instance of L16 (establish the baseline with the command that actually applies)
+  and L33 (a guard must fire in the environment it exists for), both already routed and both of
+  which I applied unprompted on re-check.
+
+### Open threads added
+
+- **A shared-file drift guard cannot see a test that exists in only one tree.** `test_tree_drift`
+  classifies shared paths; a fix ported without its test leaves no shared path to flag, so the gap
+  is invisible to it. Mechanizable — the guard could warn when a `match` source file's sibling test
+  is one-tree-only — but that is design work, not this session's.
+- `bin/tests/tree-drift.json` was reformatted as a side effect of adding one entry (`ensure_ascii`
+  flipped, unescaping ~30 em-dashes). Semantically identical, nothing writes the file
+  programmatically, so no ping-pong risk — noted as churn, not corrected.
