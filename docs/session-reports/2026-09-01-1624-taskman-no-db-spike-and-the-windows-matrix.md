@@ -189,3 +189,48 @@ Two candidates considered and both declined:
 - `bin/tests/tree-drift.json` was reformatted as a side effect of adding one entry (`ensure_ascii`
   flipped, unescaping ~30 em-dashes). Semantically identical, nothing writes the file
   programmatically, so no ping-pong risk — noted as churn, not corrected.
+
+---
+
+## Addendum 2 — post-wrap-up questions, and what they turned up
+
+No commits in ai-wow this stretch; the work was answering questions. Two of the answers change how
+the port should be scoped, so they are recorded rather than left in chat.
+
+### `taskman` is mirrored across both trees — and the spike landed in only one
+
+Measured, not assumed:
+
+| | |
+|---|---|
+| `taskman/` paths classified `match` in `tree-drift.json` | **39** (drift is a defect) |
+| classified `diverges` | 17, all reasoned *"owned by `taskman.mow.check_drift`, not duplicated here"* |
+| A second drift checker for the subtree | `taskman/taskman/mow/check_drift.py` |
+| `taskman/taskman/eventlog/` tracked in ai-wow | **7 files** |
+| …tracked in dotfiles-ai | **0** |
+
+So `taskman` is not ai-wow's alone: it is a mirrored subtree with **two** guards over it, and the
+new store is in one tree only. **Neither guard can see that** — a directory present in a single tree
+is not a "shared path", so nothing flags its absence from the other. This is the blind spot recorded
+in Addendum 1, now with a concrete instance.
+
+**Consequence for the port:** before any of the six items in `spike-result.md`, a prior question has
+to be answered — *which tree owns `taskman`, and does the port land in both in lockstep or does one
+become the source?* That belongs at the front of `/mow plan`, not discovered halfway through.
+
+### The work-PC document is accurate, and will go stale
+
+The artifact **"ai-wow on the Work PC"** says: *"The harness runs fine without a board; a dbless
+replacement has been prototyped but not landed."* Verified correct — `grep -rn eventlog
+taskman/taskman/cli.py` exits 1, and nothing outside `eventlog/` imports it. The store is genuinely
+isolated; the CLI still runs on Postgres.
+
+That sentence becomes wrong the moment the port lands, and it lives in a published artifact rather
+than in the repo, so no test or drift guard watches it. Worth updating in the same change.
+
+### Lessons
+
+**L47** — a pipeline throws away the exit status you were testing. `cmd | sed || echo absent` can
+never print `absent`; `||` tests `sed`, which succeeds on empty input. Hit three times in one
+session, twice reporting a state that had not been established. Distinct from L18 (text vs status);
+routed beside it in `global/CLAUDE.md`, committed in dotfiles-ai `ee23596`.
