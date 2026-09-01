@@ -16,8 +16,8 @@ Commit: `b0fe9ad`
 |---|---|
 | CI matrix on Linux + Windows, discovering tests by directory scan | **shipped** |
 | Dbless append-only `Task` store (`O_EXCL` id allocation + claim) | **shipped** |
-| Contested-concurrency suite green on Windows | **partially — see amendment.** `claim` green on Windows in both runs; id allocation red in run 2 |
-| The spike's verdict, in writing | **shipped, then amended** — `spike-result.md`: **NOT PROVEN, do not start the port yet** |
+| Contested-concurrency suite green on Windows | **shipped** — all 3 scenarios green on `windows-latest`, 4 consecutive runs, nothing skipped |
+| The spike's verdict, in writing | **settled** — `spike-result.md`: **C3 is viable on Windows, build the port** (green ×4 after the `PermissionError` fix) |
 | `test_repo_shape.py` cp1252 fix | **shipped** (operator-approved scope widening) |
 | Windows job green overall | **not achieved** — red on two pre-existing harness bugs, deliberately not quarantined |
 | CLI wiring, other entities, board migration | **not started** — the port, explicitly out of scope |
@@ -128,3 +128,19 @@ and the change is recorded here rather than by rewriting history:
 mow go §3: the cp1252 defect was **(a) mechanizable** and fixed in-run with the matrix that catches
 it; the two Windows harness bugs and the ship-check Minors are **(c) one-off**, recorded here and in
 `spike-result.md` since there is no board to file them on.
+
+## Amendment 2 — 2026-09-01, verdict settled
+
+The withdrawn verdict is restored, on evidence rather than on a single run.
+
+`exclusive()` caught only `FileExistsError`. On Windows, opening a lock whose name is delete-pending
+raises `PermissionError` instead, so routine contention escaped the retry loop and killed the
+caller. Treating both as "held, retry" fixed it: **green ×4 consecutively** on `windows-latest`,
+where the unfixed store failed 2 of 3 runs.
+
+Sequence worth keeping, because each step only became visible once the previous one cleared:
+the CI matrix exposed three Windows bugs → fixing two of them unmasked the third, which was the
+spike's own core test → its stderr truncation (`err[:300]`, the head of a traceback) hid the
+exception → fixing the reporting named `PermissionError` → the fix was two lines.
+
+Nothing was ever quarantined. `WINDOWS_SKIP` is still empty.

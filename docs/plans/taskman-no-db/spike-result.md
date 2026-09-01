@@ -5,7 +5,38 @@
 **Plan:** [`plan.md`](plan.md) · **Dispatch:** [`dispatch/INDEX.md`](dispatch/INDEX.md)
 **CI runs:** [33479579913](https://github.com/ozanozcan/ai-wow/actions/runs/33479579913) (`b0fe9ad`, run 1) · [33484818579](https://github.com/ozanozcan/ai-wow/actions/runs/33484818579) (`57b310c`, run 2 — the one that overturned the verdict)
 
-## Verdict — NOT PROVEN. Promising, but do not start the port yet.
+## Verdict — C3 is viable on Windows. Build the port.
+
+**Settled 2026-09-01 by CI run [33506642639](https://github.com/ozanozcan/ai-wow/actions/runs/33506642639),
+green on `windows-latest` four consecutive times** after the `PermissionError` fix below. Shape B
+(SQLite) is retired as the fallback.
+
+The verdict took three swings, and the history is kept because it is the evidence:
+
+| # | State | Windows result |
+|---|---|---|
+| 1 | Original store | Green once — and called "proven" on that single run. **That was wrong** |
+| 2 | Same store, second run | `concurrent creates` red: a worker crashed, 50 of 100 ids. Verdict withdrawn to NOT PROVEN |
+| 3 | `PermissionError` treated as contention | Green ×4 consecutive, `WINDOWS_SKIP` empty, all 11 files run |
+
+**The bug was real and is now understood, not merely absent.** `os.open(..., O_CREAT | O_EXCL)`
+raises `PermissionError` on Windows — not `FileExistsError` — when the lock's name is *delete-pending*
+(a previous holder unlinked it, but a handle has not finished closing). `exclusive()` caught only
+`FileExistsError`, so ordinary contention escaped the retry loop and killed the caller. POSIX frees
+the name on unlink and cannot reach that state, which is why 150 contested rounds on macOS never saw
+it and the second Windows run did.
+
+**No id collision was observed at any point, before or after the fix.** The store never handed the
+same id to two callers; a process crashed. The *safety* property held throughout — only *liveness*
+broke. That is why the fix is two lines rather than a redesign.
+
+### What the old verdict said
+
+### Superseded — the withdrawn verdict
+
+(kept for the record)
+
+#### NOT PROVEN. Promising, but do not start the port yet.
 
 > **Amended 2026-09-01, after a second CI run.** An earlier version of this file read
 > "C3 is viable. Build the port." That verdict rested on a single Windows run. A second run
