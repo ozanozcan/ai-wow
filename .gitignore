@@ -23,6 +23,13 @@ local.config.json
 # rendered from a fresh clone falls back to wall clock — the number the trail was
 # introduced to replace. Local boards are unaffected; the files stay on disk.
 **/dispatch/.activity
+
+# Spawn records written by the PreToolUse hook. Untracked 2026-09-01 alongside
+# .activity, and cheaper to lose: board_table.py never reads this file — the
+# orchestrator copies agent started/ended into tracker.json, which stays tracked.
+# Only a post-hoc audit run from a fresh clone loses the hook's own record to
+# cross-check those times against.
+**/dispatch/.agent-times.json
 .DS_Store
 __pycache__/
 *.pyc
