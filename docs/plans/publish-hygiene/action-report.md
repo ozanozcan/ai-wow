@@ -93,10 +93,12 @@ See **Ship-check** below for why this wave exists.
 
 ## Decisions locked
 
-- **ai-wow stays board-less, and now says so.** Measured, not assumed: a root `.taskman.toml` with no
-  reachable Postgres makes `taskman wrapup gate` exit **2**, which the wrap-up skill's own table reads
-  as "no session marker" — the wrong diagnosis, pointing at a command that fails identically. Revisit
-  after `taskman-no-db`, when the objection dissolves.
+- **ai-wow stays board-less, and now says so** — because a tracked `.taskman.toml` hands every cloner
+  this repo's project identity pointed at their database, and because the README's "needs no database"
+  claim would be undercut by making ai-wow's own workflow require one. **Corrected post-run:** the
+  decision was originally argued on the gate exiting 0 board-less and 2 with a board. Measured
+  properly it exits **2 either way** — the 0 came from reading `$?` after a pipe (L18). The decision
+  stands on the two reasons above; the shipped §6 text was rewritten to match.
 - **`django-reviewer` stays out.** Django is not widely used at the operator's company. The fix was to
   make the references honest, not to ship the agent — upholding the `harness-boundary` decision rather
   than overturning it.
@@ -176,6 +178,13 @@ to close, committed while closing it.
 ---
 
 ## Open / deferred
+
+0. **`taskman wrapup gate` returns exit 2 for two unrelated conditions.** Board-less it reports
+   `no .taskman.toml above cwd`; with a board and an unreachable database it reports a connection
+   failure. Both exit **2**, which `skills/wrap-up/SKILL.md`'s table defines as "No session marker —
+   run `taskman wrapup open`" — advice that fits neither and fails identically in both. Found while
+   running this run's own wrap-up safety check. In `taskman/**`, which the sibling stem owns, so not
+   fixed here. This is also the defect that produced the incorrect exit-0 claim corrected above.
 
 1. **`installed_mode()` can misreport an unmanaged directory as a stale copy.** The only discriminator
    is `mode == "copy"`; with nothing installed and no symlink capability, the probe returns `copy` and

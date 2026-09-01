@@ -349,12 +349,17 @@ ai-wow ships taskman as a **tool**, and carries no board of its own — there is
 `.taskman.toml` at the root, and session reports here say `Board sync: n/a` because
 that is accurate, not because someone forgot.
 
-The reason is measured rather than assumed. With a root `.taskman.toml` present and no
-reachable Postgres, `taskman wrapup gate` exits **2** — which the wrap-up skill reads as
-"no session marker", the wrong diagnosis, pointing you at a command that fails the same
-way. A board here would therefore break `/wrap-up` on every machine without a database,
-and contradict this harness's own claim to need none. You would meet that on a locked-down
-work machine first, which is exactly where it hurts.
+Two reasons, both about what a clone inherits. A tracked `.taskman.toml` would hand every
+cloner this repo's project identity, pointed at their database. And this harness's headline
+claim is that it needs no database — making its own session workflow require one, in the
+very repo people clone to evaluate it, would undercut that.
+
+Worth knowing, because it is easy to misread: `taskman wrapup gate` exits **2** here
+either way. Board-less it reports `no .taskman.toml above cwd`; with a board and no
+reachable Postgres it reports a connection failure. The wrap-up skill's exit table reads 2
+as "no session marker" — which is neither of those things. That is a misdiagnosis in
+taskman, not an argument for or against a board, and it is recorded as an open item rather
+than fixed here.
 
 Two consequences worth recognising when you see them:
 

@@ -28,10 +28,12 @@ clone's first session receives no instruction it cannot follow.
   → print the marker line and nothing about wrap-up. The skill docs (`wrap-up`, `mow`) may name
   the command unconditionally, because by the time a human reads those they have a repo in front
   of them; the *hook* is what greets a clone with nothing installed.
-- **When a board IS present, the command is correct**: from a directory with a `.taskman.toml`
-  and a working venv, `python -m taskman wrapup gate` exits 0 board-less-style or reports real
-  worklists. Do not "improve" the board-less exit-0 behavior; it is what makes ai-wow work
-  without a database.
+- **CORRECTED 2026-09-01, after the run:** an earlier version of this bullet claimed the gate
+  exits **0** board-less. It does not — it exits **2**, reporting `no .taskman.toml above cwd`.
+  The wrong reading came from `EXIT=$?` after a pipe, which returns `tail`'s status rather than
+  python's (L18). Nothing in this lane depended on the exit code — its assertions are about the
+  hook's context string and marker write — so the shipped work is unaffected, but the record was
+  wrong and is corrected here.
 - **`django-reviewer` is deliberately absent** and stays absent (operator, 2026-09-01 — Django is
   not widely used at the operator's company). `skills/mow/SKILL.md:526` currently asserts it
   exists in both runtime columns. The neighbouring line at `:200` already gets this right
@@ -73,7 +75,8 @@ clone's first session receives no instruction it cannot follow.
   fixed in `f6b25f9` by gating on "is this a git worktree" instead. The marker must still be
   written unconditionally; only the wrap-up sentence is conditional. Re-introducing that early
   return is the single worst outcome of this lane.
-- **Do not "fix" the board-less exit-0 behavior** of `taskman wrapup gate` — that is intended.
+- **Do not touch `taskman/**`, including the gate's exit codes** — the sibling stem owns that tree.
+  (The gate's exit-2-for-two-different-conditions is a real misdiagnosis, recorded as an open item.)
 - Do not reformat, reflow, or re-voice surrounding prose in any of the four files.
 
 ## Acceptance check
