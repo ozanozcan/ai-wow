@@ -2,11 +2,11 @@
   "schema": 1,
   "stem": "taskman-no-db",
   "title": "Dbless board — the C3 event-log spike",
-  "run_status": "running",
+  "run_status": "shipped",
   "board_port": 8362,
   "pulse": true,
   "started": "2026-08-31T23:35:03Z",
-  "updated": "2026-09-01T06:52:15Z",
+  "updated": "2026-09-01T07:34:10Z",
   "waves": [
     {
       "wave": 1,
@@ -97,11 +97,6 @@
                   "name": "adversarial-tester",
                   "status": "done",
                   "detail": "manual procedure — 4 mutants killed, 1 equivalent"
-                },
-                {
-                  "name": "parallel-debug",
-                  "status": "pending",
-                  "detail": "n/a — failures shared one root cause"
                 }
               ],
               "tools": [
@@ -166,10 +161,11 @@
     },
     {
       "wave": 2,
-      "status": "running",
+      "status": "done",
       "parallelism": "sequential",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "VERDICT: C3 viable — O_EXCL is trustworthy on Windows; shape B stays retired as fallback. Concurrency suite ran and passed on windows-latest (18+23 checks, 0 failures), WINDOWS_SKIP empty so nothing was quarantined. Windows job is red on two PRE-EXISTING harness bugs the matrix just surfaced (test_tracker_port PermissionError; test_ai_sync_commit path classification) — neither is the store, and nothing was weakened to hide them. test_repo_shape cp1252 defect found and fixed in-run, green on Windows. Findings carry no task ids: this repo is deliberately board-less, so they live in spike-result.md and the action report instead."
       },
       "lanes": [
         {
@@ -177,29 +173,53 @@
           "brief": "03-windows-proof.md",
           "role": "code-edit",
           "afk": false,
-          "status": "running",
+          "status": "done",
           "todos": [
             {
               "id": "windows-proof",
               "title": "Take the contested suite green on Windows, and answer the spike",
-              "status": "running"
+              "status": "done"
             }
           ],
           "agents": [
             {
               "name": "orchestrator (foreground)",
-              "status": "running",
+              "status": "done",
               "started": "2026-09-01T06:52:15Z",
               "detail": "AFK:no — push requires operator consent",
               "skills": [],
-              "tools": [],
-              "artifacts": []
+              "tools": [
+                {
+                  "name": "git push origin master",
+                  "status": "done",
+                  "detail": "a70afc7..b0fe9ad; pre-push redaction gate clean"
+                },
+                {
+                  "name": "CI run 33479579913",
+                  "status": "issues",
+                  "detail": "ubuntu ✓ 22s · windows ✗ 1m12s — 2 pre-existing tests, NOT the store"
+                },
+                {
+                  "name": "eventlog on windows-latest",
+                  "status": "done",
+                  "detail": "test_concurrency 18 checks / test_store 23 checks, 0 failures"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "spike-result.md",
+                  "path": "docs/plans/taskman-no-db/spike-result.md"
+                }
+              ],
+              "ended": "2026-09-01T06:57:05Z"
             }
           ],
-          "started": "2026-09-01T06:52:15Z"
+          "started": "2026-09-01T06:52:15Z",
+          "ended": "2026-09-01T06:57:05Z"
         }
       ],
-      "started": "2026-09-01T06:52:15Z"
+      "started": "2026-09-01T06:52:15Z",
+      "ended": "2026-09-01T06:57:05Z"
     }
   ]
 }

@@ -83,3 +83,6 @@ the overlap to zero and lets both stems run concurrently rather than sequentiall
 **Grill write-back:** plan.md ✓ · briefs: 01-ci-matrix, 02-eventlog-store, 03-windows-proof (all
 written after the grill, carrying its locked decisions) · taskman: n/a — repo is board-less, no
 `.taskman.toml`, so no decision/requirement/capture ids exist
+
+**Action report:** [`../action-report.md`](../action-report.md)
+**Spike result:** [`../spike-result.md`](../spike-result.md)
