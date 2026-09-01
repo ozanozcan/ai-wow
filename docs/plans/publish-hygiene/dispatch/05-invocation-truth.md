@@ -77,10 +77,19 @@ All five are inside this stem's declared ownership; the sibling `taskman-no-db` 
 
 ## Acceptance check
 
-- **SHALL:** No file under `hooks/` or `skills/` SHALL reference a repo-root `.venv/` path or
-  `scripts/wrapup_reconcile.py`.
-  - Verify: `grep -rn "\.venv/bin\|scripts/wrapup_reconcile" hooks/ skills/` → **no matches**
-    (exit 1). Note this pattern is deliberately broader than the one that missed last time.
+- **SHALL:** No **instruction file** (`.md`) under `hooks/` or `skills/` SHALL reference a
+  repo-root `.venv/` path or `scripts/wrapup_reconcile.py`.
+  - Verify: `grep -rn "\.venv/bin\|scripts/wrapup_reconcile" hooks/ skills/ --include="*.md"`
+    → **no matches** (exit 1).
+  - **Narrowed from "no file" to "no `.md` file" during the lane, 2026-09-01, deliberately.**
+    The original broad form was written before the check existed; running it flagged
+    `hooks/guard-migrations.sh:59`, which is `[ -x .venv/bin/alembic ]` guarded by two fallbacks
+    and a `pass` — a probe that tests before use, not an instruction anyone follows. Failing the
+    lane on correct defensive code would have been the wrong outcome. A `.md` line is a promise;
+    a shell conditional is not. The unqualified `hooks/ skills/` grep therefore still exits 0 by
+    design, and that is not a regression.
+  - Recorded here rather than only in the commit message, because a criterion that stays false on
+    disk while the deviation lives elsewhere is the same failure this lane exists to close.
 - **SHALL:** `bin/tests/test_repo_shape.py` SHALL fail if either pattern reappears in a shipped file.
   - **Prove it by making it fire:** reintroduce one `.venv/bin/python` line, confirm the suite
     fails, remove it, confirm it passes. A check that has never failed is not a check.
@@ -97,7 +106,8 @@ All five are inside this stem's declared ownership; the sibling `taskman-no-db` 
 
 - `python3 bin/tests/test_repo_shape.py` → exit 0, with the deliberate-break run quoted
 - `sh githooks/pre-push` → `pre-push: clean`
-- The broad grep above, reported with its exit code
+- The markdown-scoped grep above, reported with its exit code, plus the unqualified
+  `hooks/ skills/` form and a one-line note on why it still exits 0
 - `python3 -m py_compile bin/tests/test_repo_shape.py` → exit 0
 - Count check: `grep -rc "taskman" skills/wrap-up/SKILL.md` before and after, showing the commands
   survived the rewrite rather than being deleted

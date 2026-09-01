@@ -1,0 +1,289 @@
+{
+  "schema": 1,
+  "stem": "publish-hygiene",
+  "title": "Publish hygiene \u2014 make the shipped harness tell the truth about itself",
+  "run_status": "shipped",
+  "board_port": 8362,
+  "pulse": true,
+  "started": "2026-08-31T23:25:33Z",
+  "updated": "2026-09-01T00:02:00Z",
+  "waves": [
+    {
+      "wave": 1,
+      "status": "done",
+      "parallelism": "parallel",
+      "started": "2026-08-31T23:26:05Z",
+      "ended": "2026-08-31T23:39:19Z",
+      "gate": {
+        "status": "done",
+        "detail": "5/5 suites re-run by the orchestrator in the merged tree; hook exercised board-less and boarded; pre-push clean. INCOMPLETE IN HINDSIGHT: lane A's SHALL (no repo-root .venv/ path in hooks/ or skills/) was not actually met when this gate passed \u2014 29 survived, found later by ship-check and closed in wave 3. No `issues` status: findings need taskman ids, unavailable in a board-less repo."
+      },
+      "lanes": [
+        {
+          "lane": "A",
+          "brief": "01-reference-honesty.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "A",
+              "title": "every shipped instruction names something that exists",
+              "status": "done"
+            }
+          ],
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-31T23:26:21Z",
+              "detail": "isolation: worktree",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "tools": [
+                {
+                  "name": "hooks/tests/test_session_start_marker.py (16 checks)",
+                  "status": "done"
+                },
+                {
+                  "name": "githooks/pre-push",
+                  "status": "done"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "test_session_start_marker.py (new)",
+                  "path": "hooks/tests/test_session_start_marker.py"
+                },
+                {
+                  "label": "session-start-marker.py",
+                  "path": "hooks/session-start-marker.py"
+                },
+                {
+                  "label": "githooks/pre-push",
+                  "path": "githooks/pre-push"
+                }
+              ],
+              "ended": "2026-08-31T23:39:19Z",
+              "tokens": 97030
+            }
+          ],
+          "started": "2026-08-31T23:26:05Z",
+          "ended": "2026-08-31T23:39:19Z",
+          "tokens": 97030,
+          "artifacts": [
+            {
+              "label": "test_session_start_marker.py (new)",
+              "path": "hooks/tests/test_session_start_marker.py"
+            },
+            {
+              "label": "session-start-marker.py",
+              "path": "hooks/session-start-marker.py"
+            },
+            {
+              "label": "githooks/pre-push",
+              "path": "githooks/pre-push"
+            },
+            {
+              "label": "wrap-up SKILL.md",
+              "path": "skills/wrap-up/SKILL.md"
+            },
+            {
+              "label": "mow SKILL.md",
+              "path": "skills/mow/SKILL.md"
+            },
+            {
+              "label": "checkpoint SKILL.md",
+              "path": "skills/checkpoint/SKILL.md"
+            }
+          ]
+        },
+        {
+          "lane": "B",
+          "brief": "02-copy-drift-diagnosis.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "B",
+              "title": "a stale copy says it is stale",
+              "status": "done"
+            }
+          ],
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-08-31T23:26:31Z",
+              "detail": "isolation: worktree",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "tools": [
+                {
+                  "name": "bin/tests/test_ai_sync_status.py (14 checks)",
+                  "status": "done"
+                },
+                {
+                  "name": "bin/tests/test_ai_sync_commit.py (13 checks)",
+                  "status": "done"
+                }
+              ],
+              "artifacts": [
+                {
+                  "label": "bin/ai-sync",
+                  "path": "bin/ai-sync"
+                },
+                {
+                  "label": "test_ai_sync_status.py",
+                  "path": "bin/tests/test_ai_sync_status.py"
+                }
+              ],
+              "ended": "2026-08-31T23:33:33Z",
+              "tokens": 77396
+            }
+          ],
+          "started": "2026-08-31T23:26:05Z",
+          "ended": "2026-08-31T23:33:33Z",
+          "tokens": 77396
+        },
+        {
+          "lane": "C",
+          "brief": "03-tree-hygiene.md",
+          "role": "shell",
+          "afk": false,
+          "status": "done",
+          "todos": [
+            {
+              "id": "C",
+              "title": "worktrees gitignored; orphaned report committed",
+              "status": "done"
+            }
+          ],
+          "agents": [],
+          "started": "2026-08-31T23:26:05Z",
+          "ended": "2026-08-31T23:28:02Z",
+          "artifacts": [
+            {
+              "label": ".gitignore",
+              "path": ".gitignore"
+            },
+            {
+              "label": "2026-08-21 session report (committed)",
+              "path": "docs/session-reports/2026-08-21-1913-work-pc-readiness-mow-go-and-harness-fixes.md"
+            }
+          ]
+        }
+      ],
+      "tokens": 174426
+    },
+    {
+      "wave": 2,
+      "status": "done",
+      "parallelism": "sequential",
+      "started": "2026-08-31T23:39:19Z",
+      "ended": "2026-08-31T23:40:48Z",
+      "gate": {
+        "status": "done",
+        "detail": "scrub gate + full pre-push clean; anchors resolve; README and agent guide untouched"
+      },
+      "lanes": [
+        {
+          "lane": "Z",
+          "brief": "04-board-posture.md",
+          "role": "code-edit",
+          "afk": false,
+          "status": "done",
+          "after": [
+            "A",
+            "B",
+            "C"
+          ],
+          "todos": [
+            {
+              "id": "Z",
+              "title": "board-less reads as a decision",
+              "status": "done"
+            }
+          ],
+          "agents": [],
+          "started": "2026-08-31T23:39:19Z",
+          "ended": "2026-08-31T23:40:48Z",
+          "artifacts": [
+            {
+              "label": "HOW-TO-USE.human.md \u00a76 + Appendix A",
+              "path": "HOW-TO-USE.human.md"
+            }
+          ]
+        }
+      ],
+      "detail": "after wave 1, foreground"
+    },
+    {
+      "wave": 3,
+      "status": "done",
+      "parallelism": "sequential",
+      "started": "2026-08-31T23:40:48Z",
+      "ended": "2026-08-31T23:53:30Z",
+      "gate": {
+        "status": "done",
+        "detail": "ship-check Critical re-verified closed; durable check added and proven to fire; full pre-push clean Tracker reconcile run by a fresh general-purpose agent (not a lane agent, so no lane row): 11 discrepancies, all real, all applied."
+      },
+      "lanes": [
+        {
+          "lane": "Z2",
+          "brief": "05-invocation-truth.md",
+          "role": "code-edit",
+          "afk": false,
+          "status": "done",
+          "started": "2026-08-31T23:49:07Z",
+          "ended": "2026-08-31T23:53:30Z",
+          "after": [
+            "Z"
+          ],
+          "todos": [
+            {
+              "id": "Z2",
+              "title": "one way to invoke taskman, true in every repo",
+              "status": "done"
+            }
+          ],
+          "agents": [],
+          "artifacts": [
+            {
+              "label": "\u00a76 bootstrap rewritten",
+              "path": "HOW-TO-USE.human.md"
+            },
+            {
+              "label": "20 venv prefixes removed",
+              "path": "skills/wrap-up/SKILL.md"
+            },
+            {
+              "label": "7 venv prefixes removed",
+              "path": "skills/grill-with-docs/SKILL.md"
+            },
+            {
+              "label": "2 venv prefixes removed",
+              "path": "skills/bs/SKILL.md"
+            },
+            {
+              "label": "durable dead-path check",
+              "path": "bin/tests/test_repo_shape.py"
+            }
+          ],
+          "detail": "start derived from the first plan.md write, not measured; the span between the wave start and here is the ship-check gate that created this wave"
+        }
+      ],
+      "detail": "foreground; wave added mid-run by the ship-check gate"
+    }
+  ],
+  "ended": "2026-08-31T23:53:04Z"
+}

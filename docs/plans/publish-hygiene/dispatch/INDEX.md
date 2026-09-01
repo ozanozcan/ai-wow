@@ -86,6 +86,8 @@ recorded independently.
 (owned here by lane Z) is the most likely genuine collision, since the storage stem may want §6's
 bootstrap steps. Sequential execution is safe; **parallel go is not, until that is checked.**
 
+**Action report:** [`../action-report.md`](../action-report.md)
+
 **Grill checkpoint:** done 2026-09-01
 **Grill write-back:** plan.md ✓ (4 answers in `## Decisions locked`) · briefs: 01-reference-honesty,
 02-copy-drift-diagnosis, 03-tree-hygiene, 04-board-posture · INDEX lanes A + C `Files owned`
