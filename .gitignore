@@ -6,6 +6,15 @@ local.config.json
 # every parallel run. Scoped to worktrees/ rather than .claude/ so real config in
 # that directory stays visible to git.
 .claude/worktrees/
+
+# mow's board is served from docs/plans/ and copied fresh from the skill on every
+# `/mow go`, so these two are generated, never authored. Anchored with a leading
+# slash on purpose: an unanchored `tracker.html` would also swallow
+# skills/mow/tracker.html — the source template every board is copied from — and
+# the per-run dispatch/tracker.html files older runs still track.
+# dispatch/tracker.json is deliberately NOT here: that one is the run's record.
+/docs/plans/tracker.html
+/docs/plans/.board
 .DS_Store
 __pycache__/
 *.pyc
