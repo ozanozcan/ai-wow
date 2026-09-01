@@ -162,6 +162,16 @@ def main():
                if m._is_managed(m._porcelain_path(ln), mp) != want]
         check("porcelain lines classify correctly (globalize.md != global/)", bad, [])
 
+        # managed_paths() is compared against `git status --porcelain`, which is
+        # forward-slash everywhere. A native-separator entry therefore only ever
+        # fails on Windows, where it silently demoted global/CLAUDE.md to
+        # "unmanaged" and left it uncommitted. The first check keeps the second
+        # honest: with no nested entry left, it would pass vacuously.
+        check("a nested managed entry exists to get wrong",
+              [x for x in mp if "/" in x] != [], True)
+        check("managed_paths is git-style, never native separators",
+              [x for x in mp if "\\" in x], [])
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failure(s): " + ", ".join(FAILURES[:4]))

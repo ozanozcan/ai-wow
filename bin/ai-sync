@@ -846,7 +846,11 @@ def managed_paths() -> list[str]:
     """
     owned = set(LINK_DIRS.values()) | set(LINK_FILES.values())
     owned |= {REPO / "skills", REPO / "skills.lock.json"}
-    return sorted(str(p.relative_to(REPO)) for p in owned if p.exists())
+    # as_posix(), not str(): these are compared against `git status --porcelain`
+    # output, which is forward-slash on every platform. str() yields a native
+    # separator, so on Windows the one nested entry (global/CLAUDE.md) never
+    # matched and ai-sync left it uncommitted as "unmanaged".
+    return sorted(p.relative_to(REPO).as_posix() for p in owned if p.exists())
 
 
 def _porcelain_path(line: str) -> str:

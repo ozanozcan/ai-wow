@@ -26,6 +26,7 @@ import shutil
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -79,6 +80,40 @@ def serve(cwd, port, root="docs/plans"):
     raise SystemExit(f"server for {cwd} never came up on {port}")
 
 
+def stop_servers():
+    """Terminate every server started so far, and wait for it to actually exit."""
+    for proc in SERVERS:
+        proc.terminate()
+    for proc in SERVERS:
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+    # Windows cannot remove a directory a live process holds open, so the wait
+    # above is the whole point of draining here. Prove it happened rather than
+    # trusting terminate() to have been enough.
+    check("every server exited before its sandbox was removed",
+          [proc.pid for proc in SERVERS if proc.poll() is None], [])
+    SERVERS.clear()
+
+
+@contextmanager
+def sandbox():
+    """A temp dir whose servers are stopped *before* the dir is removed.
+
+    Every server here runs with its cwd inside the sandbox. Windows refuses to
+    delete a directory a live process holds open, so draining the servers in
+    main()'s finally — after each `with` had already exited — raised
+    PermissionError [WinError 32] and failed the whole file on that runner.
+    POSIX unlinks an open directory happily, which is why it went unseen.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            yield tmp
+        finally:
+            stop_servers()
+
+
 def test_one_port_per_repo():
     """One repo, one board, one bookmark — and never two repos on one page."""
     repo_a, repo_b = "/srv/project-a", "/srv/project-b"
@@ -98,7 +133,7 @@ def test_one_port_per_repo():
 
 def test_another_repos_board_is_stepped_over_and_survives():
     """The hard requirement: a peer project's board is never taken, never killed."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine, peer = free_repo(tmp, "mine"), free_repo(tmp, "peer")
         make_repo(mine, "a-run")
         make_repo(peer, "other-run")
@@ -123,7 +158,7 @@ def test_another_repos_board_is_stepped_over_and_survives():
 
 def test_my_own_board_is_reused_not_restarted():
     """Two `/mow go` runs in one repo share the board — the second reuses it."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine = free_repo(tmp, "mine")
         make_repo(mine, "first-run", "second-run")
         tracker_port.mark(mine)
@@ -141,7 +176,7 @@ def test_a_single_runs_dispatch_server_is_not_adopted():
     """A per-run server (the pre-refactor shape, and still live on this machine
     while an old run finishes) serves tracker.json and no marker — the repo
     board must step over it rather than adopt it as its own page."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine = free_repo(tmp, "mine")
         make_repo(mine, "a-run")
         tracker_port.mark(mine)
@@ -159,7 +194,7 @@ def test_a_single_runs_dispatch_server_is_not_adopted():
 def test_cli_serve_writes_the_marker():
     """`serve` promises the next server can be identified — so it writes first."""
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tracker_port.py")
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine = free_repo(tmp, "mine")
         make_repo(mine, "a-run")
         out = subprocess.run([sys.executable, script], cwd=mine,
@@ -177,7 +212,7 @@ def test_cli_owned_is_empty_and_nonzero_for_another_repos_board():
     """The `head` trap, pinned: `lsof … | head` exits 0 on empty input, so an
     absent board read as a healthy one. `--owned` must say nothing and fail."""
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tracker_port.py")
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine, peer = free_repo(tmp, "mine"), free_repo(tmp, "peer")
         make_repo(mine, "a-run")
         make_repo(peer, "other-run")
@@ -206,7 +241,7 @@ def test_kill_pattern_matches_only_this_repos_board():
     if pgrep is None:
         print("  (skipped kill-pattern check: pgrep not on PATH)")
         return
-    with tempfile.TemporaryDirectory() as tmp:
+    with sandbox() as tmp:
         mine, peer = free_repo(tmp, "mine"), free_repo(tmp, "peer")
         make_repo(mine, "a-run")
         make_repo(peer, "other-run")
@@ -240,13 +275,7 @@ def main():
         test_cli_owned_is_empty_and_nonzero_for_another_repos_board()
         test_kill_pattern_matches_only_this_repos_board()
     finally:
-        for proc in SERVERS:
-            proc.terminate()
-        for proc in SERVERS:
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
+        stop_servers()  # backstop: each sandbox() already drained its own
     if FAILURES:
         print(f"FAIL ({len(FAILURES)})")
         for f in FAILURES:
