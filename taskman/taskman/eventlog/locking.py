@@ -14,6 +14,12 @@ within a single default `exclusive()` call rather than wedging the board.
 The holder keeps the fd open for the whole hold. POSIX ignores that, but on
 Windows it makes a live holder's lock unbreakable (rename fails while a
 handle is open), which turns the stale-break race into a POSIX-only concern.
+
+Windows also reports contention two ways, not one: a lock that still exists
+raises FileExistsError, but a lock the last holder just unlinked keeps its
+name until the handle closes, and opening a delete-pending name raises
+PermissionError. Both mean "held, try again"; treating only the first as
+contention is what made concurrent creates crash on CI.
 """
 
 import os
@@ -41,7 +47,17 @@ def exclusive(lock_path: Path, *, timeout: float = TIMEOUT,
         try:
             fd = os.open(lock_path, flags)
             break
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
+            # PermissionError is the *Windows* form of "already held". When a
+            # holder unlinks the lock, Windows reserves the name until every
+            # handle closes; CreateFile on a delete-pending name returns
+            # ERROR_ACCESS_DENIED -> PermissionError, never FileExistsError.
+            # Catching only the latter let it escape the retry loop and kill the
+            # caller — 50 of 100 concurrent creates died that way on CI, while
+            # POSIX (which unlinks immediately) never reproduced it once in 150
+            # contested rounds. A genuinely unwritable directory now ends in
+            # LockTimeout instead of PermissionError: a worse message, but a
+            # correct outcome, and the alternative is a real lock that crashes.
             _break_if_stale(lock_path, stale_after)
             if time.monotonic() >= deadline:
                 raise LockTimeout(f"could not acquire {lock_path} within {timeout}s")
