@@ -38,7 +38,10 @@ work PC tonight"* — and turned into a publish-readiness pass plus a full mow r
 
 ## Files changed
 
-Eight commits, `f866c1f..57b310c`.
+`f866c1f..HEAD` carries **23 commits**, spanning this session *and* the sibling `taskman-no-db`
+stem that ran in the same checkout — one branch, two sessions, so the range is not separable by
+range alone. This session's are the `publish-hygiene` wave commits, the scrub, the bootstrap, the
+README correction, and the gitignore/untracking pass.
 
 | Area | What |
 |---|---|
@@ -53,7 +56,13 @@ Eight commits, `f866c1f..57b310c`.
 
 ## Wrap-up gate
 
-**Not run — blocked, deliberately.** Two of three conditions red: the evidence gate exits 2 (the
+**Ran at close, exit 2 — board-less path.** `taskman wrapup gate` reports
+`no .taskman.toml above cwd` and exits 2, which the skill's table defines as "no session marker".
+Neither condition applies; it is the misdiagnosis recorded in Open threads. With no root
+`.taskman.toml`, wrap-up takes its documented board-less route: **lessons + session report only**,
+no board sync, no retroactive sweep, no forward capture — there is no board to write to.
+
+**Earlier in the session it was also blocked, deliberately.** Two of three conditions red: the evidence gate exits 2 (the
 misdiagnosis recorded below, not real unattributed work), and this session is **not the sole
 writer** — a second session worked the same checkout all day and `work-pc-readiness/action-report.md`
 still holds its uncommitted lines. Attributing files this session does not own is exactly what that
@@ -61,7 +70,7 @@ condition prevents. Operator runs `/wrap-up`.
 
 ## Taskman sync
 
-**n/a** — no root `.taskman.toml`. Made an explicit, documented decision this session rather than
+**n/a — no board exists to sync to.** No root `.taskman.toml`. Made an explicit, documented decision this session rather than
 left as an absence.
 
 ## Lessons
@@ -101,6 +110,26 @@ dead-path check, and the hook's marker guard. The dead-path check found a file m
 missed on its first run, and flagged a false positive on its second, which is how it got scoped
 correctly. (L33)
 
+### Routed this pass
+
+Two new rules logged and **routed the same pass** into `global/CLAUDE.md` on the path the runtime
+loads (`~/.claude/CLAUDE.md` → the dotfiles checkout), ledger row and routed edit committed together
+in `217b6ce`:
+
+- **L45 → `claude-md`** — `git commit -- <paths>` reads the working tree and ignores the index, so it
+  discards a staged deletion and re-commits the file. Written in *beside* the command it caveats, in
+  the Shared checkouts section, rather than in a separate list — anyone reaching for that command
+  needs the caveat in the same breath.
+- **L46 → `claude-md`** — running a procedure against the one input where its defect cannot appear is
+  not verification. Names the shape shared by five separate misses this session.
+
+**Deliberately not logged:** the grep-counted-a-comment miss and the exit-code-through-a-pipe miss
+are recurrences of **L40** and **L18**, both already routed into `global/CLAUDE.md` and therefore
+already loading. The retired `seen ×3` gate is what bumping used to feed; with routing on first
+sighting, a recurrence of a loaded rule needs no row. Recorded here instead.
+
+No `BACKLOG` or `PRUNE` signal from the ledger.
+
 ## Decisions
 
 - **`docs/` is scrubbed and gated.** The prior standing decision — that scrubbing would falsify the
@@ -139,6 +168,37 @@ correctly. (L33)
    `tracker.html`, `.board`. Same class as `.claude/worktrees/`, which was gitignored this session.
 8. **`skills/mow/TRACKER.md` still names a reviewer this repo does not ship**, in a worked example.
    Reads as illustration rather than a roster claim.
+
+## Post-report — same session, operator-directed
+
+Five more things landed after the report above was first written, at the operator's direction.
+
+- **The README was wrong about `ai-sync`.** Its `[!WARNING]` told every reader the tool commits with
+  `git add -A`; `bin/ai-sync:865` says *"Path-scoped, never `git add -A`"* in its own comment, and
+  `do_commit()` stages and commits by name. Stale since `ac7abe9`. The false half was the frightening
+  half, on the most-read section of a repo about to go public. Corrected in `57b310c`; the accurate
+  half (pushes without prompting, `{"push": false}` disables) was re-checked against the code and kept.
+- **The stray screenshot was not what I said it was.** I twice reported it "checked clean of leak
+  strings" — a text grep over a PNG, which establishes nothing. Looking at it showed another project's
+  feature and task ids, source filenames, review findings in prose, and a personal browser tab. Never
+  tracked, absent from all history, moved to the Trash. **The scrub gate cannot read binaries**, so it
+  was never a backstop here.
+- **Generated board files gitignored** — `docs/plans/tracker.html` and `.board`, anchored with a
+  leading slash so the pattern could not swallow `skills/mow/tracker.html`, the template every board
+  is copied from.
+- **Run-state trails untracked** — `**/dispatch/.activity` and `**/dispatch/.agent-times.json`, after
+  two mechanical errors worth keeping: a gitignore pattern containing a slash is anchored to the repo
+  root and never matched the nested paths, and `git commit -- <paths>` re-committed the files it was
+  meant to remove (L45). Cost recorded rather than discovered later: an archived run rendered from a
+  fresh clone now falls back to wall clock for active time.
+- **Push access verified before going public** — personal repo, not an org, not a fork; exactly one
+  collaborator with write (the owner); no deploy keys; the new CI workflow's token is
+  `contents: read` and it triggers on `pull_request`, not `pull_request_target`. Public grants read,
+  never write.
+
+**Observed, not acted on:** two sessions sharing one checkout means either one's push publishes the
+other's commits. It happened in both directions this session — this session's push carried three of
+the sibling stem's commits, and the sibling's later push carried five of this one's.
 
 ## Next steps
 
