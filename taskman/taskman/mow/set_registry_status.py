@@ -5,11 +5,20 @@ Fixes the recurring failure mode where /mow go writes the action report but
 the operator forgets to hand-edit the registry row, leaving /mow list showing
 a shipped run as still planned/running.
 
+Flipping to `shipped` runs the close-out gate first (taskman.mow.closeout): the
+ship-check verdict, the action report, and the tracker board. Those were all prose
+in the mow skill — "required", "do not skip" — with nothing reading them back. This
+is the chokepoint every flip already goes through, so it is where the requirements
+become enforceable. There is no --force: the sanctioned escapes are a waiver entry
+in the action report and a `*None — <reason>*` section, both of which stay auditable,
+and the documented last resort is hand-editing the registry row.
+
 Usage:
   python -m taskman.mow.set_registry_status <stem> <planned|running|shipped|paused>
   python -m taskman.mow.set_registry_status <stem> shipped --index docs/plans/INDEX.md
 
 Exit 0 = row updated. Exit 1 = stem row not found. Exit 2 = bad usage.
+Exit 3 = close-out gate refused the `shipped` flip.
 """
 
 from __future__ import annotations
@@ -53,6 +62,22 @@ def main(argv: list[str] | None = None) -> int:
     if not index_path.is_file():
         print(f"not found: {index_path}", file=sys.stderr)
         return 2
+
+    if args.status == "shipped":
+        from taskman.mow.closeout import run_closeout
+
+        stem_dir = index_path.parent / args.stem
+        gate_errors, gate_warnings = run_closeout(stem_dir)
+        for w in gate_warnings:
+            print(f"  ! {w}", file=sys.stderr)
+        if gate_errors:
+            print(
+                f"refusing to flip '{args.stem}' to shipped — close-out gate FAILED:",
+                file=sys.stderr,
+            )
+            for e in gate_errors:
+                print(f"  - {e}", file=sys.stderr)
+            return 3
 
     today = datetime.date.today().isoformat()
     if set_status(index_path, args.stem, args.status, today):

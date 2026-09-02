@@ -18,6 +18,10 @@ mow-hydrate-specs = "taskman.mow.hydrate_specs:main"
 mow-plan-import = "taskman.mow.plan_import:main"
 mow-check-grill-writeback = "taskman.mow.check_grill_writeback:main"
 mow-set-registry-status = "taskman.mow.set_registry_status:main"
+mow-check-ship-check = "taskman.mow.check_ship_check:main"
+mow-check-action-report = "taskman.mow.check_action_report:main"
+mow-check-tracker = "taskman.mow.check_tracker:main"
+mow-closeout = "taskman.mow.closeout:main"
 wrapup-reconcile = "taskman.mow.wrapup_reconcile:main"
 
 [dependency-groups]
