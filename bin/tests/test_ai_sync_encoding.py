@@ -12,11 +12,19 @@ anyway, so the defect was invisible on the machine this tool was written on.
 On Windows it is cp1252: most bytes decode to the wrong character with no
 error at all, and a character cp1252 cannot encode raises on the way out.
 
-`bin/tests/test_repo_shape.py` had the identical defect fixed at six call
-sites on 2026-09-01, found by running the Windows CI matrix for the first
-time. The same fix was owed here and had been carried as an open thread since
-— `bin/ai-sync` line 618 reads arbitrary source files during a sync, so this
-one stays latent until a synced file carries a non-ASCII byte.
+The published tree fixed the identical defect at six call sites in its
+`test_repo_shape.py` on 2026-09-01, found by running the Windows CI matrix
+for the first time. The same fix was owed in `bin/ai-sync` itself, in both
+trees, and had been carried as an open thread since: the managed-doc render
+reads `docs/workflow/` core files during a sync, and every one of those
+carries non-ASCII bytes, so it is not a hypothetical.
+
+**This file is shared between the two harness trees and classified `match` in
+`bin/tests/tree-drift.json` — the copies must stay byte-identical.** It is
+written to depend only on what both trees have: `REPO`, `local_config`,
+`load_json`, `write_json`, `render_managed_doc`, and a `docs/workflow/`
+core doc. Nothing here hardcodes a call-site count or a line number, so it
+keeps working as either tree's `ai-sync` grows.
 
 Two layers, because neither alone is worth much:
 
