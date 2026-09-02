@@ -72,7 +72,7 @@ LOCAL_CONFIG = REPO / "local.config.json"
 
 def local_config() -> dict:
     try:
-        return json.loads(LOCAL_CONFIG.read_text())
+        return json.loads(LOCAL_CONFIG.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -124,7 +124,7 @@ def backup(path: Path) -> None:
         dest = backup_dir() / f"{path.name}.{i}"
         i += 1
     if path.is_symlink():
-        dest.write_text(f"symlink -> {os.readlink(path)}\n")
+        dest.write_text(f"symlink -> {os.readlink(path)}\n", encoding="utf-8")
     elif path.is_dir():
         shutil.copytree(path, dest)
     else:
@@ -437,14 +437,14 @@ def reconcile_skills() -> None:
 
 def load_json(path: Path, default):
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return default
 
 
 def write_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def hook_defs() -> list[dict]:
@@ -615,11 +615,11 @@ def do_render_copilot_workspace() -> None:
         prompts_dir = repo / ".github" / "prompts"
         for src in sorted(REPO.glob("commands/*.md")):
             dest = prompts_dir / f"{src.stem}.prompt.md"
-            text = src.read_text()
-            if dest.is_file() and dest.read_text() == text:
+            text = src.read_text(encoding="utf-8")
+            if dest.is_file() and dest.read_text(encoding="utf-8") == text:
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(text)
+            dest.write_text(text, encoding="utf-8")
             log(f"  rendered {dest}")
         if workspace_hooks.get("hooks"):
             hooks_path = repo / ".github" / "hooks" / "ai-wow.json"
@@ -743,7 +743,7 @@ def _repo_slug(repo: Path) -> str | None:
     toml = repo / ".taskman.toml"
     if not toml.is_file():
         return None
-    m = re.search(r'(?m)^slug\s*=\s*"([^"]+)"', toml.read_text())
+    m = re.search(r'(?m)^slug\s*=\s*"([^"]+)"', toml.read_text(encoding="utf-8"))
     return m.group(1) if m else None
 
 
@@ -765,9 +765,9 @@ def render_managed_doc(repo: Path, doc: str) -> str | None:
     front_path = (WORKFLOW_FRONTS_DIR / slug / doc) if slug else None
     front_text = ""
     if front_path and front_path.is_file():
-        front_text = front_path.read_text()
+        front_text = front_path.read_text(encoding="utf-8")
     header = _managed_header(doc, slug, front_path if front_text else None)
-    body = core_path.read_text()
+    body = core_path.read_text(encoding="utf-8")
     parts = [header.rstrip("\n")]
     if front_text:
         parts.append(front_text.rstrip("\n"))
@@ -790,9 +790,9 @@ def do_render_managed_docs() -> None:
                 continue
             dest = managed_doc_path(repo, doc)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.is_file() and dest.read_text() == rendered:
+            if dest.is_file() and dest.read_text(encoding="utf-8") == rendered:
                 continue
-            dest.write_text(rendered)
+            dest.write_text(rendered, encoding="utf-8")
             log(f"  rendered {dest}")
 
 
@@ -810,7 +810,7 @@ def find_managed_doc_drift() -> list[str]:
             if not dest.is_file():
                 violations.append(f"{dest}: missing managed copy (expected render of {doc})")
                 continue
-            if dest.read_text() != rendered:
+            if dest.read_text(encoding="utf-8") != rendered:
                 violations.append(f"{dest}: managed-doc drift (body/front/header != current render)")
     return violations
 

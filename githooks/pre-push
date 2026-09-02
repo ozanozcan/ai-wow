@@ -21,6 +21,7 @@ python3 hooks/tests/test_redact_private.py >/dev/null
 python3 hooks/tests/test_peer_session_notice.py >/dev/null
 python3 bin/tests/test_ai_sync_status.py >/dev/null
 python3 bin/tests/test_ai_sync_commit.py >/dev/null
+python3 bin/tests/test_ai_sync_encoding.py >/dev/null
 python3 skills/mow/tests/test_board_table.py  >/dev/null
 python3 skills/mow/tests/test_tracker_port.py >/dev/null
 python3 bin/tests/test_repo_shape.py        # scrub output is worth seeing
