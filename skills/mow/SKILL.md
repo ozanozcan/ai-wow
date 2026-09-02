@@ -12,7 +12,7 @@ One skill, four modes, for the moment a `grill-with-docs` + plan-mode session en
 | `/mow` or `/mow plan` | **plan** (default) | Run **in the originating chat**, while the decisions are still live. Cheap on context. Writes briefs + index to disk, then **prints the operator summary** (what we'll do / what you'll have) **and** the orchestration map (waves, lanes, AFK, roles). |
 | `/mow list` | **list** | Registry + **operator summary** + **full orchestration map** (waves + lanes) for every non-`shipped` run + parallel-safe matrix. Never one-line teasers only. Read-only. |
 | `/mow ready` / `/mow ready <stem>` | **ready** | Pre-go preview + **grill-with-docs checkpoint** (catch ambiguities before fan-out). Prints operator summary + orchestration map, then stress-tests the plan one question at a time unless skipped. |
-| `/mow go` | **go** | Run from **any** chat. Reads the index, fires subagents / emits paste-ready prompts. Restates the orchestration map before fan-out; **ends with P3 + ship-check gate + human-readable done summary**. |
+| `/mow go` | **go** | Run from **any** chat. Reads the index, fires subagents / emits paste-ready prompts. Restates the orchestration map before fan-out; **ends with P3 + close-out gate + human-readable done summary**. |
 
 **Parse the user's message** (first matching wins):
 1. contains `go` or legacy `dispatch` → **go**
@@ -39,7 +39,7 @@ These are **mandatory** when the repo has the named skill/agent. Skip only with 
 | **go** lane Verification (new/changed logic) | `test-coverage` on modified modules | lane (thin → expand) |
 | **go** lane Verification (pure math / domain logic) | `adversarial-tester` on named modules | lane when scope matches; else P3 batch |
 | **go** §1 + every run event | **live tracker** — copy `tracker.html` to `docs/plans/` (one board per repo), maintain `dispatch/tracker.json` per the write-points table in [`TRACKER.md`](TRACKER.md) (same folder as this skill) | orchestrator |
-| **go** Integrate (after final wave) | P3 post-build (`/verify`, `test-coverage`, adversarial batch) then **`ship-check` as auto-gate** before `Status: shipped` | orchestrator |
+| **go** Integrate (after final wave) | P3 post-build (`/verify`, `test-coverage`, adversarial batch), then **`ship-check`** — and the **close-out gate** (`taskman.mow.closeout`: ship-check verdict + action report + tracker) refuses the `Status: shipped` flip with exit 3 if any of it is missing | orchestrator |
 | **go** Integrate (architecture-heavy / Wave 2+) | `improve-codebase-architecture` quick scan — **deferred by default** unless plan tags `refactor` or operator asks | orchestrator (optional) |
 
 Pass each brief's `## Toolkit` into the lane prompt so tdd-builder reaches for these mid-build rather than only mentioning them afterward.
@@ -443,7 +443,7 @@ Confirm: no two same-wave lanes share a file. <list any risk>
 Read-only registry + **full** pre-go preview for every active run. Never collapse an active stem to a one-line wave teaser.
 
 1. Print `docs/plans/INDEX.md`. Sort rows: `running` first, then `planned`, then `paused`, then `shipped`. Highlight non-`shipped` rows.
-2. **Registry drift self-heal (the one disk write this mode makes):** for each `planned`|`running` row, check whether `docs/plans/<stem>/action-report.md` exists. If it does, the run finished but the go-Integrate registry flip was missed — a recurring failure mode. Auto-correct it: run `python scripts/mow_set_registry_status.py <stem> shipped` if the repo has the script (else hand-edit the row), tell the user in one line ("auto-corrected registry drift: `<stem>` had a completed action report but was still `<old status>` — set to `shipped`"), and treat it as `shipped` for the rest of this listing (skip printing its full map as an active stem).
+2. **Registry drift self-heal (the one disk write this mode makes):** for each `planned`|`running` row, check whether `docs/plans/<stem>/action-report.md` exists. If it does, the run finished but the go-Integrate registry flip was missed — a recurring failure mode. Auto-correct it: run `python scripts/mow_set_registry_status.py <stem> shipped` if the repo has the script (else hand-edit the row), tell the user in one line ("auto-corrected registry drift: `<stem>` had a completed action report but was still `<old status>` — set to `shipped`"), and treat it as `shipped` for the rest of this listing (skip printing its full map as an active stem). **If the flip exits 3, do not hand-edit the row instead** — the close-out gate found that run unfinished (no ship-check verdict, a skeletal report, a tracker still `running`), which is a finding, not drift. Report what the gate printed, one line per error, and leave the row where it is.
 3. For **each** remaining `planned`|`running`|`paused` stem (in that sort order): print the **Operator summary** (from `plan.md` or `dispatch/INDEX.md`) then the full **Orchestration map** (Waves table + Lanes table + How to run). Include dispatch path and registry status. If only one active stem exists, still print summary + map — that *is* the preview; do not skip lanes. If the on-disk summary is missing, regenerate it from the plan body before printing (do not invent scope).
 4. **Parallel-safe matrix (active runs only):** for every pair of active stems, run the cross-plan overlap check. Print pairs that are **parallel-safe** (disjoint files) vs **blocked** (list conflicting paths). Example: `plan-a ‖ plan-b ✓` · `plan-a ✕ plan-c (taskman/cli.py)`. Skip the matrix when fewer than two active stems.
 5. Offer next step: `/mow ready <stem>` to re-focus one map · `/mow go <stem>` to fan out. If exactly one active stem, offer `/mow go` (stem optional). Otherwise, change nothing on disk.
@@ -712,7 +712,25 @@ When lanes return: read each summary, check for cross-lane file conflicts, run t
 
 After the final build wave, run the repo's post-build testing protocol if defined (`docs/agents/protocols.md` P3 — e.g. `/verify` on the affected flow, `/test-coverage` on new modules, adversarial batch on math/domain modules) **before** ship-check and the action report. Record each P3 step in the action report Verify section (or an explicit n/a with reason).
 
-**Ship-check gate (required):** invoke the `ship-check` skill against this stem's `plan.md` + shipped diff. Do **not** set registry `Status: shipped` until ship-check has run and Critical Layer-1 (spec) misses are either fixed or explicitly deferred by the operator. Paste the ship-check summary into the action report (or link a capture). Architecture deepening (`improve-codebase-architecture`) is **not** part of this gate by default — queue it post-ship when the plan tagged `refactor` or the operator asks (Wave 2+).
+**Ship-check gate (required — enforced):** invoke the `ship-check` skill against this stem's `plan.md` + shipped diff. Paste the ship-check summary into the action report (or link a capture), and record the verdict as a **machine-readable marker line** in that report's Verify section — `set_registry_status <stem> shipped` reads it back and **refuses the flip (exit 3)** without it, so this is no longer a step you can forget:
+
+```bash
+python -m taskman.mow.check_ship_check docs/plans/<stem> --emit --l1 0 --l2 1 --l3 0
+```
+
+That prints (append it under `## Verify`, alongside the prose summary):
+
+```markdown
+**Ship-check:** done 2026-09-02 · plan sha256:1a2b3c4d · L1 0 critical · L2 1 critical · L3 0 critical
+```
+
+`--emit` will not run without the three counts — the verdict is the reviewer's, not the script's. The digest binds the verdict to the `plan.md` it reviewed: if a grill write-back patches the plan afterwards, the gate refuses and ship-check re-runs. Every Critical Layer-1 (spec) miss must be accounted for by a `;`-separated waiver entry with a real reason, which is what "explicitly deferred by the operator" now means mechanically:
+
+```markdown
+**Ship-check waivers:** L1 CSV export missing — deferred to stem `exports`, operator approved; L1 no audit log — fixed in-run, re-verified clean
+```
+
+There is deliberately no `--force`. If a run genuinely cannot produce a record, the documented last resort is the same as when the script is absent: hand-edit the registry row, which leaves a visible, deliberate diff rather than a silent bypass. Architecture deepening (`improve-codebase-architecture`) is **not** part of this gate by default — queue it post-ship when the plan tagged `refactor` or the operator asks (Wave 2+).
 
 When **all** lanes are **done** and ship-check has passed (or operator deferred Criticals in writing):
 
@@ -739,17 +757,29 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
    Add or update a line in `docs/plans/<stem>/dispatch/INDEX.md`:
    `**Action report:** [`../action-report.md`](../action-report.md)`
 
+   **These are checked, not just listed.** The close-out gate reads the report back: the four frontmatter fields, all five `##` sections **with bodies**, the `**Board sync:**` and P3 lines in `## Verify`, and the INDEX link above. A heading with nothing under it fails — write `*None — <reason>*` instead, exactly as the `plan.md` register sections do, so an empty section stays a claim somebody made rather than one nobody considered. Check it any time with:
+
+   ```bash
+   python -m taskman.mow.check_action_report docs/plans/<stem>
+   ```
+
    **Board sync (required when taskman present):** before the registry flip, run:
    ```bash
    python -m taskman plan mark-shipped docs/plans/<stem>/dispatch
    ```
    Skip with n/a only if the repo has no taskman. Moves Tasks linked by brief `source_ref` to `done` per action-report Outcome (or all dispatch `NN-*.md` brief tasks with stderr warning when no report).
 
-   **Flip the registry (required — same step, not a follow-up):** run `python scripts/mow_set_registry_status.py <stem> shipped` if the repo has the script — this is the recurring miss (action report written, registry row left `planned`/`running`, so `/mow list` shows a finished run as still active). Do not treat this as "then hand-edit the table later" — run the command now, in this same Integrate pass, right after board sync. Fall back to manually editing `docs/plans/INDEX.md`'s `Status`/`Updated` cells only if the script is absent from the repo.
+   **Tracker reconcile (required when a tracker ran) — run the script first:**
 
-   **Tracker reconcile (required when a tracker ran):** before closing it out, spawn one `general-purpose` subagent to audit the board against reality. It is deliberately a *fresh* reader: the orchestrator wrote `tracker.json` from memory and is blind to its own dropped writes. Brief it to read `dispatch/tracker.json` plus every lane's `## Verification` block, the gate verdicts, and the findings filed on the board, then report **only discrepancies** — lanes/agents left `running` that actually finished, missing or invented artifacts, findings without taskman ids, skills never reconciled, `tokens` the runtime reported but the board never got, **any agent missing `started`/`ended`** (the per-subagent duration beside its name comes from nothing else), wave `started`/`ended` gaps. It reports; it does not edit. Apply its list yourself, then close out. A clean report is a one-line "board matches".
+   ```bash
+   python -m taskman.mow.check_tracker docs/plans/<stem>
+   ```
 
-   **Tracker close-out:** set `tracker.json` → `run_status: shipped` **first** — that is what moves this run from `?runs=live` to `?runs=archive`, and what the count below reads — then finalize remaining statuses. The server is the *repo's*, not this run's: every other run in `docs/plans/` is on the same page, so **stop it only when no run is still `running`**. Match it by this repo's absolute plans path, never by port — every board serves a folder named `docs/plans`, so only the full path tells two projects' processes apart. Never a bare `pkill` (Git Bash has none):
+   It refuses (exit 1) on anything unambiguous: a wave, lane, todo or agent left `pending`/`running` at close-out, a wave with no gate or a gate that never ran, a lane marked `issues` with no `findings[]`, a finding with no taskman `task` id, a status outside the schema's five-word vocabulary. It *reports without blocking* on what `TRACKER.md` documents as optional — agents or waves missing `started`/`ended`, skills never reconciled — because gating on a field the schema says to omit rather than guess would be stricter than the format allows. Apply what it lists.
+
+   **Then spawn the `general-purpose` reconcile subagent for the half a script cannot see.** It is deliberately a *fresh* reader: the orchestrator wrote `tracker.json` from memory and is blind to its own dropped writes, and the script only knows the file's shape, never whether the file is true. Brief it to read `dispatch/tracker.json` against every lane's `## Verification` block, the gate verdicts, and the findings filed on the board, then report **only discrepancies of substance** — a lane the board calls `done` whose own Verification says otherwise, missing or invented artifacts, `tokens` the runtime reported but the board never got, a gate verdict that does not match what the reviewers actually returned. It reports; it does not edit. A clean report is a one-line "board matches".
+
+   **Tracker close-out (before the registry flip):** set `tracker.json` → `run_status: shipped` **first** — that is what moves this run from `?runs=live` to `?runs=archive`, and what the count below reads — then finalize remaining statuses. The server is the *repo's*, not this run's: every other run in `docs/plans/` is on the same page, so **stop it only when no run is still `running`**. Match it by this repo's absolute plans path, never by port — every board serves a folder named `docs/plans`, so only the full path tells two projects' processes apart. Never a bare `pkill` (Git Bash has none):
 
    ```bash
    # a fresh shell — §1's variables are long gone
@@ -783,6 +813,14 @@ PY
    ```
 
    A run abandoned while still `running` holds the board up for good; the page already says "board Nm behind" for it, and setting its `run_status` is the fix.
+
+   **Flip the registry (required — the last act of Integrate, not a follow-up):** run `python scripts/mow_set_registry_status.py <stem> shipped` if the repo has the script — this is the recurring miss (action report written, registry row left `planned`/`running`, so `/mow list` shows a finished run as still active). Do not treat this as "then hand-edit the table later" — run the command now, in this same Integrate pass.
+
+   **This flip is the close-out gate.** It runs `taskman.mow.closeout` before touching the row and **exits 3 without writing anything** if the run is not actually finished — no ship-check verdict (or one stale against `plan.md`, or with unaccounted Critical Layer-1 misses), an action report that is missing, skeletal or unlinked, a tracker still `running` or holding pending lanes and untracked findings, or findings on the board with no triage record in the report. Warnings print but never block. Fix what it names and flip again; **do not route around it by hand-editing the row**, which is the documented fallback only when the script is absent from the repo. Preflight refuses a run that is not fit to start; this refuses one that is not fit to be called finished.
+
+   **Why the flip moved to last.** It used to sit right after board sync, ahead of the tracker work — which meant the gate would have been asked to pass judgement on a tracker the workflow had not closed out yet. The order now matches what the gate asserts: report → board sync → tracker reconcile + `run_status: shipped` → registry flip.
+
+   Run the same checks standalone at any point with `python -m taskman.mow.closeout docs/plans/<stem>` (add `--json` for a machine-readable result, as preflight does).
 
 3. **Print the done summary (required — do not skip):** a short human-readable block matching the Operator summary shape, in past tense. Prefer rewriting from what actually shipped (lanes + review gate + verify), not only copying the forward-looking plan text.
 
@@ -831,7 +869,7 @@ Do **not** write to `docs/agents/agent-work-log.md` — plan action reports supe
 - **plan** is read-mostly + writes small files → run it even at high context; it's the cheap insurance against losing decisions. The cost of a thin brief is paid every later chat — refuse stubs.
 - **Operator summary** (what we'll do / what you'll have) is mandatory on **plan** and **ready** (and each active stem in **list**); **go** ends with the past-tense twin. Do not leave the operator with only wave tables.
 - **`/mow list`** = registry + **full** waves/lanes maps for every active stem + parallel-safe matrix. **`/mow ready <stem>`** = same map for one stem **plus grill-with-docs checkpoint**. Never teaser-only previews — the operator picks with eyes on lanes.
-- **Automation hooks** (grill → tdd → parallel-debug → imprint/coverage/adversarial → ship-check) are gates, not suggestions — see the table near the top of this skill.
+- **Automation hooks** (grill → tdd → parallel-debug → imprint/coverage/adversarial → ship-check) are gates, not suggestions — see the table near the top of this skill. Two of them are **scripts, not prose**: `taskman.mow.preflight` refuses fan-out, `taskman.mow.closeout` refuses the `shipped` flip. Everything between them is still judgement, which is the point — the scripts hold the accounting, not the verdict.
 - **Grill write-back:** `/mow ready` answers that stay only in chat are a failure mode — plan.md + briefs (+ taskman brief JSON) are what `/mow go` agents read. INDEX needs both `Grill checkpoint: done` and `Grill write-back:` before go.
 - **Refer to work by name, not a bare id.** In prose an operator reads — narration, plan bodies, brief context, action reports — first mention is `"Title" (#id)`, later mentions are the name alone. A wall of `#3074, #3075, #3076` is illegible six weeks later; names read at a glance. The id never disappears, it rides *inside* the first mention. Tables keyed by id (INDEX lanes, Decisions / Specs cells, registry rows) are exempt — that is what those columns are for.
 - **Decisions / Specs:** INDEX + brief headers carry **id pointers** only; materialize with `scripts/mow_hydrate_specs.py` → `dispatch/hydrated-specs.md` for subagents to **Read**. Prefer `d`/`req` over captures; tag only ids that change that lane’s Do/Don’t/Acceptance; never duplicate full decision prose into INDEX. Live taskman mid-lane is optional deepen only — not required.

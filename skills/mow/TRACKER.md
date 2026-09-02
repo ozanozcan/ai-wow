@@ -400,7 +400,7 @@ Field notes:
 | gate verdict | **post the chat board** after the write; clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |
 | fix lane spawned | append it like any agent; re-review updates gate again |
 | operator asks to toggle pulse | set `pulse: true` or `false` immediately (chat: "pulse off" / "pulse on") |
-| Integrate, before close-out | **reconcile** — a `general-purpose` subagent diffs this file against every lane's `## Verification`, the gate verdicts, and the filed findings, and reports discrepancies only (see go §3). Apply its list, then set `run_status: shipped`; **post the close-out table** (`board_table.py`) — the last board of the run, and the one the transcript keeps after the server is stopped |
+| Integrate, before close-out | **reconcile** — run `python -m taskman.mow.check_tracker docs/plans/<stem>` for the mechanical half (non-terminal statuses, missing gates, findings with no board row; `started`/`ended` gaps and unreconciled skills report without blocking), then a `general-purpose` subagent for the half it cannot see: this file against every lane's `## Verification`, the gate verdicts, and the filed findings, reporting discrepancies only (see go §3). Apply both lists, then set `run_status: shipped`; **post the close-out table** (`board_table.py`) — the last board of the run, and the one the transcript keeps after the server is stopped |
 
 **Never transcribe a rendered value back into the field that produced it (L14).** The tracker header
 renders UTC in the viewer's local zone; reading a time off the board and writing it back as a UTC

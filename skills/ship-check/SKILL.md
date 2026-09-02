@@ -11,6 +11,8 @@ Run this after every feature. Before you move on.
 
 **Auto-gate:** `/mow go` Integrate must run this against the stem's `plan.md` + shipped diff before setting registry `Status: shipped`. Critical Layer-1 (spec) misses block shipped unless the operator explicitly defers them.
 
+That block is **enforced, not advisory**: `taskman.mow.set_registry_status <stem> shipped` runs the close-out gate (`taskman.mow.closeout`, which composes this check with the action-report and tracker checks) and exits 3 rather than flipping the row when this skill's verdict is missing, stale against `plan.md`, or leaves a Critical Layer-1 miss unaccounted for. When you run inside a mow stem, Step 3 below is how the gate gets its record — the prose report alone will not satisfy it.
+
 ## What This Skill Does Not Do
 
 It does not fix anything. It reports what it finds and lets the developer decide what matters and what to do about it. Fixing without understanding is how problems get buried, not solved.
@@ -114,6 +116,20 @@ Layer 1: [N] · Layer 2: [N] · Layer 3: [N]. Worst in each layer (if any): …
 [If no issues: "No issues found. This feature is ready to ship."]
 [If issues: "Resolve the above before moving to the next feature."]
 ```
+
+**Inside a mow stem, also write the machine-readable verdict.** The prose above is for the developer; the line below is what the registry gate reads back. Generate it — do not hand-write the digest — and append it to `docs/plans/<stem>/action-report.md` under `## Verify`:
+
+```bash
+python -m taskman.mow.check_ship_check docs/plans/<stem> --emit --l1 <N> --l2 <N> --l3 <N>
+```
+
+The counts are **Critical** findings per layer, matching the Severity Guide below — not total findings. If Layer 1 has any, each one needs its own `;`-separated entry saying what was missed and what was decided:
+
+```markdown
+**Ship-check waivers:** L1 CSV export missing — deferred to stem `exports`, operator approved; L1 no audit log — fixed in-run, re-verified clean
+```
+
+Writing a waiver is Step 4's decision, not yours: record what the developer chose, and if they have not chosen yet, leave the count and stop.
 
 ---
 
