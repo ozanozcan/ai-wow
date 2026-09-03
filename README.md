@@ -165,7 +165,7 @@ before fan-out, not discovered afterwards.
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
-| `taskman/` | The board package — CLI, models, migrations, 187 tests |
+| `taskman/` | The board package — CLI, event-log store, 210 tests |
 | `docs/workflow/` | Work-loop, dispatch bridge, compact template |
 | `templates/` | Bootstrap checklist for adopting the harness in a new repo, plus per-repo starting points (protocols, `ui-designer`, Copilot instructions) |
 | `bin/ai-sync` | The sync tool |
