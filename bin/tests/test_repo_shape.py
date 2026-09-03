@@ -32,7 +32,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-PARTY.md"]
 
 # Every directory whose contents ship as harness content a reader can run. The
-# scrub used to cover only hooks/ and bin/, which is why a `FitnessManager`
+# scrub used to cover only hooks/ and bin/, which is why an employer-named
 # worked-example survived in skills/checkpoint/SKILL.md: the leak was never in
 # the two directories being watched.
 #
@@ -47,15 +47,42 @@ PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-P
 SCRUBBED_DIRS = ["hooks", "bin", "agents", "commands", "global", "skills", "templates",
                  "githooks", "docs"]
 
-# The narrow form of this pattern gave a false green once already: a live
-# `project-b.example` domain sat in a page template while the grep looked
-# only for the hyphenated spelling. Match every separator, and none.
-LEAK = re.compile(
-    r"\bftm\b|\bhlc\b|project-a"
-    r"|high[ ._-]?level[ ._-]?coaching"
-    r"|/Users/[a-z]+",
-    re.I,
-)
+# Patterns that are safe to state in a published file: they name no one.
+GENERIC_LEAK = [r"/Users/[a-z]+"]
+
+# Employer and personal identifiers are *configured*, never written here.
+#
+# They used to be literals in this file, and that was the leak this file exists
+# to prevent: `_scan` skips itself (it has to — it names what it hunts), so the
+# scrub never noticed its own regex publishing the very strings it was removing
+# from everywhere else. They sat readable at the public tip for as long as the
+# repo was public.
+#
+# Shape, in the gitignored `local.config.json`:
+#
+#     {"scrub_patterns": ["\\bacme\\b", "acmecorp\\.com", "big[ ._-]?client"]}
+#
+# Each entry is a regex, matched case-insensitively. Write every separator a
+# name can take: the narrow form gave a false green once already, when a live
+# product domain sat in a page template while the pattern looked only for the
+# hyphenated spelling.
+#
+# With none configured, the generic patterns still run and the private half
+# reports a visible SKIP. It must never look like a pass — a clone has no
+# identifiers to protect, but the owner losing this config silently would be the
+# original failure with extra steps.
+def _private_leak_patterns():
+    cfg = REPO / "local.config.json"
+    if not cfg.is_file():
+        return []
+    try:
+        raw = json.loads(cfg.read_text(encoding="utf-8")).get("scrub_patterns") or []
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return []
+    return [p for p in raw if isinstance(p, str) and p]
+
+
+LEAK = re.compile("|".join(GENERIC_LEAK + _private_leak_patterns()), re.I)
 
 
 def _tracked_under(dirs):
@@ -300,7 +327,11 @@ def main():
         leaked.extend(_scan(path))
     for name in PUBLISHED:
         leaked.extend(_scan(REPO / name))
-    check("no employer or personal strings in published surfaces", leaked, [])
+    check("no personal paths in published surfaces", leaked, [])
+    if not _private_leak_patterns():
+        print("  SKIP  employer/product identifiers — none configured. Set"
+              " scrub_patterns in local.config.json to enable (see"
+              " local.config.example.json).")
 
     print()
     if FAILURES:

@@ -6,6 +6,12 @@
     "~/projects/web-app"
   ],
   "push": true,
+  "_scrub_patterns_note": "Regexes for employer/product/client names the push gate must never let into the published tree. Case-insensitive. Write every separator a name can take — 'big[ ._-]?client' catches bigclient, big-client and big client. These live here, not in bin/tests/test_repo_shape.py, because that file is published: literals there would leak the very names they exist to remove, and it excludes itself from its own scan so it would never notice. Absent means the identifier half of the scrub reports SKIP; the generic /Users/ path check always runs.",
+  "scrub_patterns": [
+    "\\bacme\\b",
+    "acmecorp\\.com",
+    "big[ ._-]?client"
+  ],
   "_windows_example_uncomment_below": "Delete this key and the one above, then set these values for a corporate Windows machine:",
   "_windows_example": {
     "link_mode": "copy",
