@@ -313,6 +313,20 @@ Each **brief** must be runnable by a blind agent — no reference to "this chat"
 ## Files in scope
 - <paths this lane owns; nothing outside this list>
 
+> **If a lane's job is a private target — a specific person's repo, board slug, domain,
+> or credential — the target itself does not go in the tracked brief on a published
+> repo.** Deleting it isn't an option either when the lane genuinely needs it to act.
+> Put the real values in a gitignored `docs/plans/<stem>/dispatch/local-targets.md`
+> next to the brief, write `<target-a>`-style placeholders into the tracked brief, and
+> point at the file in one line near the top. Gitignore it with an anchored
+> `**/dispatch/local-targets.md` so no future stem's package leaks by omission. This
+> only works for a **foreground, un-isolated** lane reading from the working repo's own
+> cwd — an isolated worktree lane does not inherit the file, so pass what it needs
+> through the brief's own Context instead. (First used 2026-09-03, taskman-port lane Z:
+> the lane's job was migrating two named boards, so the slugs and paths were
+> instruction, not decoration — see `docs/session-reports/` around that date for the
+> incident that made this necessary.)
+
 ## Signatures (optional — omit unless the lane needs it)
 - <function / model / endpoint signatures this lane must expose, bodies omitted>
 - <seam notes: what an adjacent lane will call, and what it may assume>

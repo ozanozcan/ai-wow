@@ -680,6 +680,34 @@ inside your editor edits the repo. There is no copy step and no drift.
 Adopting the harness in a new repo is a separate checklist:
 [`templates/BOOTSTRAP.md`](templates/BOOTSTRAP.md).
 
+### If you fork this and publish your own copy
+
+`bin/tests/test_repo_shape.py` — the same suite `githooks/pre-push` runs before every
+push — scans every tracked file this repo ships for names that shouldn't be public.
+Two layers:
+
+- **Generic patterns, always on.** A bare `/Users/<name>` path. No configuration
+  needed; every clone gets this for free.
+- **Your own identifiers, configured by you.** Add `scrub_patterns` to your
+  gitignored `local.config.json` — a list of regexes, matched case-insensitively:
+
+  ```json
+  { "scrub_patterns": ["\\bacme\\b", "acmecorp\\.com", "big[ ._-]?client"] }
+  ```
+
+  Write every separator a name can take (`acme-corp`, `acme corp`, `acme.corp` —
+  one pattern each, or one pattern covering all three) — a narrow pattern is a false
+  green waiting to happen: this repo published a live product domain at its own
+  public tip for days because the check only looked for the hyphenated spelling.
+
+Without `scrub_patterns` set, the identifier half of the check prints a visible
+`SKIP` naming the config key, rather than silently passing — a clone with nothing
+to protect isn't a failure, but losing this config unnoticed would be the same
+mistake this section exists to prevent. Set it **before** your first push, not
+after — a check that runs once you've already leaked something only tells you
+what to fix in history, which is a much larger job (see the note on rewriting
+history in [`templates/BOOTSTRAP.md`](templates/BOOTSTRAP.md) if you ever need it).
+
 ---
 
 ## Appendix A — VS Code, and locked-down machines

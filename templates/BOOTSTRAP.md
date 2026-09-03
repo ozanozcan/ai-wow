@@ -60,6 +60,42 @@ without reading anything from another project's repo.
    render this; the VS Code extension reads no `~/.copilot/` path, so without it that repo has
    no standing-instruction layer at all. Skip for CLI-only or non-Copilot repos.
 
+## If an identifier reached a public push anyway
+
+Set `scrub_patterns` (§9 of the human guide) *before* your first push. If you're
+reading this because the check fired late — a pattern too narrow, or set up after
+the fact — the identifier is in history, not just the tip, and fixing the tip alone
+does nothing: a rewrite has to happen anyway, so widen the pattern and fix the tip
+in the same pass as the steps below, not before them.
+
+1. **Back up first, outside any repo.** `git clone --mirror <repo> ~/somewhere-not-a-repo/name.git`
+   plus a readable export (`git log --all --reverse --pretty=... --name-status`) for
+   anything you'd want to mine later — commit messages don't survive a rewrite under
+   their old form, so capture them while they're still attached to real SHAs.
+   **Restore-test it**: clone the backup back out and diff it against the live repo.
+   A backup nobody has restored from is a claim, not a backup.
+2. **Rewrite in a scratch clone, never the live checkout.** `git-filter-repo
+   --replace-text <file>` (`brew install git-filter-repo`; not the deprecated
+   built-in `filter-branch`). One `old==>new` or `regex:pattern==>new` line per term.
+3. **Verify before touching anything real:** commit count unchanged, zero hits for
+   every pattern across every commit on every ref, and tracked blob hashes identical
+   to the live repo (`git ls-tree -r` diff, not a file diff — a byte-identical tree
+   proves it, a directory listing does not).
+4. **Push master only, and check what's actually public first.** `git ls-remote
+   --heads <repo>` before you rewrite — a local mirror clone often carries refs that
+   were never pushed (tooling checkpoints, abandoned branches); rewriting and
+   pushing all of them publishes things nobody chose to publish.
+5. **Force-push is not enough to finish the job.** GitHub keeps a rewritten commit
+   reachable by its old SHA until garbage collection, so the identifier is still
+   fetchable even after a clean-looking force-push — completing the removal needs a
+   GitHub Support request with no guaranteed timeline. Deleting the repo and
+   recreating it under the same name, then pushing the rewritten history, is
+   complete immediately and costs only open PRs/issues and the creation date — real
+   costs, but bounded and known in advance, unlike the support-request path.
+6. **Reconnect every local checkout** — `git fetch && git reset --hard origin/<branch>`
+   — and re-run whatever push gate you have (§9's `scrub_patterns` check, if you set
+   it up per step 0 above) to confirm the *new* public tip is clean too.
+
 ## UI bootstrap (frontend repos only)
 
 Do these once per repo with a UI surface, in order — this is what makes the anti-slop

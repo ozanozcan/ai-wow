@@ -54,6 +54,7 @@ Violating any of these corrupts state or silently voids a guarantee.
 | I8 | Hook registration lives only in `hooks.def.json` | Two registrations = everything runs twice |
 | I9 | `disabled` ≠ `done` | `done` on work that never happened is unrecoverable misinformation |
 | I10 | The board is a committed event log under `board/` | Never propose a database |
+| I11 | The push gate's identifier scrub reads `scrub_patterns` from `local.config.json`, not from any tracked file | A pattern hardcoded in a published file leaks the very name it names, and self-exclusion (the check can't scan itself) means nothing catches it |
 
 ---
 
@@ -213,6 +214,14 @@ count from step 4.
 
 `ai-sync status` exits 1 when managed-doc drift exists. **That exit code is not an
 install failure** — judge on the four VERIFY lines.
+
+**If this fork will be pushed anywhere public** (I11): step 5 is no longer optional.
+Set `scrub_patterns` in `local.config.json` to the operator's own employer/product
+identifiers *before* the first push — `githooks/pre-push` will otherwise let them
+through, since the generic check only catches `/Users/<name>`. If one already reached
+a public push, fixing the tip does not fix history; the recovery procedure (backup →
+rewrite → verify → republish) is in `templates/BOOTSTRAP.md` under "If an identifier
+reached a public push anyway" — do not improvise a variant of it.
 
 ---
 
