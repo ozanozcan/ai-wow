@@ -12,17 +12,35 @@
 # Bypass deliberately:      git push --no-verify
 
 set -e
-cd "$(git rev-parse --show-toplevel)"
+
+toplevel="$(git rev-parse --show-toplevel)" || {
+    echo "pre-push: git rev-parse --show-toplevel failed; not in a git repo?" >&2
+    exit 1
+}
+cd "$toplevel"
+# git sets GIT_DIR for hooks; suites that spawn git against throwaway
+# repos would otherwise operate on this one and fail.
+unset GIT_DIR GIT_WORK_TREE
 
 echo "pre-push: running harness tests..."
-python3 hooks/tests/test_stamp_tracker.py >/dev/null
-python3 hooks/tests/test_session_start_marker.py >/dev/null
-python3 hooks/tests/test_redact_private.py >/dev/null
-python3 hooks/tests/test_peer_session_notice.py >/dev/null
-python3 bin/tests/test_ai_sync_status.py >/dev/null
-python3 bin/tests/test_ai_sync_commit.py >/dev/null
-python3 bin/tests/test_ai_sync_encoding.py >/dev/null
-python3 skills/mow/tests/test_board_table.py  >/dev/null
-python3 skills/mow/tests/test_tracker_port.py >/dev/null
+
+run_quiet() {
+    suite="$1"
+    output="$(python3 "$suite" 2>&1)" && return 0
+    status=$?
+    echo "pre-push: FAILED $suite" >&2
+    echo "$output" >&2
+    return "$status"
+}
+
+run_quiet hooks/tests/test_stamp_tracker.py
+run_quiet hooks/tests/test_session_start_marker.py
+run_quiet hooks/tests/test_redact_private.py
+run_quiet hooks/tests/test_peer_session_notice.py
+run_quiet bin/tests/test_ai_sync_status.py
+run_quiet bin/tests/test_ai_sync_commit.py
+run_quiet bin/tests/test_ai_sync_encoding.py
+run_quiet skills/mow/tests/test_board_table.py
+run_quiet skills/mow/tests/test_tracker_port.py
 python3 bin/tests/test_repo_shape.py        # scrub output is worth seeing
 echo "pre-push: clean"
