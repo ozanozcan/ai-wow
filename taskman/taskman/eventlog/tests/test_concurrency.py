@@ -13,9 +13,12 @@ What these pin down:
     against a broken store; these are separate interpreters.
   * concurrent creates — two subprocesses each add 50 tasks flat out: 100
     distinct ids, and the log still replays.
+  * per-entity creates  — two subprocesses each add 25 tasks AND 25 features
+    flat out through the same contested harness: 50 distinct task ids, 50
+    distinct feature ids, counters never bleed across entities (plan d-p4).
   * crash mid-write    — a writer is SIGKILLed while holding the lock: the
     next comer breaks the stale lock and proceeds, first at the locking layer
-    with a short staleness window, then through `add_task` with stock
+    with a short staleness window, then through `store.add` with stock
     defaults. A wedged board would halt every lane.
 
 Results here are POSIX-only; Windows is lane Z's to prove.
@@ -87,7 +90,20 @@ def worker_add(board, prefix, start, count):
     while time.time() < start:
         pass
     for i in range(count):
-        print(store.add_task(board, f"{prefix} {i}"), flush=True)
+        print(store.add(board, "task", {"title": f"{prefix} {i}"}), flush=True)
+    return 0
+
+
+def worker_add_entities(board, prefix, start, count):
+    """Interleave task and feature adds so both counters stay contested."""
+    from taskman.eventlog import store
+
+    while time.time() < start:
+        pass
+    for i in range(count):
+        for entity in ("task", "feature"):
+            eid = store.add(board, entity, {"title": f"{prefix} {entity} {i}"})
+            print(entity, eid, flush=True)
     return 0
 
 
@@ -108,6 +124,8 @@ def worker_main(argv):
         return worker_claim(Path(argv[1]), argv[2], float(argv[3]), int(argv[4]))
     if mode == "worker-add":
         return worker_add(Path(argv[1]), argv[2], float(argv[3]), int(argv[4]))
+    if mode == "worker-add-entities":
+        return worker_add_entities(Path(argv[1]), argv[2], float(argv[3]), int(argv[4]))
     if mode == "worker-hold":
         return worker_hold(argv[1])
     raise SystemExit(f"unknown worker mode {mode!r}")
@@ -122,7 +140,7 @@ def contested_claim():
     with tempfile.TemporaryDirectory() as tmp:
         board = Path(tmp)
         for i in range(ROUNDS):
-            store.add_task(board, f"task {i + 1}")
+            store.add(board, "task", {"title": f"task {i + 1}"})
 
         start = time.time() + 0.5
         procs = {a: spawn("worker-claim", board, a, start, ROUNDS) for a in ("alpha", "beta")}
@@ -146,7 +164,7 @@ def contested_claim():
         dupes = {t: len(evs) for t, evs in per_id.items() if len(evs) != 1}
         check("log holds exactly one claim event per task", not dupes, f"{dupes}")
 
-        state = log.replay(board)
+        state = log.replay(board)["task"]
         agree = all(
             state[tid]["claimed_by"] == ("alpha" if tid in wins["alpha"] else "beta")
             for tid in every
@@ -155,7 +173,7 @@ def contested_claim():
 
 
 def concurrent_creates():
-    print("concurrent creates — 2 processes x 50 add_task")
+    print("concurrent creates — 2 processes x 50 task adds")
     from taskman.eventlog import log
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -175,8 +193,39 @@ def concurrent_creates():
         check("all 100 ids distinct", len(set(allocated)) == 100,
               f"only {len(set(allocated))} distinct")
         state = log.replay(board)  # raises if the log does not parse
-        check("replay sees all 100 tasks", set(state) == set(allocated),
-              f"replay has {len(state)}")
+        check("replay sees all 100 tasks", set(state["task"]) == set(allocated),
+              f"replay has {len(state['task'])}")
+
+
+def per_entity_creates():
+    print("per-entity creates — 2 processes x (25 tasks + 25 features)")
+    from taskman.eventlog import log
+
+    with tempfile.TemporaryDirectory() as tmp:
+        board = Path(tmp)
+        start = time.time() + 0.5
+        procs = {a: spawn("worker-add-entities", board, a, start, 25)
+                 for a in ("alpha", "beta")}
+        ids, exits = {"task": [], "feature": []}, {}
+        for agent, p in procs.items():
+            out, err = p.communicate(timeout=120)
+            exits[agent] = (p.returncode, err.strip())
+            for line in out.splitlines():
+                entity, eid = line.split()
+                ids[entity].append(int(eid))
+
+        for agent, (code, err) in exits.items():
+            check(f"mixed-add worker {agent} exited 0", code == 0,
+                  f"exit={code} stderr={_tail(err)}")
+        for entity in ("task", "feature"):
+            check(f"50 {entity} ids allocated", len(ids[entity]) == 50,
+                  f"got {len(ids[entity])}")
+            check(f"all 50 {entity} ids distinct", len(set(ids[entity])) == 50,
+                  f"only {len(set(ids[entity]))} distinct")
+        state = log.replay(board)  # raises if the log does not parse
+        for entity in ("task", "feature"):
+            check(f"replay sees every {entity}", set(state[entity]) == set(ids[entity]),
+                  f"replay has {len(state[entity])}")
 
 
 def crash_while_holding():
@@ -203,26 +252,27 @@ def crash_while_holding():
     # Store layer, stock defaults: the acceptance scenario verbatim.
     with tempfile.TemporaryDirectory() as tmp:
         board = Path(tmp)
-        store.add_task(board, "before the crash")
+        store.add(board, "task", {"title": "before the crash"})
         holder = spawn("worker-hold", board / log.LOCK_NAME)
         holder.stdout.readline()
         holder.kill()
         holder.wait(timeout=30)
         t0 = time.monotonic()
-        tid = store.add_task(board, "after the crash")  # defaults must recover
+        tid = store.add(board, "task", {"title": "after the crash"})  # defaults must recover
         waited = time.monotonic() - t0
-        check("add_task recovers past a crashed holder with stock defaults",
+        check("add recovers past a crashed holder with stock defaults",
               tid == 2, f"tid={tid}")
         check("recovery happened inside the default timeout", waited < 10.0,
               f"waited {waited:.1f}s")
         state = log.replay(board)
-        check("log still replays after the crash", set(state) == {1, 2},
-              f"state ids {sorted(state)}")
+        check("log still replays after the crash", set(state["task"]) == {1, 2},
+              f"state ids {sorted(state['task'])}")
 
 
 def main():
     contested_claim()
     concurrent_creates()
+    per_entity_creates()
     crash_while_holding()
     print(f"\n{len(FAILURES)} failure(s)" + (": " + ", ".join(FAILURES) if FAILURES else ""))
     return 1 if FAILURES else 0

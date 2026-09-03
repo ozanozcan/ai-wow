@@ -15,6 +15,28 @@ log = logging.getLogger("taskman.metrics")
 _THINKING_CHARS_PER_TOKEN = 4
 
 
+def portable_transcript_path(transcript: Path) -> str:
+    """Home-relative '~/...' (posix separators) when under home; verbatim posix otherwise.
+
+    Board-bound records must not carry machine-absolute paths (plan d-p9).
+    """
+    try:
+        return "~/" + transcript.relative_to(Path.home()).as_posix()
+    except ValueError:
+        pass
+    try:
+        # A symlinked route to home (macOS /var → /private/var style) only
+        # matches once both sides are resolved.
+        return "~/" + transcript.resolve().relative_to(Path.home().resolve()).as_posix()
+    except (ValueError, OSError):
+        return transcript.as_posix()
+
+
+def expand_transcript_path(stored: str) -> Path:
+    """Inverse of portable_transcript_path; legacy absolute strings pass through as-is."""
+    return Path(stored).expanduser()
+
+
 def meta_path_for(transcript: Path) -> Path:
     """Sidecar next to the transcript: foo.jsonl → foo.meta.json."""
     if transcript.suffix == ".jsonl":
@@ -247,7 +269,7 @@ def build_meta(
         "session_id": parsed["session_id"],
         "source": parsed["source"],
         "project_slug": project_slug,
-        "transcript_path": str(transcript),
+        "transcript_path": portable_transcript_path(transcript),
         "recorded_at": recorded_at.isoformat(),
         "tokens_status": parsed["tokens_status"],
         "models": parsed.get("models") or {},

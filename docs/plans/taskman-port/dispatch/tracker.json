@@ -6,14 +6,15 @@
   "board_port": 8362,
   "pulse": true,
   "started": "2026-09-02T21:50:23Z",
-  "updated": "2026-09-02T21:50:23Z",
+  "updated": "2026-09-03T06:31:37Z",
   "waves": [
     {
       "wave": 1,
-      "status": "pending",
+      "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "8-angle review: 7 criticals -> fix lane -> adversarial re-review -> 1 residual fixed foreground. Final: all suites green (store 85, bootstrap 47, concurrency 27, metrics 5). Deferred: CI gap (lands with lane D), fold-dedup + double-lock (action report)."
       },
       "lanes": [
         {
@@ -21,32 +22,129 @@
           "brief": "01-store-entities.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "store-entities",
               "title": "Grow the event-log store to the full board",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-09-02T21:51:24Z",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                },
+                {
+                  "name": "adversarial-tester (manual mutants)",
+                  "status": "done",
+                  "detail": "7/7 mutants killed; M6 survivor closed with new test"
+                }
+              ],
+              "ended": "2026-09-02T22:03:36Z",
+              "tokens": 113021,
+              "detail": "worktree: .claude/worktrees/agent-ad66faf6d0f750a72",
+              "artifacts": [
+                {
+                  "label": "schema.py",
+                  "path": "taskman/taskman/eventlog/schema.py"
+                },
+                {
+                  "label": "log.py",
+                  "path": "taskman/taskman/eventlog/log.py"
+                },
+                {
+                  "label": "store.py",
+                  "path": "taskman/taskman/eventlog/store.py"
+                },
+                {
+                  "label": "test_bootstrap.py",
+                  "path": "taskman/taskman/eventlog/tests/test_bootstrap.py"
+                }
+              ]
+            },
+            {
+              "name": "code-review (wave gate)",
+              "status": "issues",
+              "started": "2026-09-02T22:04:36Z",
+              "ended": "2026-09-02T22:12:06Z"
+            },
+            {
+              "name": "tdd-builder (gate fix)",
+              "status": "done",
+              "started": "2026-09-02T22:12:06Z",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "ended": "2026-09-02T22:22:35Z",
+              "tokens": 99078,
+              "detail": "7/7 criticals fixed test-first; 30+ new checks; all suites green on merged tree"
+            },
+            {
+              "name": "code-review (fix re-review)",
+              "status": "done",
+              "started": "2026-09-02T22:22:35Z",
+              "ended": "2026-09-03T06:31:37Z",
+              "tokens": 83361,
+              "detail": "all 7 fixes hold, no over-refusal; 1 residual (id smuggled via create fields) found -> fixed foreground + pinned, all suites green"
+            }
+          ],
+          "started": "2026-09-02T21:51:24Z",
+          "tokens": 113021
         },
         {
           "lane": "B",
           "brief": "02-relativize-transcript-paths.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "relativize-transcript-paths",
               "title": "Home-relative transcript paths",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-09-02T21:51:24Z",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                }
+              ],
+              "ended": "2026-09-02T21:54:56Z",
+              "tokens": 49675,
+              "detail": "worktree: .claude/worktrees/agent-add8e039bde5e8b75",
+              "artifacts": [
+                {
+                  "label": "metrics.py",
+                  "path": "taskman/taskman/metrics.py"
+                },
+                {
+                  "label": "test_metrics_paths.py",
+                  "path": "taskman/tests/test_metrics_paths.py"
+                }
+              ]
+            }
+          ],
+          "started": "2026-09-02T21:51:24Z",
+          "tokens": 49675
         }
-      ]
+      ],
+      "started": "2026-09-02T21:51:24Z",
+      "ended": "2026-09-03T06:31:37Z"
     },
     {
       "wave": 2,
