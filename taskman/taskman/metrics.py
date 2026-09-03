@@ -20,15 +20,17 @@ def portable_transcript_path(transcript: Path) -> str:
 
     Board-bound records must not carry machine-absolute paths (plan d-p9).
     """
+    # Resolve first: a symlink to home that itself lives under home (Windows
+    # %TEMP% is typically in the user profile) would otherwise match the
+    # unresolved relative_to and keep the symlink prefix in the board.
+    home = Path.home().resolve()
+    try:
+        return "~/" + transcript.resolve().relative_to(home).as_posix()
+    except (ValueError, OSError):
+        pass
     try:
         return "~/" + transcript.relative_to(Path.home()).as_posix()
     except ValueError:
-        pass
-    try:
-        # A symlinked route to home (macOS /var → /private/var style) only
-        # matches once both sides are resolved.
-        return "~/" + transcript.resolve().relative_to(Path.home().resolve()).as_posix()
-    except (ValueError, OSError):
         return transcript.as_posix()
 
 

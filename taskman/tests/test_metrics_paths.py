@@ -39,7 +39,9 @@ def test_symlinked_home_path_still_relativizes(tmp_path):
     # A transcript reached through a symlink to home (macOS /var → /private/var
     # style) is still under home — it must not leak absolute into the board.
     homelink = tmp_path / "homelink"
-    homelink.symlink_to(Path.home())
+    # Windows creates a file symlink unless told the target is a directory,
+    # and resolve() will not walk a file symlink as a home root.
+    homelink.symlink_to(Path.home(), target_is_directory=True)
     transcript = homelink / ".claude" / "projects" / "demo" / "s.jsonl"
     assert portable_transcript_path(transcript) == "~/.claude/projects/demo/s.jsonl"
 
