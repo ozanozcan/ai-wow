@@ -229,9 +229,13 @@ def _apply(state: dict[str, dict[int, dict]], event: dict) -> None:
         obj = table.get(eid)
         if obj is not None and obj["claimed_by"] is None:
             obj["claimed_by"] = event["agent"]  # first claim wins — the CAS
+            obj["claimed_at"] = event.get("ts")
+            obj["updated_at"] = event.get("ts")
     elif verb == "release":
         obj = table.get(eid)
         if obj is not None:
             obj["claimed_by"] = None
+            obj["claimed_at"] = None
+            obj["updated_at"] = event.get("ts")
     else:  # unreachable once validate_event has passed — belt and braces
         raise ValueError(f"unknown event type {event['type']!r}")

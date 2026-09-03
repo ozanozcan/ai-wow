@@ -8,37 +8,25 @@ import re
 import sys
 from pathlib import Path
 
-from sqlalchemy import case, func, select, update
-from sqlalchemy.orm import selectinload
-
 from taskman.config import find_project, find_toolkit
-from taskman import db as _db
-from taskman.db import Session, upgrade_head
-from taskman.matching import decisions_touching
+from taskman.eventlog import store
+from taskman.eventlog.schema import (
+    CAPTURE_KINDS,
+    LANES,
+    PRIORITIES,
+    REQUIREMENT_STATUSES,
+    STATUSES,
+    SURFACES,
+)
+from taskman.matching import decision_matches
 from taskman.metrics import (
     build_meta,
     detect_project_slug,
     iter_transcripts,
     meta_path_for,
     parse_jsonl,
+    portable_transcript_path,
     write_meta,
-)
-from taskman.models import (
-    CAPTURE_KINDS,
-    LANES,
-    PBI,
-    PRIORITIES,
-    REQUIREMENT_STATUSES,
-    STATUSES,
-    SURFACES,
-    AgentSession,
-    Capture,
-    Decision,
-    Feature,
-    Project,
-    Requirement,
-    Tag,
-    Task,
 )
 from taskman.plan import (
     DispatchMeta,
@@ -56,48 +44,50 @@ from taskman.plan import (
 
 log = logging.getLogger("taskman")
 
-WORKFLOW_SLUG = "workflow"
-WORKFLOW_NAME = "Workflow machinery"
+# keystone first, low last, unknown after (derived from the schema tuple —
+# eventlog exports no ordering map by contract).
+PRIORITY_ORDER = {p: i for i, p in enumerate(PRIORITIES)}
 
 
-def _project(session, *, project_slug: str | None = None) -> Project:
-    """Resolve the current project row, optionally overridden by ``--project``.
+def _now_iso() -> str:
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
-    Only the cwd project (no override) and the reserved ``workflow`` slug are
-    auto-created. Other ``--project`` overrides must already exist — typos must
-    not insert stray Project rows (Wave 3 review).
+
+def _parse_iso(raw) -> dt.datetime | None:
+    """Board timestamps are ISO strings; tolerate absent/naive values."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        when = dt.datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.UTC)
+    return when
+
+
+def _project_root() -> Path:
+    """Directory holding the nearest .taskman.toml (the project, per d-p6)."""
+    here = Path.cwd().resolve()
+    for d in (here, *here.parents):
+        if (d / ".taskman.toml").exists():
+            return d
+    raise SystemExit(
+        "taskman: no .taskman.toml found above cwd — refusing to guess the project."
+    )
+
+
+def _board() -> tuple[str, Path]:
+    """(slug, board_dir) for the cwd project.
+
+    Identity still comes from the marker (find_project stops loudly on a
+    missing marker or slug — d-p6); the board lives next to it.
     """
-    if project_slug:
-        slug = project_slug
-        name = WORKFLOW_NAME if project_slug == WORKFLOW_SLUG else project_slug
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            if project_slug != WORKFLOW_SLUG:
-                raise SystemExit(
-                    f"taskman: project '{slug}' not found "
-                    "(only 'workflow' is auto-created)."
-                )
-            proj = Project(slug=slug, name=name)
-            session.add(proj)
-            session.flush()
-        return proj
-
-    slug, name = find_project()
-    proj = session.scalar(select(Project).where(Project.slug == slug))
-    if proj is None:
-        proj = Project(slug=slug, name=name)
-        session.add(proj)
-        session.flush()
-    return proj
-
-
-def _ensure_workflow_project(session) -> Project:
-    """Create the ``workflow`` project on demand (no directory ``.taskman.toml``)."""
-    return _project(session, project_slug=WORKFLOW_SLUG)
-
-
-def _project_slug_arg(args) -> str | None:
-    return getattr(args, "project", None) or None
+    slug, _name = find_project()
+    board_dir = _project_root() / "board"
+    if not board_dir.is_dir():
+        raise SystemExit(f"taskman: {board_dir} missing — run `taskman init` first.")
+    return slug, board_dir
 
 
 def _require_status(status: str) -> None:
@@ -153,12 +143,9 @@ def _parse_scenarios(raw: list[str] | None) -> list[dict[str, str]]:
     return scenarios
 
 
-def _priority_rank(col):
-    """SQL ordering expression: keystone first, low last, unknown after."""
-    return case(
-        *((col == name, i) for i, name in enumerate(PRIORITIES)),
-        else_=len(PRIORITIES),
-    )
+def _priority_rank(row: dict) -> int:
+    """Sort key: keystone first, low last, unknown after."""
+    return PRIORITY_ORDER.get(row.get("priority") or "", len(PRIORITIES))
 
 
 def _parse_tags(raw: str | None) -> list[str]:
@@ -167,41 +154,27 @@ def _parse_tags(raw: str | None) -> list[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
-def _get_or_create_tags(session, project: Project, names: list[str]) -> list[Tag]:
-    tags: list[Tag] = []
-    for name in names:
-        tag = session.scalar(
-            select(Tag).where(Tag.project_id == project.id, Tag.name == name)
-        )
-        if tag is None:
-            tag = Tag(project_id=project.id, name=name)
-            session.add(tag)
-            session.flush()
-        tags.append(tag)
-    return tags
-
-
-def _get_task(session, project: Project, task_id: int) -> Task:
-    task = session.get(Task, task_id)
-    if task is None or task.project_id != project.id:
-        raise SystemExit(f"taskman: task #{task_id} not found in project '{project.slug}'.")
+def _get_task(state: dict, slug: str, task_id: int) -> dict:
+    task = state["task"].get(task_id)
+    if task is None:
+        raise SystemExit(f"taskman: task #{task_id} not found in project '{slug}'.")
     return task
 
 
-def _get_capture(session, project: Project, capture_id: int) -> Capture:
-    cap = session.get(Capture, capture_id)
-    if cap is None or cap.project_id != project.id:
+def _get_capture(state: dict, slug: str, capture_id: int) -> dict:
+    cap = state["capture"].get(capture_id)
+    if cap is None:
         raise SystemExit(
-            f"taskman: capture #{capture_id} not found in project '{project.slug}'."
+            f"taskman: capture #{capture_id} not found in project '{slug}'."
         )
     return cap
 
 
-def _get_decision(session, project: Project, decision_id: int) -> Decision:
-    dec = session.get(Decision, decision_id)
-    if dec is None or dec.project_id != project.id:
+def _get_decision(state: dict, slug: str, decision_id: int) -> dict:
+    dec = state["decision"].get(decision_id)
+    if dec is None:
         raise SystemExit(
-            f"taskman: decision #{decision_id} not found in project '{project.slug}'."
+            f"taskman: decision #{decision_id} not found in project '{slug}'."
         )
     return dec
 
@@ -216,48 +189,47 @@ def _task_id_from_summary(summary: str) -> int | None:
     return int(match.group(1))
 
 
-def _link_capture_to_task(session, project: Project, cap: Capture, task_id: int) -> None:
-    task = _get_task(session, project, task_id)
-    cap.task_id = task.id
-
-
-def _format_capture_line(cap: Capture, *, project_slug: str | None = None) -> str:
-    task_s = f"  task=#{cap.task_id}" if cap.task_id is not None else ""
-    tags = ",".join(cap.tags or [])
+def _format_capture_line(cap: dict) -> str:
+    task_s = f"  task=#{cap['task_id']}" if cap.get("task_id") is not None else ""
+    tags = ",".join(cap.get("tags") or [])
     tag_s = f"  tags={tags}" if tags else ""
-    proj_s = f"  [{project_slug}]" if project_slug else ""
-    return f"#{cap.id} [{cap.kind}]{task_s}{tag_s}{proj_s}  {cap.summary}"
+    return f"#{cap['id']} [{cap.get('kind', '')}]{task_s}{tag_s}  {cap.get('summary', '')}"
 
 
-def _format_decision_line(dec: Decision, *, project_slug: str | None = None) -> str:
-    task_s = f"  task=#{dec.task_id}" if dec.task_id is not None else ""
-    tags = ",".join(dec.tags or [])
+def _format_decision_line(dec: dict) -> str:
+    task_s = f"  task=#{dec['task_id']}" if dec.get("task_id") is not None else ""
+    tags = ",".join(dec.get("tags") or [])
     tag_s = f"  tags={tags}" if tags else ""
-    proj_s = f"  [{project_slug}]" if project_slug else ""
-    return f"#{dec.id}{task_s}{tag_s}{proj_s}  {dec.title}"
+    return f"#{dec['id']}{task_s}{tag_s}  {dec.get('title', '')}"
 
 
-def _get_feature(session, project: Project, feature_id: int) -> Feature:
-    feat = session.get(Feature, feature_id)
-    if feat is None or feat.project_id != project.id:
+def _get_feature(state: dict, slug: str, feature_id: int) -> dict:
+    feat = state["feature"].get(feature_id)
+    if feat is None:
         raise SystemExit(
-            f"taskman: feature #{feature_id} not found in project '{project.slug}'."
+            f"taskman: feature #{feature_id} not found in project '{slug}'."
         )
     return feat
 
 
-def _get_pbi(session, project: Project, pbi_id: int) -> PBI:
-    pbi = session.get(PBI, pbi_id)
-    if pbi is None or pbi.project_id != project.id:
-        raise SystemExit(f"taskman: pbi #{pbi_id} not found in project '{project.slug}'.")
+def _get_pbi(state: dict, slug: str, pbi_id: int) -> dict:
+    pbi = state["pbi"].get(pbi_id)
+    if pbi is None or pbi.get("deleted"):
+        raise SystemExit(f"taskman: pbi #{pbi_id} not found in project '{slug}'.")
     return pbi
 
 
-def _get_requirement(session, project: Project, requirement_id: int) -> Requirement:
-    req = session.get(Requirement, requirement_id)
-    if req is None or req.project_id != project.id:
+def _live_pbis(state: dict) -> list[dict]:
+    """PBIs minus removed ones — the log has no delete verb, so `pbi remove`
+    is a CLI-level soft delete (``deleted: true``) every reader filters."""
+    return [p for p in state["pbi"].values() if not p.get("deleted")]
+
+
+def _get_requirement(state: dict, slug: str, requirement_id: int) -> dict:
+    req = state["requirement"].get(requirement_id)
+    if req is None:
         raise SystemExit(
-            f"taskman: requirement #{requirement_id} not found in project '{project.slug}'."
+            f"taskman: requirement #{requirement_id} not found in project '{slug}'."
         )
     return req
 
@@ -304,22 +276,26 @@ def _blocker_title(title: str) -> str:
     return title if len(title) <= BLOCKER_TITLE_MAX else title[:BLOCKER_TITLE_MAX] + "…"
 
 
-def _format_task_line(t: Task, *, indent: str = "  ") -> str:
-    tags = "  " + ",".join(t.tags) if t.tags else ""
+def _format_task_line(t: dict, tasks_by_id: dict[int, dict], *, indent: str = "  ") -> str:
+    tags = "  " + ",".join(t.get("tags") or []) if t.get("tags") else ""
+    blocked = t.get("blocked_by") or []
     blk = (
         "  blocked-by:"
-        + ",".join(f'"{_blocker_title(b.title)}" (#{b.id})' for b in t.blocked_by)
-        if t.blocked_by
+        + ",".join(
+            f'"{_blocker_title((tasks_by_id.get(b) or {}).get("title", ""))}" (#{b})'
+            for b in blocked
+        )
+        if blocked
         else ""
     )
-    lens = _lens_str(t.lane, t.surface)
+    lens = _lens_str(t.get("lane") or "", t.get("surface") or "")
     lens_s = f"  {lens}" if lens else ""
-    afk_s = f"  afk={t.afk}" if t.afk else ""
-    claimed_s = f"  claimed={t.claimed_by}" if t.claimed_by else ""
-    budget_n = _budget_max_tool_calls(t.brief)
+    afk_s = f"  afk={t['afk']}" if t.get("afk") else ""
+    claimed_s = f"  claimed={t['claimed_by']}" if t.get("claimed_by") else ""
+    budget_n = _budget_max_tool_calls(t.get("brief"))
     budget_s = f"  budget={budget_n}" if budget_n is not None else ""
     return (
-        f"{indent}#{t.id} [{t.status}] [{t.priority}] {t.title}"
+        f"{indent}#{t['id']} [{t.get('status', '')}] [{t.get('priority', '')}] {t.get('title', '')}"
         f"{tags}{lens_s}{afk_s}{claimed_s}{budget_s}{blk}"
     )
 
@@ -331,68 +307,69 @@ def _acceptance_from_brief(brief: dict | None) -> str:
     return acc.strip() if isinstance(acc, str) else str(acc).strip()
 
 
-def _sync_pbi_acceptance_from_tasks(
-    session, project: Project, pbi_ids: set[int]
-) -> None:
+def _sync_pbi_acceptance_from_tasks(board_dir: Path, pbi_ids: set[int]) -> None:
     """Aggregate task brief acceptance strings onto linked PBIs (import backfill)."""
+    state = store.state(board_dir)
     for pbi_id in pbi_ids:
-        pbi = session.get(PBI, pbi_id)
-        if pbi is None or pbi.project_id != project.id:
+        pbi = state["pbi"].get(pbi_id)
+        if pbi is None or pbi.get("deleted"):
             continue
-        tasks = session.scalars(
-            select(Task).where(Task.project_id == project.id, Task.pbi_id == pbi_id)
-        ).all()
         parts: list[str] = []
         seen: set[str] = set()
-        for t in tasks:
-            acc = _acceptance_from_brief(t.brief)
+        for t in sorted(state["task"].values(), key=lambda r: r["id"]):
+            if t.get("pbi_id") != pbi_id:
+                continue
+            acc = _acceptance_from_brief(t.get("brief"))
             if acc and acc not in seen:
                 seen.add(acc)
                 parts.append(acc)
         if parts:
-            pbi.acceptance_criteria = "\n\n".join(parts)
+            store.update(
+                board_dir,
+                "pbi",
+                pbi_id,
+                {"acceptance_criteria": "\n\n".join(parts), "updated_at": _now_iso()},
+            )
 
 
-def _upsert_session(session, project: Project, meta: dict, transcript: Path) -> AgentSession:
+def _upsert_session(board_dir: Path, meta: dict, transcript: Path) -> None:
+    """One session row per (session_id, transcript_path), portable form (d-p9)."""
     totals = meta.get("totals") or {}
-    path_str = str(transcript.resolve())
-    row = session.scalar(
-        select(AgentSession).where(
-            AgentSession.project_id == project.id,
-            AgentSession.transcript_path == path_str,
-        )
-    )
-    if row is None:
-        row = AgentSession(
-            project_id=project.id,
-            session_id=meta["session_id"],
-            transcript_path=path_str,
-        )
-        session.add(row)
-
-    row.session_id = meta["session_id"]
-    row.source = meta.get("source") or "unknown"
-    row.tokens_status = meta.get("tokens_status") or "unknown"
-    row.input_tokens = int(totals.get("input_tokens") or 0)
-    row.output_tokens = int(totals.get("output_tokens") or 0)
-    row.cache_read_tokens = int(totals.get("cache_read_tokens") or 0)
-    row.cache_creation_tokens = int(totals.get("cache_creation_tokens") or 0)
-    row.api_calls = int(totals.get("api_calls") or 0)
-    row.models = meta.get("models") or {}
-    row.effort = meta.get("effort") or {}
+    path_str = portable_transcript_path(transcript)
     recorded = meta.get("recorded_at")
-    if isinstance(recorded, str):
-        try:
-            row.recorded_at = dt.datetime.fromisoformat(recorded)
-        except ValueError:
-            row.recorded_at = dt.datetime.now(dt.UTC)
+    if not isinstance(recorded, str) or _parse_iso(recorded) is None:
+        recorded = _now_iso()
+    fields = {
+        "session_id": meta["session_id"],
+        "source": meta.get("source") or "unknown",
+        "transcript_path": path_str,
+        "tokens_status": meta.get("tokens_status") or "unknown",
+        "input_tokens": int(totals.get("input_tokens") or 0),
+        "output_tokens": int(totals.get("output_tokens") or 0),
+        "cache_read_tokens": int(totals.get("cache_read_tokens") or 0),
+        "cache_creation_tokens": int(totals.get("cache_creation_tokens") or 0),
+        "api_calls": int(totals.get("api_calls") or 0),
+        "models": meta.get("models") or {},
+        "effort": meta.get("effort") or {},
+        "recorded_at": recorded,
+    }
+    existing = next(
+        (
+            row
+            for row in store.state(board_dir)["session"].values()
+            if row.get("session_id") == meta["session_id"]
+            and row.get("transcript_path") == path_str
+        ),
+        None,
+    )
+    if existing is None:
+        store.add(board_dir, "session", fields)  # emits session.record (d-p8)
     else:
-        row.recorded_at = dt.datetime.now(dt.UTC)
-    return row
+        store.update(board_dir, "session", existing["id"], fields)
 
 
-def _record_one(transcript: Path, project: Project, session, *, skip_existing_meta: bool) -> str:
-    """Write meta.json + upsert DB row. Returns status label."""
+def _record_one(transcript: Path, slug: str, board_dir: Path, *, skip_existing_meta: bool) -> str:
+    """Write meta.json + record the board event. Returns status label."""
     transcript = transcript.resolve()
     if not transcript.is_file():
         raise SystemExit(f"taskman: file not found: {transcript}")
@@ -401,49 +378,50 @@ def _record_one(transcript: Path, project: Project, session, *, skip_existing_me
     if skip_existing_meta and sidecar.is_file():
         return "skipped"
 
-    slug = detect_project_slug(transcript, default=project.slug) or project.slug
+    slug = detect_project_slug(transcript, default=slug) or slug
     parsed = parse_jsonl(transcript)
     meta = build_meta(transcript, project_slug=slug, parsed=parsed)
     write_meta(transcript, meta)
-    _upsert_session(session, project, meta, transcript)
+    _upsert_session(board_dir, meta, transcript)
     return meta.get("tokens_status") or "ok"
 
 
-def cmd_init_db(args) -> None:
-    upgrade_head()
-    with Session() as session:
-        proj = _project(session)
-        session.commit()
-        print(f"taskman: schema ready. project '{proj.slug}' (id={proj.id}).")
+def cmd_init(args) -> None:
+    """Create ``board/`` next to the nearest .taskman.toml (init-db successor)."""
+    slug, _name = find_project()
+    board_dir = _project_root() / "board"
+    board_dir.mkdir(exist_ok=True)
+    keep = board_dir / ".gitkeep"
+    if not keep.exists():
+        # An empty board must still exist in git; the store writes events.jsonl
+        # on first append, so a fresh board carries only this placeholder.
+        keep.write_text("", encoding="utf-8")
+    print(f"taskman: board ready at {board_dir} (project '{slug}').")
 
 
 def cmd_session_record(args) -> None:
     path = Path(args.file)
-    with Session() as session:
-        proj = _project(session)
-        status = _record_one(path, proj, session, skip_existing_meta=False)
-        session.commit()
-        print(f"taskman: recorded {path} [{status}]")
+    slug, board_dir = _board()
+    status = _record_one(path, slug, board_dir, skip_existing_meta=False)
+    print(f"taskman: recorded {path} [{status}]")
 
 
 def cmd_session_backfill(args) -> None:
     root = Path(args.root) if args.root else Path("docs/chat-history")
     files = iter_transcripts(root)
     recorded = skipped = errors = 0
-    with Session() as session:
-        proj = _project(session)
-        for path in files:
-            try:
-                status = _record_one(path, proj, session, skip_existing_meta=True)
-                if status == "skipped":
-                    skipped += 1
-                else:
-                    recorded += 1
-            except Exception as e:
-                errors += 1
-                log.warning("backfill failed for %s: %s", path, e)
-                print(f"taskman: warning: skipped corrupt/failed {path}: {e}")
-        session.commit()
+    slug, board_dir = _board()
+    for path in files:
+        try:
+            status = _record_one(path, slug, board_dir, skip_existing_meta=True)
+            if status == "skipped":
+                skipped += 1
+            else:
+                recorded += 1
+        except Exception as e:
+            errors += 1
+            log.warning("backfill failed for %s: %s", path, e)
+            print(f"taskman: warning: skipped corrupt/failed {path}: {e}")
     print(
         f"taskman: backfill done — recorded={recorded} skipped={skipped} errors={errors} "
         f"(root={root})"
@@ -458,55 +436,55 @@ def cmd_session_list(args) -> None:
         except ValueError as e:
             raise SystemExit(f"taskman: invalid --since DATE (use YYYY-MM-DD): {e}") from e
 
-    with Session() as session:
-        proj = _project(session)
-        q = (
-            select(AgentSession)
-            .where(AgentSession.project_id == proj.id)
-            .order_by(AgentSession.recorded_at.desc(), AgentSession.id.desc())
-        )
-        rows = list(session.scalars(q).all())
-        if since is not None:
-            rows = [
-                r
-                for r in rows
-                if r.recorded_at is not None and r.recorded_at.date() >= since
-            ]
+    slug, board_dir = _board()
+    rows = sorted(
+        store.state(board_dir)["session"].values(),
+        key=lambda r: (r.get("recorded_at") or "", r["id"]),
+        reverse=True,
+    )
+    if since is not None:
+        rows = [
+            r
+            for r in rows
+            if (when := _parse_iso(r.get("recorded_at"))) is not None
+            and when.date() >= since
+        ]
 
-        print(f"# sessions: {proj.slug} ({len(rows)})")
-        if not rows:
-            print("  (none)")
-            return
+    print(f"# sessions: {slug} ({len(rows)})")
+    if not rows:
+        print("  (none)")
+        return
 
-        sum_in = sum_out = sum_calls = 0
-        for r in rows:
-            sum_in += r.input_tokens or 0
-            sum_out += r.output_tokens or 0
-            sum_calls += r.api_calls or 0
-            models = r.models or {}
-            if r.tokens_status == "unknown":
-                model_s = "tokens=unknown"
-            elif models:
-                parts = []
-                for name, bucket in sorted(models.items()):
-                    if isinstance(bucket, dict):
-                        parts.append(
-                            f"{name}:in={bucket.get('input_tokens', 0)}/"
-                            f"out={bucket.get('output_tokens', 0)}/"
-                            f"calls={bucket.get('api_calls', 0)}"
-                        )
-                    else:
-                        parts.append(str(name))
-                model_s = "; ".join(parts)
-            else:
-                model_s = "(no models)"
-            print(
-                f"  {r.session_id}  source={r.source}  status={r.tokens_status}  "
-                f"in={r.input_tokens} out={r.output_tokens} calls={r.api_calls}  {model_s}"
-            )
+    sum_in = sum_out = sum_calls = 0
+    for r in rows:
+        sum_in += r.get("input_tokens") or 0
+        sum_out += r.get("output_tokens") or 0
+        sum_calls += r.get("api_calls") or 0
+        models = r.get("models") or {}
+        if r.get("tokens_status") == "unknown":
+            model_s = "tokens=unknown"
+        elif models:
+            parts = []
+            for name, bucket in sorted(models.items()):
+                if isinstance(bucket, dict):
+                    parts.append(
+                        f"{name}:in={bucket.get('input_tokens', 0)}/"
+                        f"out={bucket.get('output_tokens', 0)}/"
+                        f"calls={bucket.get('api_calls', 0)}"
+                    )
+                else:
+                    parts.append(str(name))
+            model_s = "; ".join(parts)
+        else:
+            model_s = "(no models)"
         print(
-            f"\n# totals: input={sum_in} output={sum_out} api_calls={sum_calls}"
+            f"  {r.get('session_id')}  source={r.get('source')}  status={r.get('tokens_status')}  "
+            f"in={r.get('input_tokens', 0)} out={r.get('output_tokens', 0)} "
+            f"calls={r.get('api_calls', 0)}  {model_s}"
         )
+    print(
+        f"\n# totals: input={sum_in} output={sum_out} api_calls={sum_calls}"
+    )
 
 
 # --- Feature ---
@@ -526,58 +504,49 @@ def cmd_feature_add(args) -> None:
     _require_lane(args.lane)
     _require_surface(args.surface)
     tag_names = _parse_tags(args.tags)
-    with Session() as session:
-        proj = _project(session)
-        feat = Feature(
-            project_id=proj.id,
-            title=args.title,
-            description=args.description or "",
-            status=args.status,
-            lane=args.lane,
-            surface=args.surface,
-        )
-        if tag_names:
-            feat.tags = _get_or_create_tags(session, proj, tag_names)
-        session.add(feat)
-        session.commit()
-        tags = ",".join(t.name for t in feat.tags)
-        tag_s = f"  tags={tags}" if tags else ""
-        print(
-            f"feature #{feat.id}  {feat.title}  [{feat.status}]"
-            f"{_lens_str(feat.lane, feat.surface)}{tag_s}"
-        )
+    _slug, board_dir = _board()
+    now = _now_iso()
+    fields = {
+        "title": args.title,
+        "description": args.description or "",
+        "status": args.status,
+        "lane": args.lane,
+        "surface": args.surface,
+        "tags": tag_names,
+        "created_at": now,
+        "updated_at": now,
+    }
+    feat_id = store.add(board_dir, "feature", fields)
+    tags = ",".join(tag_names)
+    tag_s = f"  tags={tags}" if tags else ""
+    print(
+        f"feature #{feat_id}  {args.title}  [{args.status}]"
+        f"{_lens_str(args.lane, args.surface)}{tag_s}"
+    )
 
 
 def cmd_feature_list(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        rows = session.scalars(
-            select(Feature)
-            .where(Feature.project_id == proj.id)
-            .options(selectinload(Feature.tags))
-            .order_by(Feature.id)
-        ).all()
-        print(f"# features: {proj.slug} ({len(rows)})")
-        if not rows:
-            print("  (none)")
-            return
-        for f in rows:
-            tags = ",".join(t.name for t in f.tags)
-            tag_s = f"  {tags}" if tags else ""
-            print(
-                f"  #{f.id}  {f.title}  [{f.status}]"
-                f"{_lens_str(f.lane, f.surface)}{tag_s}"
-            )
+    slug, board_dir = _board()
+    rows = sorted(store.state(board_dir)["feature"].values(), key=lambda r: r["id"])
+    print(f"# features: {slug} ({len(rows)})")
+    if not rows:
+        print("  (none)")
+        return
+    for f in rows:
+        tags = ",".join(f.get("tags") or [])
+        tag_s = f"  {tags}" if tags else ""
+        print(
+            f"  #{f['id']}  {f.get('title', '')}  [{f.get('status', '')}]"
+            f"{_lens_str(f.get('lane') or '', f.get('surface') or '')}{tag_s}"
+        )
 
 
 def cmd_feature_move(args) -> None:
     _require_status(args.status)
-    with Session() as session:
-        proj = _project(session)
-        feat = _get_feature(session, proj, args.id)
-        feat.status = args.status
-        session.commit()
-        print(f"feature #{feat.id}  {feat.title}  -> {feat.status}")
+    slug, board_dir = _board()
+    feat = _get_feature(store.state(board_dir), slug, args.id)
+    store.update(board_dir, "feature", args.id, {"status": args.status, "updated_at": _now_iso()})
+    print(f"feature #{feat['id']}  {feat.get('title', '')}  -> {args.status}")
 
 
 # --- PBI ---
@@ -587,86 +556,83 @@ def cmd_pbi_add(args) -> None:
     _require_status(args.status)
     _require_priority(args.priority)
     tag_names = _parse_tags(args.tags)
-    with Session() as session:
-        proj = _project(session)
-        _get_feature(session, proj, args.feature)
-        pbi = PBI(
-            project_id=proj.id,
-            feature_id=args.feature,
-            title=args.title,
-            status=args.status,
-            priority=args.priority,
-        )
-        if tag_names:
-            pbi.tags = _get_or_create_tags(session, proj, tag_names)
-        session.add(pbi)
-        session.commit()
-        tags = ",".join(t.name for t in pbi.tags)
-        tag_s = f"  tags={tags}" if tags else ""
-        print(
-            f"pbi #{pbi.id}  {pbi.title}  feature=#{pbi.feature_id}  "
-            f"[{pbi.priority}] [{pbi.status}]{tag_s}"
-        )
+    slug, board_dir = _board()
+    _get_feature(store.state(board_dir), slug, args.feature)
+    now = _now_iso()
+    fields = {
+        "feature_id": args.feature,
+        "title": args.title,
+        "acceptance_criteria": "",
+        "status": args.status,
+        "priority": args.priority,
+        "tags": tag_names,
+        "created_at": now,
+        "updated_at": now,
+    }
+    pbi_id = store.add(board_dir, "pbi", fields)
+    tags = ",".join(tag_names)
+    tag_s = f"  tags={tags}" if tags else ""
+    print(
+        f"pbi #{pbi_id}  {args.title}  feature=#{args.feature}  "
+        f"[{args.priority}] [{args.status}]{tag_s}"
+    )
 
 
 def cmd_pbi_list(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        q = (
-            select(PBI)
-            .where(PBI.project_id == proj.id)
-            .options(selectinload(PBI.tags))
-            .order_by(_priority_rank(PBI.priority), PBI.id)
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    rows = sorted(_live_pbis(state), key=lambda r: (_priority_rank(r), r["id"]))
+    if args.feature is not None:
+        _get_feature(state, slug, args.feature)
+        rows = [p for p in rows if p.get("feature_id") == args.feature]
+    scope = f" feature=#{args.feature}" if args.feature is not None else ""
+    print(f"# pbis: {slug}{scope} ({len(rows)})")
+    if not rows:
+        print("  (none)")
+        return
+    for p in rows:
+        tags = ",".join(p.get("tags") or [])
+        tag_s = f"  {tags}" if tags else ""
+        print(
+            f"  #{p['id']}  {p.get('title', '')}  feature=#{p.get('feature_id')}  "
+            f"[{p.get('priority', '')}] [{p.get('status', '')}]{tag_s}"
         )
-        if args.feature is not None:
-            _get_feature(session, proj, args.feature)
-            q = q.where(PBI.feature_id == args.feature)
-        rows = session.scalars(q).all()
-        scope = f" feature=#{args.feature}" if args.feature is not None else ""
-        print(f"# pbis: {proj.slug}{scope} ({len(rows)})")
-        if not rows:
-            print("  (none)")
-            return
-        for p in rows:
-            tags = ",".join(t.name for t in p.tags)
-            tag_s = f"  {tags}" if tags else ""
-            print(
-                f"  #{p.id}  {p.title}  feature=#{p.feature_id}  "
-                f"[{p.priority}] [{p.status}]{tag_s}"
-            )
 
 
 def cmd_pbi_move(args) -> None:
     _require_status(args.status)
-    with Session() as session:
-        proj = _project(session)
-        pbi = _get_pbi(session, proj, args.id)
-        pbi.status = args.status
-        session.commit()
-        print(f"pbi #{pbi.id}  {pbi.title}  -> {pbi.status}")
+    slug, board_dir = _board()
+    pbi = _get_pbi(store.state(board_dir), slug, args.id)
+    store.update(board_dir, "pbi", args.id, {"status": args.status, "updated_at": _now_iso()})
+    print(f"pbi #{pbi['id']}  {pbi.get('title', '')}  -> {args.status}")
 
 
 def cmd_pbi_remove(args) -> None:
-    """Delete a PBI. Refuses when tasks remain unless ``--force`` (d#856)."""
-    with Session() as session:
-        proj = _project(session)
-        pbi = _get_pbi(session, proj, args.id)
-        tasks = session.scalars(
-            select(Task).where(Task.project_id == proj.id, Task.pbi_id == pbi.id)
-        ).all()
-        if tasks and not getattr(args, "force", False):
-            raise SystemExit(
-                f"taskman: pbi #{pbi.id} still has {len(tasks)} task(s) — "
-                "reparent or pass --force to delete and unlink them."
+    """Retire a PBI. Refuses when tasks remain unless ``--force`` (d#856).
+
+    The event log has no delete verb, so removal is a ``deleted: true`` field
+    every reader filters — same soft-delete idea as requirement remove.
+    """
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    pbi = _get_pbi(state, slug, args.id)
+    tasks = [t for t in state["task"].values() if t.get("pbi_id") == pbi["id"]]
+    if tasks and not getattr(args, "force", False):
+        raise SystemExit(
+            f"taskman: pbi #{pbi['id']} still has {len(tasks)} task(s) — "
+            "reparent or pass --force to delete and unlink them."
+        )
+    now = _now_iso()
+    for t in tasks:
+        store.update(board_dir, "task", t["id"], {"pbi_id": None, "updated_at": now})
+    for req in state["requirement"].values():
+        if req.get("source_pbi_id") == pbi["id"]:
+            store.update(
+                board_dir, "requirement", req["id"],
+                {"source_pbi_id": None, "updated_at": now},
             )
-        title = pbi.title
-        pbi_id = pbi.id
-        if tasks:
-            for t in tasks:
-                t.pbi_id = None
-        session.delete(pbi)
-        session.commit()
-        print(f"pbi #{pbi_id}  {title}  removed")
+    store.update(board_dir, "pbi", pbi["id"], {"deleted": True, "updated_at": now})
+    print(f"pbi #{pbi['id']}  {pbi.get('title', '')}  removed")
 
 
 # --- Task ---
@@ -686,100 +652,88 @@ def cmd_add(args) -> None:
     notes = args.notes or ""
     from_capture_id = args.from_capture
 
-    with Session() as session:
-        proj = _project(session)
-        if from_capture_id is not None:
-            cap = _get_capture(session, proj, from_capture_id)
-            if not title:
-                title = cap.summary
-            if not notes:
-                notes = cap.body
-            footer = f"Promoted from capture #{cap.id}."
-            notes = f"{notes}\n\n{footer}".strip() if notes else footer
-            if cap.source_ref and not args.source:
-                args.source = cap.source_ref
-
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    if from_capture_id is not None:
+        cap = _get_capture(state, slug, from_capture_id)
         if not title:
-            raise SystemExit(
-                "taskman: title required (or use --from-capture with a capture that has a summary)."
-            )
+            title = cap.get("summary") or ""
+        if not notes:
+            notes = cap.get("body") or ""
+        footer = f"Promoted from capture #{cap['id']}."
+        notes = f"{notes}\n\n{footer}".strip() if notes else footer
+        if cap.get("source_ref") and not args.source:
+            args.source = cap["source_ref"]
 
-        if args.pbi is None and not args.source:
-            print(
-                "taskman: warning: task has no pbi and no source — it won't trace back to a goal"
-            )
-        pbi_id = args.pbi
-        if pbi_id is not None:
-            _get_pbi(session, proj, pbi_id)
-        task = Task(
-            project_id=proj.id,
-            pbi_id=pbi_id,
-            title=title,
-            status=args.status,
-            priority=args.priority,
-            tags=tags,
-            lane=args.lane or "",
-            surface=args.surface or "",
-            afk=args.afk or "",
-            notes=notes,
-            source_ref=args.source,
-            brief=brief,
+    if not title:
+        raise SystemExit(
+            "taskman: title required (or use --from-capture with a capture that has a summary)."
         )
-        session.add(task)
-        session.flush()
-        if from_capture_id is not None:
-            cap.task_id = task.id
-        session.commit()
-        pbi_s = f"  pbi=#{task.pbi_id}" if task.pbi_id is not None else ""
-        lens_s = _lens_str(task.lane, task.surface)
-        lens_out = f"  {lens_s}" if lens_s else ""
-        cap_s = f"  capture=#{from_capture_id}" if from_capture_id is not None else ""
-        print(f"#{task.id}  {task.title}  [{task.status}]{pbi_s}{lens_out}{cap_s}")
+
+    if args.pbi is None and not args.source:
+        print(
+            "taskman: warning: task has no pbi and no source — it won't trace back to a goal"
+        )
+    pbi_id = args.pbi
+    if pbi_id is not None:
+        _get_pbi(state, slug, pbi_id)
+    now = _now_iso()
+    fields = {
+        "pbi_id": pbi_id,
+        "title": title,
+        "status": args.status,
+        "priority": args.priority,
+        "tags": tags,
+        "lane": args.lane or "",
+        "surface": args.surface or "",
+        "afk": args.afk or "",
+        "notes": notes,
+        "source_ref": args.source,
+        "brief": brief,
+        "created_at": now,
+        "updated_at": now,
+    }
+    task_id = store.add(board_dir, "task", fields)
+    if from_capture_id is not None:
+        store.link(board_dir, "capture", from_capture_id, "task_id", task_id)
+    pbi_s = f"  pbi=#{pbi_id}" if pbi_id is not None else ""
+    lens_s = _lens_str(args.lane or "", args.surface or "")
+    lens_out = f"  {lens_s}" if lens_s else ""
+    cap_s = f"  capture=#{from_capture_id}" if from_capture_id is not None else ""
+    print(f"#{task_id}  {title}  [{args.status}]{pbi_s}{lens_out}{cap_s}")
 
 
 def cmd_task_claim(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        result = session.execute(
-            update(Task)
-            .where(
-                Task.id == args.id,
-                Task.project_id == proj.id,
-                Task.claimed_by.is_(None),
-            )
-            .values(claimed_by=args.agent, claimed_at=func.now())
-        )
-        if result.rowcount == 0:
-            task = session.get(Task, args.id)
-            if task is None or task.project_id != proj.id:
-                raise SystemExit(
-                    f"taskman: task #{args.id} not found in project '{proj.slug}'."
-                )
-            raise SystemExit(
-                f"taskman: task #{args.id} already claimed by {task.claimed_by}."
-            )
-        session.commit()
+    slug, board_dir = _board()
+    if store.claim(board_dir, args.id, args.agent):
+        # claimed_at/updated_at ride on the claim event itself (same lock).
         print(f"#{args.id} claimed by {args.agent}")
+        return
+    # Lost (or no such task): the store's False carries no claimant — replay
+    # state to report who holds it.
+    task = store.state(board_dir)["task"].get(args.id)
+    if task is None:
+        raise SystemExit(
+            f"taskman: task #{args.id} not found in project '{slug}'."
+        )
+    raise SystemExit(
+        f"taskman: task #{args.id} already claimed by {task.get('claimed_by')}."
+    )
 
 
 def cmd_task_release(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        task = _get_task(session, proj, args.id)
-        task.claimed_by = None
-        task.claimed_at = None
-        session.commit()
-        print(f"#{task.id} released")
+    slug, board_dir = _board()
+    task = _get_task(store.state(board_dir), slug, args.id)
+    store.release(board_dir, args.id)
+    print(f"#{task['id']} released")
 
 
 def cmd_move(args) -> None:
     _require_status(args.status)
-    with Session() as session:
-        proj = _project(session)
-        task = _get_task(session, proj, args.id)
-        task.status = args.status
-        session.commit()
-        print(f"#{task.id}  {task.title}  -> {task.status}")
+    slug, board_dir = _board()
+    task = _get_task(store.state(board_dir), slug, args.id)
+    store.update(board_dir, "task", args.id, {"status": args.status, "updated_at": _now_iso()})
+    print(f"#{task['id']}  {task.get('title', '')}  -> {args.status}")
 
 
 # Editable-after-creation task fields. status is deliberately absent — `task move`
@@ -813,95 +767,93 @@ def cmd_task_set(args) -> None:
     if "surface" in requested:
         _require_surface(requested["surface"])
 
-    with Session() as session:
-        proj = _project(session)
-        task = _get_task(session, proj, args.id)
-        changes = []
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    task = _get_task(state, slug, args.id)
+    changes = []
+    fields: dict = {}
 
-        if "pbi" in requested:
-            pbi_id = requested.pop("pbi")
-            old_pbi = task.pbi_id
-            if pbi_id is not None:
-                pbi = _get_pbi(session, proj, pbi_id)
-                task.pbi_id = pbi.id
-            else:
-                task.pbi_id = None
-            changes.append(f"  pbi: {old_pbi or '-'} -> {task.pbi_id or '-'}")
+    if "pbi" in requested:
+        pbi_id = requested.pop("pbi")
+        old_pbi = task.get("pbi_id")
+        if pbi_id is not None:
+            _get_pbi(state, slug, pbi_id)
+        fields["pbi_id"] = pbi_id
+        changes.append(f"  pbi: {old_pbi or '-'} -> {pbi_id or '-'}")
 
-        for field, value in requested.items():
-            if field == "tags":
-                old_s = ",".join(task.tags or []) or "-"
-                value = _parse_tags(value)
-                new_s = ",".join(value) or "-"
-            else:
-                old_s = getattr(task, field) or "-"
-                new_s = value or "-"
-            setattr(task, field, value)
-            changes.append(f"  {field}: {old_s} -> {new_s}")
+    for field, value in requested.items():
+        if field == "tags":
+            old_s = ",".join(task.get("tags") or []) or "-"
+            value = _parse_tags(value)
+            new_s = ",".join(value) or "-"
+        else:
+            old_s = task.get(field) or "-"
+            new_s = value or "-"
+        fields[field] = value
+        changes.append(f"  {field}: {old_s} -> {new_s}")
 
-        if add_tags or rm_tags:
-            old_tags = list(task.tags or [])
-            new_tags = list(old_tags)
-            for t in add_tags:
-                if t not in new_tags:
-                    new_tags.append(t)
-            if rm_tags:
-                rm_set = set(rm_tags)
-                new_tags = [t for t in new_tags if t not in rm_set]
-            task.tags = new_tags
-            changes.append(
-                f"  tags: {','.join(old_tags) or '-'} -> {','.join(new_tags) or '-'}"
-            )
+    if add_tags or rm_tags:
+        old_tags = list(fields.get("tags", task.get("tags") or []))
+        new_tags = list(old_tags)
+        for t in add_tags:
+            if t not in new_tags:
+                new_tags.append(t)
+        if rm_tags:
+            rm_set = set(rm_tags)
+            new_tags = [t for t in new_tags if t not in rm_set]
+        fields["tags"] = new_tags
+        changes.append(
+            f"  tags: {','.join(old_tags) or '-'} -> {','.join(new_tags) or '-'}"
+        )
 
-        session.commit()
-        print(f"#{task.id}  {task.title}")
-        for line in changes:
-            print(line)
+    fields["updated_at"] = _now_iso()
+    store.update(board_dir, "task", args.id, fields)
+    print(f"#{task['id']}  {task.get('title', '')}")
+    for line in changes:
+        print(line)
 
 
 def cmd_show(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        task = _get_task(session, proj, args.id)
-        print(f"#{task.id}  {task.title}")
-        print(f"  status: {task.status}")
-        print(f"  priority: {task.priority}")
-        if task.tags:
-            print("  tags: " + ",".join(task.tags))
-        toolkit = toolkit_for_tags(list(task.tags or []), find_toolkit())
-        if toolkit:
-            print("  toolkit: " + " ".join(toolkit))
-        if task.notes:
-            print(f"  notes: {task.notes}")
-        if task.source_ref:
-            print(f"  brief: {task.source_ref}")
-        if task.claimed_by:
-            print(f"  claimed={task.claimed_by}")
-        budget_n = _budget_max_tool_calls(task.brief)
-        if budget_n is not None:
-            print(f"  budget={budget_n}")
-        caps = session.scalars(
-            select(Capture)
-            .where(Capture.project_id == proj.id, Capture.task_id == task.id)
-            .order_by(Capture.id)
-        ).all()
-        if caps:
-            print("  captures:")
-            for cap in caps:
-                print(f"    {_format_capture_line(cap)}")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    task = _get_task(state, slug, args.id)
+    print(f"#{task['id']}  {task.get('title', '')}")
+    print(f"  status: {task.get('status', '')}")
+    print(f"  priority: {task.get('priority', '')}")
+    if task.get("tags"):
+        print("  tags: " + ",".join(task["tags"]))
+    toolkit = toolkit_for_tags(list(task.get("tags") or []), find_toolkit())
+    if toolkit:
+        print("  toolkit: " + " ".join(toolkit))
+    if task.get("notes"):
+        print(f"  notes: {task['notes']}")
+    if task.get("source_ref"):
+        print(f"  brief: {task['source_ref']}")
+    if task.get("claimed_by"):
+        print(f"  claimed={task['claimed_by']}")
+    budget_n = _budget_max_tool_calls(task.get("brief"))
+    if budget_n is not None:
+        print(f"  budget={budget_n}")
+    caps = sorted(
+        (c for c in state["capture"].values() if c.get("task_id") == task["id"]),
+        key=lambda c: c["id"],
+    )
+    if caps:
+        print("  captures:")
+        for cap in caps:
+            print(f"    {_format_capture_line(cap)}")
 
 
 def cmd_link(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        task = _get_task(session, proj, args.id)
-        blocker = _get_task(session, proj, args.blocked_by)
-        if blocker.id == task.id:
-            raise SystemExit("taskman: a task cannot block itself.")
-        if blocker not in task.blocked_by:
-            task.blocked_by.append(blocker)
-            session.commit()
-        print(f"#{task.id} blocked-by #{blocker.id}")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    task = _get_task(state, slug, args.id)
+    blocker = _get_task(state, slug, args.blocked_by)
+    if blocker["id"] == task["id"]:
+        raise SystemExit("taskman: a task cannot block itself.")
+    if blocker["id"] not in (task.get("blocked_by") or []):
+        store.link(board_dir, "task", task["id"], "blocked_by", blocker["id"])
+    print(f"#{task['id']} blocked-by #{blocker['id']}")
 
 
 # --- Decision / Capture ---
@@ -909,259 +861,169 @@ def cmd_link(args) -> None:
 
 def cmd_decision_add(args) -> None:
     tags = _parse_tags(getattr(args, "tags", None) or "")
-    with Session() as session:
-        proj = _project(session, project_slug=_project_slug_arg(args))
-        task_id = getattr(args, "task", None)
-        if task_id is not None:
-            _get_task(session, proj, task_id)
-        dec = Decision(
-            project_id=proj.id,
-            task_id=task_id,
-            title=args.title,
-            why=args.why or "",
-            alternatives=args.alternatives or "",
-            implications=args.implications or "",
-            tags=tags,
-            source_ref=args.source,
-        )
-        session.add(dec)
-        session.commit()
-        print(_format_decision_line(dec, project_slug=proj.slug if _project_slug_arg(args) else None))
+    slug, board_dir = _board()
+    task_id = getattr(args, "task", None)
+    if task_id is not None:
+        _get_task(store.state(board_dir), slug, task_id)
+    fields = {
+        "task_id": task_id,
+        "title": args.title,
+        "why": args.why or "",
+        "alternatives": args.alternatives or "",
+        "implications": args.implications or "",
+        "tags": tags,
+        "source_ref": args.source,
+        "created_at": _now_iso(),
+    }
+    dec_id = store.add(board_dir, "decision", fields)
+    print(_format_decision_line({"id": dec_id, **fields}))
 
 
 def cmd_decision_show(args) -> None:
     """Print one decision for mow go hydrate / agent lookup."""
-    with Session() as session:
-        proj = _project(session, project_slug=_project_slug_arg(args))
-        dec = _get_decision(session, proj, args.id)
-        print(f"#{dec.id}  {dec.title}")
-        if dec.task_id is not None:
-            print(f"task: #{dec.task_id}")
-        if dec.tags:
-            print("tags: " + ",".join(dec.tags))
-        if dec.why:
-            print(f"why: {dec.why}")
-        if dec.implications:
-            print(f"implications: {dec.implications}")
-        if dec.alternatives:
-            print(f"alternatives: {dec.alternatives}")
-        if dec.source_ref:
-            print(f"source: {dec.source_ref}")
+    slug, board_dir = _board()
+    dec = _get_decision(store.state(board_dir), slug, args.id)
+    print(f"#{dec['id']}  {dec.get('title', '')}")
+    if dec.get("task_id") is not None:
+        print(f"task: #{dec['task_id']}")
+    if dec.get("tags"):
+        print("tags: " + ",".join(dec["tags"]))
+    if dec.get("why"):
+        print(f"why: {dec['why']}")
+    if dec.get("implications"):
+        print(f"implications: {dec['implications']}")
+    if dec.get("alternatives"):
+        print(f"alternatives: {dec['alternatives']}")
+    if dec.get("source_ref"):
+        print(f"source: {dec['source_ref']}")
 
 
 def cmd_decision_list(args) -> None:
-    with Session() as session:
-        all_projects = bool(getattr(args, "all_projects", False))
-        tag_filter = (getattr(args, "tag", None) or "").strip()
-        touching = (getattr(args, "touching", None) or "").strip()
-        # Narrowing filters must not run after LIMIT — otherwise older matches
-        # silently disappear on a busy board (Wave 3 review).
-        narrowing = bool(args.id) or bool(tag_filter) or bool(touching)
-        fetch_limit = None if narrowing else args.limit
+    _slug, board_dir = _board()
+    tag_filter = (getattr(args, "tag", None) or "").strip()
+    touching = (getattr(args, "touching", None) or "").strip()
 
-        if all_projects:
-            q = select(Decision, Project.slug).join(
-                Project, Decision.project_id == Project.id
-            )
-            if args.id:
-                q = q.where(Decision.id.in_(args.id))
-            if tag_filter:
-                q = q.where(Decision.tags.contains([tag_filter]))
-            q = q.order_by(Decision.id.desc())
-            if fetch_limit is not None:
-                q = q.limit(fetch_limit)
-            decisions = [(dec, slug) for dec, slug in session.execute(q).all()]
-        else:
-            proj = _project(session, project_slug=_project_slug_arg(args))
-            q = select(Decision).where(Decision.project_id == proj.id)
-            if args.id:
-                q = q.where(Decision.id.in_(args.id))
-            if tag_filter:
-                q = q.where(Decision.tags.contains([tag_filter]))
-            q = q.order_by(Decision.id.desc())
-            if fetch_limit is not None:
-                q = q.limit(fetch_limit)
-            decisions = [(dec, None) for dec in session.scalars(q).all()]
+    decisions = sorted(
+        store.state(board_dir)["decision"].values(),
+        key=lambda d: d["id"],
+        reverse=True,
+    )
+    if args.id:
+        wanted = set(args.id)
+        decisions = [d for d in decisions if d["id"] in wanted]
+    if tag_filter:
+        decisions = [d for d in decisions if tag_filter in (d.get("tags") or [])]
+    if touching:
+        decisions = [
+            d
+            for d in decisions
+            if decision_matches(d.get("tags"), paths=[touching], tags=[])
+        ]
+    if args.limit is not None:
+        decisions = decisions[: args.limit]
 
-        if touching:
-            matched = {
-                id(d)
-                for d in decisions_touching(
-                    [d for d, _ in decisions], paths=[touching], tags=[]
-                )
-            }
-            decisions = [(d, s) for d, s in decisions if id(d) in matched]
-
-        if narrowing and args.limit is not None:
-            decisions = decisions[: args.limit]
-
-        if not decisions:
-            print("taskman: no decisions match.")
-            return
-        for dec, slug in decisions:
-            print(_format_decision_line(dec, project_slug=slug))
+    if not decisions:
+        print("taskman: no decisions match.")
+        return
+    for dec in decisions:
+        print(_format_decision_line(dec))
 
 
 def cmd_decision_link(args) -> None:
-    with Session() as session:
-        proj = _project(session, project_slug=_project_slug_arg(args))
-        dec = _get_decision(session, proj, args.id)
-        _get_task(session, proj, args.task)
-        dec.task_id = args.task
-        session.commit()
-        print(f"decision #{dec.id} linked to task #{dec.task_id}")
-
-
-def cmd_decision_move(args) -> None:
-    """Move a decision to another project (creates ``workflow`` on demand)."""
-    target_slug = args.project
-    with Session() as session:
-        dec = session.get(Decision, args.id)
-        if dec is None:
-            raise SystemExit(f"taskman: decision #{args.id} not found.")
-        if target_slug == WORKFLOW_SLUG:
-            dest = _ensure_workflow_project(session)
-        else:
-            dest = _project(session, project_slug=target_slug)
-        if dec.project_id == dest.id:
-            print(f"decision #{dec.id} already in project '{dest.slug}'")
-            return
-        old = session.get(Project, dec.project_id)
-        old_slug = old.slug if old else "?"
-        dec.project_id = dest.id
-        # Owner task is project-scoped; drop the link on cross-project move.
-        if dec.task_id is not None:
-            task = session.get(Task, dec.task_id)
-            if task is None or task.project_id != dest.id:
-                dec.task_id = None
-        session.commit()
-        print(f"decision #{dec.id}  {old_slug} -> {dest.slug}")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    dec = _get_decision(state, slug, args.id)
+    _get_task(state, slug, args.task)
+    store.link(board_dir, "decision", dec["id"], "task_id", args.task)
+    print(f"decision #{dec['id']} linked to task #{args.task}")
 
 
 def cmd_capture_show(args) -> None:
     """Print one capture (rare — prefer decision/requirement for mow hydrate)."""
-    with Session() as session:
-        proj = _project(session, project_slug=_project_slug_arg(args))
-        cap = _get_capture(session, proj, args.id)
-        print(f"#{cap.id}  [{cap.kind}]  {cap.summary}")
-        if cap.task_id is not None:
-            print(f"task: #{cap.task_id}")
-        if cap.tags:
-            print("tags: " + ",".join(cap.tags))
-        if cap.source_ref:
-            print(f"source: {cap.source_ref}")
-        if cap.body:
-            print(cap.body)
+    slug, board_dir = _board()
+    cap = _get_capture(store.state(board_dir), slug, args.id)
+    print(f"#{cap['id']}  [{cap.get('kind', '')}]  {cap.get('summary', '')}")
+    if cap.get("task_id") is not None:
+        print(f"task: #{cap['task_id']}")
+    if cap.get("tags"):
+        print("tags: " + ",".join(cap["tags"]))
+    if cap.get("source_ref"):
+        print(f"source: {cap['source_ref']}")
+    if cap.get("body"):
+        print(cap["body"])
 
 
 def cmd_capture_add(args) -> None:
     _require_capture_kind(args.kind)
     tags = _parse_tags(getattr(args, "tags", None) or "")
-    with Session() as session:
-        proj = _project(session, project_slug=_project_slug_arg(args))
-        task_id = args.task
-        if task_id is None:
-            task_id = _task_id_from_summary(args.summary or "")
-        if task_id is not None:
-            _get_task(session, proj, task_id)
-        cap = Capture(
-            project_id=proj.id,
-            task_id=task_id,
-            kind=args.kind,
-            summary=args.summary or "",
-            body=args.body or "",
-            tags=tags,
-            source_ref=args.source,
-        )
-        session.add(cap)
-        session.commit()
-        print(_format_capture_line(cap))
+    slug, board_dir = _board()
+    task_id = args.task
+    if task_id is None:
+        task_id = _task_id_from_summary(args.summary or "")
+    if task_id is not None:
+        _get_task(store.state(board_dir), slug, task_id)
+    fields = {
+        "task_id": task_id,
+        "kind": args.kind,
+        "summary": args.summary or "",
+        "body": args.body or "",
+        "tags": tags,
+        "source_ref": args.source,
+        "created_at": _now_iso(),
+    }
+    cap_id = store.add(board_dir, "capture", fields)
+    print(_format_capture_line({"id": cap_id, **fields}))
 
 
 def cmd_capture_link(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        cap = _get_capture(session, proj, args.id)
-        _link_capture_to_task(session, proj, cap, args.task)
-        session.commit()
-        print(f"capture #{cap.id} linked to task #{cap.task_id}")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    cap = _get_capture(state, slug, args.id)
+    _get_task(state, slug, args.task)
+    store.link(board_dir, "capture", cap["id"], "task_id", args.task)
+    print(f"capture #{cap['id']} linked to task #{args.task}")
 
 
 def cmd_capture_unlink(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        cap = _get_capture(session, proj, args.id)
-        cap.task_id = None
-        session.commit()
-        print(f"capture #{cap.id} unlinked")
+    slug, board_dir = _board()
+    cap = _get_capture(store.state(board_dir), slug, args.id)
+    current = cap.get("task_id")
+    if current is not None:
+        store.unlink(board_dir, "capture", cap["id"], "task_id", current)
+    print(f"capture #{cap['id']} unlinked")
 
 
 def cmd_capture_list(args) -> None:
-    with Session() as session:
-        all_projects = bool(getattr(args, "all_projects", False))
-        tag_filter = (getattr(args, "tag", None) or "").strip()
-        touching = (getattr(args, "touching", None) or "").strip()
-        narrowing = (
-            args.task is not None
-            or bool(tag_filter)
-            or bool(touching)
-            or bool(args.kind)
-            or bool(args.unlinked)
-        )
-        fetch_limit = None if (narrowing and (tag_filter or touching)) else args.limit
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    tag_filter = (getattr(args, "tag", None) or "").strip()
+    touching = (getattr(args, "touching", None) or "").strip()
 
-        if all_projects:
-            q = select(Capture, Project.slug).join(
-                Project, Capture.project_id == Project.id
-            )
-            if args.task is not None:
-                q = q.where(Capture.task_id == args.task)
-            if args.kind:
-                _require_capture_kind(args.kind)
-                q = q.where(Capture.kind == args.kind)
-            if args.unlinked:
-                q = q.where(Capture.task_id.is_(None))
-            if tag_filter:
-                q = q.where(Capture.tags.contains([tag_filter]))
-            q = q.order_by(Capture.id.desc())
-            if fetch_limit is not None:
-                q = q.limit(fetch_limit)
-            caps = [(cap, slug) for cap, slug in session.execute(q).all()]
-        else:
-            proj = _project(session, project_slug=_project_slug_arg(args))
-            q = select(Capture).where(Capture.project_id == proj.id)
-            if args.task is not None:
-                _get_task(session, proj, args.task)
-                q = q.where(Capture.task_id == args.task)
-            if args.kind:
-                _require_capture_kind(args.kind)
-                q = q.where(Capture.kind == args.kind)
-            if args.unlinked:
-                q = q.where(Capture.task_id.is_(None))
-            if tag_filter:
-                q = q.where(Capture.tags.contains([tag_filter]))
-            q = q.order_by(Capture.id.desc())
-            if fetch_limit is not None:
-                q = q.limit(fetch_limit)
-            caps = [(cap, None) for cap in session.scalars(q).all()]
+    caps = sorted(state["capture"].values(), key=lambda c: c["id"], reverse=True)
+    if args.task is not None:
+        _get_task(state, slug, args.task)
+        caps = [c for c in caps if c.get("task_id") == args.task]
+    if args.kind:
+        _require_capture_kind(args.kind)
+        caps = [c for c in caps if c.get("kind") == args.kind]
+    if args.unlinked:
+        caps = [c for c in caps if c.get("task_id") is None]
+    if tag_filter:
+        caps = [c for c in caps if tag_filter in (c.get("tags") or [])]
+    if touching:
+        caps = [
+            c
+            for c in caps
+            if decision_matches(c.get("tags"), paths=[touching], tags=[])
+        ]
+    if args.limit is not None:
+        caps = caps[: args.limit]
 
-        if touching:
-            matched = {
-                id(c)
-                for c in decisions_touching(
-                    [c for c, _ in caps], paths=[touching], tags=[]
-                )
-            }
-            caps = [(c, s) for c, s in caps if id(c) in matched]
-
-        if (tag_filter or touching) and args.limit is not None:
-            caps = caps[: args.limit]
-
-        if not caps:
-            print("taskman: no captures match.")
-            return
-        for cap, slug in caps:
-            print(_format_capture_line(cap, project_slug=slug))
+    if not caps:
+        print("taskman: no captures match.")
+        return
+    for cap in caps:
+        print(_format_capture_line(cap))
 
 
 # --- Requirement (living spec) ---
@@ -1169,65 +1031,68 @@ def cmd_capture_list(args) -> None:
 
 def cmd_requirement_add(args) -> None:
     scenarios = _parse_scenarios(args.scenario)
-    with Session() as session:
-        proj = _project(session)
-        _get_feature(session, proj, args.feature)
-        if args.pbi is not None:
-            _get_pbi(session, proj, args.pbi)
-        req = Requirement(
-            project_id=proj.id,
-            feature_id=args.feature,
-            title=args.title,
-            statement=args.statement,
-            scenarios=scenarios,
-            status="active",
-            source_pbi_id=args.pbi,
-        )
-        session.add(req)
-        session.commit()
-        print(f"requirement #{req.id}  {req.title}  feature=#{req.feature_id}  [added]")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    _get_feature(state, slug, args.feature)
+    if args.pbi is not None:
+        _get_pbi(state, slug, args.pbi)
+    now = _now_iso()
+    fields = {
+        "feature_id": args.feature,
+        "title": args.title,
+        "statement": args.statement,
+        "scenarios": scenarios,
+        "status": "active",
+        "source_pbi_id": args.pbi,
+        "created_at": now,
+        "updated_at": now,
+    }
+    req_id = store.add(board_dir, "requirement", fields)
+    print(f"requirement #{req_id}  {args.title}  feature=#{args.feature}  [added]")
 
 
 def cmd_requirement_modify(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        req = _get_requirement(session, proj, args.id)
-        if args.title is not None:
-            req.title = args.title
-        if args.statement is not None:
-            req.statement = args.statement
-        if args.scenario:
-            req.scenarios = _parse_scenarios(args.scenario)
-        if args.pbi is not None:
-            _get_pbi(session, proj, args.pbi)
-            req.source_pbi_id = args.pbi
-        session.commit()
-        print(f"requirement #{req.id}  {req.title}  [modified]")
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    req = _get_requirement(state, slug, args.id)
+    fields: dict = {}
+    if args.title is not None:
+        fields["title"] = args.title
+    if args.statement is not None:
+        fields["statement"] = args.statement
+    if args.scenario:
+        fields["scenarios"] = _parse_scenarios(args.scenario)
+    if args.pbi is not None:
+        _get_pbi(state, slug, args.pbi)
+        fields["source_pbi_id"] = args.pbi
+    fields["updated_at"] = _now_iso()
+    store.update(board_dir, "requirement", args.id, fields)
+    print(f"requirement #{req['id']}  {fields.get('title', req.get('title', ''))}  [modified]")
 
 
 def cmd_requirement_remove(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        req = _get_requirement(session, proj, args.id)
-        req.status = "removed"
-        session.commit()
-        print(f"requirement #{req.id}  {req.title}  [removed]")
+    slug, board_dir = _board()
+    req = _get_requirement(store.state(board_dir), slug, args.id)
+    store.update(
+        board_dir, "requirement", args.id,
+        {"status": "removed", "updated_at": _now_iso()},
+    )
+    print(f"requirement #{req['id']}  {req.get('title', '')}  [removed]")
 
 
 def cmd_requirement_show(args) -> None:
-    with Session() as session:
-        proj = _project(session)
-        req = _get_requirement(session, proj, args.id)
-        for line in _format_requirement(req, indent=""):
-            print(line)
-        print(f"feature=#{req.feature_id}")
+    slug, board_dir = _board()
+    req = _get_requirement(store.state(board_dir), slug, args.id)
+    for line in _format_requirement(req, indent=""):
+        print(line)
+    print(f"feature=#{req.get('feature_id')}")
 
 
-def _format_requirement(req: Requirement, *, indent: str = "  ") -> list[str]:
-    lines = [f"{indent}#{req.id} [{req.status}] {req.title}"]
-    if req.statement:
-        lines.append(f"{indent}  {req.statement}")
-    for sc in req.scenarios or []:
+def _format_requirement(req: dict, *, indent: str = "  ") -> list[str]:
+    lines = [f"{indent}#{req['id']} [{req.get('status', '')}] {req.get('title', '')}"]
+    if req.get("statement"):
+        lines.append(f"{indent}  {req['statement']}")
+    for sc in req.get("scenarios") or []:
         name = sc.get("name", "")
         lines.append(f"{indent}  Scenario: {name}")
         lines.append(f"{indent}    GIVEN {sc.get('given', '')}")
@@ -1239,99 +1104,95 @@ def _format_requirement(req: Requirement, *, indent: str = "  ") -> list[str]:
 def cmd_requirement_list(args) -> None:
     status_filter = args.status or "active"
     _require_requirement_status(status_filter)
-    with Session() as session:
-        proj = _project(session)
-        _get_feature(session, proj, args.feature)
-        rows = session.scalars(
-            select(Requirement)
-            .where(Requirement.project_id == proj.id, Requirement.feature_id == args.feature)
-            .where(Requirement.status == status_filter)
-            .order_by(Requirement.id)
-        ).all()
-        print(f"# requirements: feature=#{args.feature} [{status_filter}] ({len(rows)})")
-        if not rows:
-            print("  (none)")
-            return
-        for req in rows:
-            for line in _format_requirement(req):
-                print(line)
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    _get_feature(state, slug, args.feature)
+    rows = sorted(
+        (
+            r
+            for r in state["requirement"].values()
+            if r.get("feature_id") == args.feature and r.get("status") == status_filter
+        ),
+        key=lambda r: r["id"],
+    )
+    print(f"# requirements: feature=#{args.feature} [{status_filter}] ({len(rows)})")
+    if not rows:
+        print("  (none)")
+        return
+    for req in rows:
+        for line in _format_requirement(req):
+            print(line)
 
 
 # --- Board ---
 
 
-def _board_flat(proj: Project, session, statuses: list[str]) -> None:
-    rows = session.scalars(
-        select(Task)
-        .where(Task.project_id == proj.id)
-        .options(selectinload(Task.blocked_by))
-        .order_by(Task.status, _priority_rank(Task.priority), Task.id)
-    ).all()
-    rows = [t for t in rows if t.status in statuses]
-    print(f"# board: {proj.slug}")
+def _board_flat(slug: str, state: dict, statuses: list[str]) -> None:
+    tasks_by_id = state["task"]
+    rows = sorted(
+        (t for t in tasks_by_id.values() if t.get("status") in statuses),
+        key=lambda t: (_priority_rank(t), t["id"]),
+    )
+    print(f"# board: {slug}")
     if not rows:
         print("  (no tasks)")
         return
     for status in statuses:
-        group = [t for t in rows if t.status == status]
+        group = [t for t in rows if t.get("status") == status]
         if not group:
             continue
         print(f"\n{status} ({len(group)})")
         for t in group:
-            print(_format_task_line(t, indent="  "))
+            print(_format_task_line(t, tasks_by_id, indent="  "))
 
 
-def _board_hierarchical(proj: Project, session, statuses: list[str]) -> None:
-    features = session.scalars(
-        select(Feature)
-        .where(Feature.project_id == proj.id)
-        .order_by(Feature.id)
-    ).all()
-    pbis = session.scalars(
-        select(PBI)
-        .where(PBI.project_id == proj.id)
-        .order_by(_priority_rank(PBI.priority), PBI.id)
-    ).all()
-    tasks = session.scalars(
-        select(Task)
-        .where(Task.project_id == proj.id)
-        .options(selectinload(Task.blocked_by))
-        .order_by(_priority_rank(Task.priority), Task.id)
-    ).all()
-    tasks = [t for t in tasks if t.status in statuses]
+def _board_hierarchical(slug: str, state: dict, statuses: list[str]) -> None:
+    tasks_by_id = state["task"]
+    features = sorted(state["feature"].values(), key=lambda f: f["id"])
+    pbis = sorted(_live_pbis(state), key=lambda p: (_priority_rank(p), p["id"]))
+    tasks = sorted(
+        (t for t in tasks_by_id.values() if t.get("status") in statuses),
+        key=lambda t: (_priority_rank(t), t["id"]),
+    )
 
-    pbis_by_feature: dict[int, list[PBI]] = {}
+    pbis_by_feature: dict[int, list[dict]] = {}
     for p in pbis:
-        pbis_by_feature.setdefault(p.feature_id, []).append(p)
+        pbis_by_feature.setdefault(p.get("feature_id"), []).append(p)
 
-    tasks_by_pbi: dict[int, list[Task]] = {}
-    orphans: list[Task] = []
+    live_pbi_by_id = {p["id"]: p for p in pbis}
+    feature_ids = {f["id"] for f in features}
+    tasks_by_pbi: dict[int, list[dict]] = {}
+    orphans: list[dict] = []
     for t in tasks:
-        if t.pbi_id is None:
+        pid = t.get("pbi_id")
+        pbi = live_pbi_by_id.get(pid) if pid is not None else None
+        # Deleted, missing, or feature-less PBIs are omitted from the feature
+        # walk — those tasks must still render (Orphan tasks), not vanish.
+        if pbi is None or pbi.get("feature_id") not in feature_ids:
             orphans.append(t)
         else:
-            tasks_by_pbi.setdefault(t.pbi_id, []).append(t)
+            tasks_by_pbi.setdefault(pid, []).append(t)
 
-    print(f"# board: {proj.slug}")
+    print(f"# board: {slug}")
     shown = False
     for feat in features:
-        feat_pbis = pbis_by_feature.get(feat.id, [])
+        feat_pbis = pbis_by_feature.get(feat["id"], [])
         # Show feature if it has any PBI (even empty) — keeps hierarchy visible.
         # Skip features with zero PBIs and no linked filtered tasks.
         if not feat_pbis:
             continue
         shown = True
-        print(f"\n## Feature: {feat.title} [{feat.status}]")
+        print(f"\n## Feature: {feat.get('title', '')} [{feat.get('status', '')}]")
         for pbi in feat_pbis:
-            print(f"  PBI #{pbi.id}: {pbi.title} [{pbi.status}]")
-            for t in tasks_by_pbi.get(pbi.id, []):
-                print(_format_task_line(t, indent="    "))
+            print(f"  PBI #{pbi['id']}: {pbi.get('title', '')} [{pbi.get('status', '')}]")
+            for t in tasks_by_pbi.get(pbi["id"], []):
+                print(_format_task_line(t, tasks_by_id, indent="    "))
 
     if orphans:
         shown = True
         print("\n## Orphan tasks")
         for t in orphans:
-            print(_format_task_line(t, indent="  "))
+            print(_format_task_line(t, tasks_by_id, indent="  "))
 
     if not shown:
         print("  (empty)")
@@ -1345,12 +1206,12 @@ def cmd_board(args) -> None:
     )
     for s in statuses:
         _require_status(s)
-    with Session() as session:
-        proj = _project(session)
-        if args.flat:
-            _board_flat(proj, session, statuses)
-        else:
-            _board_hierarchical(proj, session, statuses)
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    if args.flat:
+        _board_flat(slug, state, statuses)
+    else:
+        _board_hierarchical(slug, state, statuses)
 
 
 # --- Plan bridge: from-decisions / to-dispatch ---
@@ -1360,51 +1221,50 @@ def _plan_feature_tag(slug: str) -> str:
     return f"plan:{slug}"
 
 
-def _upsert_feature_for_plan(
-    session, project: Project, doc: WorkItemDoc
-) -> tuple[Feature, bool]:
-    """Upsert Feature keyed by tag ``plan:<slug>`` (Feature has no slug column)."""
+def _upsert_feature_for_plan(board_dir: Path, state: dict, doc: WorkItemDoc) -> tuple[int, bool]:
+    """Upsert Feature keyed by tag ``plan:<slug>``; returns (feature_id, created)."""
     tag_name = _plan_feature_tag(doc.plan.slug)
-    feat = session.scalar(
-        select(Feature)
-        .where(Feature.project_id == project.id)
-        .where(Feature.tags.any(Tag.name == tag_name))
-        .options(selectinload(Feature.tags))
+    feat = next(
+        (f for f in state["feature"].values() if tag_name in (f.get("tags") or [])),
+        None,
     )
-    created = False
     if feat is None:
         # Fallback: exact title match (pre-tag imports / manual features)
-        feat = session.scalar(
-            select(Feature)
-            .where(Feature.project_id == project.id, Feature.title == doc.plan.title)
-            .options(selectinload(Feature.tags))
+        feat = next(
+            (f for f in state["feature"].values() if f.get("title") == doc.plan.title),
+            None,
         )
     if feat is None:
-        feat = Feature(
-            project_id=project.id,
-            title=doc.plan.title,
-            description=doc.plan.source_ref or "",
-            status="backlog",
-            lane=doc.plan.lane or "",
-            surface=doc.plan.surface or "",
+        now = _now_iso()
+        feat_id = store.add(
+            board_dir,
+            "feature",
+            {
+                "title": doc.plan.title,
+                "description": doc.plan.source_ref or "",
+                "status": "backlog",
+                "lane": doc.plan.lane or "",
+                "surface": doc.plan.surface or "",
+                "tags": [tag_name],
+                "created_at": now,
+                "updated_at": now,
+            },
         )
-        session.add(feat)
-        session.flush()
-        created = True
-    else:
-        feat.title = doc.plan.title
-        if doc.plan.lane:
-            feat.lane = doc.plan.lane
-        if doc.plan.surface:
-            feat.surface = doc.plan.surface
-        if doc.plan.source_ref and not feat.description:
-            feat.description = doc.plan.source_ref
+        return feat_id, True
 
-    tags = _get_or_create_tags(session, project, [tag_name])
-    for t in tags:
-        if t not in feat.tags:
-            feat.tags.append(t)
-    return feat, created
+    fields: dict = {"title": doc.plan.title, "updated_at": _now_iso()}
+    if doc.plan.lane:
+        fields["lane"] = doc.plan.lane
+    if doc.plan.surface:
+        fields["surface"] = doc.plan.surface
+    if doc.plan.source_ref and not feat.get("description"):
+        fields["description"] = doc.plan.source_ref
+    tags = list(feat.get("tags") or [])
+    if tag_name not in tags:
+        tags.append(tag_name)
+        fields["tags"] = tags
+    store.update(board_dir, "feature", feat["id"], fields)
+    return feat["id"], False
 
 
 def _item_tags(item) -> list[str]:
@@ -1417,8 +1277,7 @@ def _item_tags(item) -> list[str]:
 
 
 def import_work_item_doc(
-    session,
-    project: Project,
+    board_dir: Path,
     doc: WorkItemDoc,
     *,
     feature_id: int | None = None,
@@ -1432,38 +1291,35 @@ def import_work_item_doc(
     existing Feature and mint nothing (d#856).
     """
     validate(doc)
+    state = store.state(board_dir)
     if feature_id is not None:
-        feat = session.scalar(
-            select(Feature)
-            .where(Feature.id == feature_id, Feature.project_id == project.id)
-            .options(selectinload(Feature.tags))
-        )
+        feat = state["feature"].get(feature_id)
         if feat is None:
+            slug, _name = find_project()
             raise SystemExit(
-                f"taskman: feature #{feature_id} not found in project '{project.slug}'."
+                f"taskman: feature #{feature_id} not found in project '{slug}'."
             )
         feat_created = False
+        feat_id = feature_id
         # Still ensure plan:<slug> tag for to-dispatch round-trip — does not mint a Feature.
         tag_name = _plan_feature_tag(doc.plan.slug)
-        tags = _get_or_create_tags(session, project, [tag_name])
-        for t in tags:
-            if t not in feat.tags:
-                feat.tags.append(t)
+        tags = list(feat.get("tags") or [])
+        if tag_name not in tags:
+            store.update(
+                board_dir, "feature", feat_id,
+                {"tags": [*tags, tag_name], "updated_at": _now_iso()},
+            )
     else:
-        feat, feat_created = _upsert_feature_for_plan(session, project, doc)
+        feat_id, feat_created = _upsert_feature_for_plan(board_dir, state, doc)
 
-    refs = [i.source_ref for i in doc.items if i.source_ref]
-    existing_by_ref: dict[str, Task] = {}
-    if refs:
-        for t in session.scalars(
-            select(Task)
-            .where(Task.project_id == project.id, Task.source_ref.in_(refs))
-            .options(selectinload(Task.blocked_by))
-        ).all():
-            if t.source_ref:
-                existing_by_ref[t.source_ref] = t
+    existing_by_ref: dict[str, dict] = {
+        t["source_ref"]: t
+        for t in state["task"].values()
+        if t.get("source_ref")
+    }
 
-    item_id_to_task: dict[str, Task] = {}
+    item_id_to_task: dict[str, int] = {}
+    blocked_by_current: dict[int, list[int]] = {}
     created = 0
     updated = 0
     for item in doc.items:
@@ -1473,20 +1329,27 @@ def import_work_item_doc(
         tags = _item_tags(item)
         brief = item.dispatch.model_dump()
         if task is None:
-            task = Task(
-                project_id=project.id,
-                pbi_id=None,
-                title=item.title,
-                status=item.status,
-                priority=item.priority,
-                tags=tags,
-                lane=doc.plan.lane or "",
-                surface=doc.plan.surface or "",
-                source_ref=item.source_ref,
-                brief=brief,
+            now = _now_iso()
+            task_id = store.add(
+                board_dir,
+                "task",
+                {
+                    "pbi_id": None,
+                    "title": item.title,
+                    "status": item.status,
+                    "priority": item.priority,
+                    "tags": tags,
+                    "lane": doc.plan.lane or "",
+                    "surface": doc.plan.surface or "",
+                    "afk": "",
+                    "notes": "",
+                    "source_ref": item.source_ref,
+                    "brief": brief,
+                    "created_at": now,
+                    "updated_at": now,
+                },
             )
-            session.add(task)
-            session.flush()
+            blocked_by_current[task_id] = []
             created += 1
         else:
             # Board owns status and priority after create. Markdown briefs always
@@ -1496,30 +1359,45 @@ def import_work_item_doc(
             # real new info from the brief, but a brief only ever encodes `role:*`
             # -- replacing wholesale would drop any richer tags (e.g. `security`,
             # `bug`) a human or an earlier task add had already set.
-            task.title = item.title
-            task.tags = list(dict.fromkeys([*task.tags, *tags]))
-            task.brief = brief
+            task_id = task["id"]
+            fields: dict = {
+                "title": item.title,
+                "tags": list(dict.fromkeys([*(task.get("tags") or []), *tags])),
+                "brief": brief,
+                "updated_at": _now_iso(),
+            }
             if doc.plan.lane:
-                task.lane = doc.plan.lane
+                fields["lane"] = doc.plan.lane
             if doc.plan.surface:
-                task.surface = doc.plan.surface
+                fields["surface"] = doc.plan.surface
+            store.update(board_dir, "task", task_id, fields)
+            blocked_by_current[task_id] = list(task.get("blocked_by") or [])
             updated += 1
-        item_id_to_task[item.id] = task
+        item_id_to_task[item.id] = task_id
 
-    # Second pass: depends_on (item ids) → blocked_by
+    # Second pass: depends_on (item ids) → blocked_by. Replace the set to match
+    # the plan (idempotent) — relations move only via link/unlink.
     for item in doc.items:
-        task = item_id_to_task[item.id]
+        task_id = item_id_to_task[item.id]
         desired = [item_id_to_task[d] for d in item.depends_on if d in item_id_to_task]
-        # Replace blocked_by set to match plan (idempotent)
-        task.blocked_by = desired
+        current = blocked_by_current.get(task_id, [])
+        for target in desired:
+            if target not in current:
+                store.link(board_dir, "task", task_id, "blocked_by", target)
+        for target in current:
+            if target not in desired:
+                store.unlink(board_dir, "task", task_id, "blocked_by", target)
 
-    pbi_ids = {t.pbi_id for t in item_id_to_task.values() if t.pbi_id is not None}
+    pbi_ids = {
+        t.get("pbi_id")
+        for tid in item_id_to_task.values()
+        if (t := state["task"].get(tid)) is not None and t.get("pbi_id") is not None
+    }
     if pbi_ids:
-        _sync_pbi_acceptance_from_tasks(session, project, pbi_ids)
+        _sync_pbi_acceptance_from_tasks(board_dir, pbi_ids)
 
-    session.flush()
     return {
-        "feature_id": feat.id,
+        "feature_id": feat_id,
         "feature_created": int(feat_created),
         "tasks_created": created,
         "tasks_updated": updated,
@@ -1536,50 +1414,45 @@ def cmd_plan_from_decisions(args) -> None:
     except (ValueError, OSError) as e:
         raise SystemExit(f"taskman plan from-decisions: {e}") from e
 
-    with Session() as session:
-        proj = _project(session)
-        feature_id = getattr(args, "feature", None)
-        try:
-            counts = import_work_item_doc(
-                session, proj, doc, feature_id=feature_id
-            )
-        except ValueError as e:
-            raise SystemExit(f"taskman plan from-decisions: {e}") from e
-        session.commit()
+    _slug, board_dir = _board()
+    feature_id = getattr(args, "feature", None)
+    try:
+        counts = import_work_item_doc(board_dir, doc, feature_id=feature_id)
+    except ValueError as e:
+        raise SystemExit(f"taskman plan from-decisions: {e}") from e
 
-        feat_id = counts["feature_id"]
-        minted = "minted" if counts["feature_created"] else "existing"
-        print(
-            f"taskman plan from-decisions: feature #{feat_id}  {doc.plan.title}  "
-            f"(slug={doc.plan.slug}, {minted})  "
-            f"created={counts['tasks_created']} updated={counts['tasks_updated']} "
-            f"total={counts['tasks_total']}"
-        )
-        # Board slice: tasks for this import (by source_ref)
-        refs = [i.source_ref for i in doc.items if i.source_ref]
-        tasks = session.scalars(
-            select(Task)
-            .where(Task.project_id == proj.id, Task.source_ref.in_(refs))
-            .options(selectinload(Task.blocked_by))
-            .order_by(_priority_rank(Task.priority), Task.id)
-        ).all()
-        print(f"\n## Feature: {doc.plan.title} [#{feat_id}]")
-        for t in tasks:
-            print(_format_task_line(t, indent="  "))
+    feat_id = counts["feature_id"]
+    minted = "minted" if counts["feature_created"] else "existing"
+    print(
+        f"taskman plan from-decisions: feature #{feat_id}  {doc.plan.title}  "
+        f"(slug={doc.plan.slug}, {minted})  "
+        f"created={counts['tasks_created']} updated={counts['tasks_updated']} "
+        f"total={counts['tasks_total']}"
+    )
+    # Board slice: tasks for this import (by source_ref)
+    refs = {i.source_ref for i in doc.items if i.source_ref}
+    state = store.state(board_dir)
+    tasks = sorted(
+        (t for t in state["task"].values() if t.get("source_ref") in refs),
+        key=lambda t: (_priority_rank(t), t["id"]),
+    )
+    print(f"\n## Feature: {doc.plan.title} [#{feat_id}]")
+    for t in tasks:
+        print(_format_task_line(t, state["task"], indent="  "))
 
 
-def _plan_slug_from_feature(feat: Feature) -> str | None:
-    for t in feat.tags or []:
-        if t.name.startswith("plan:") and len(t.name) > len("plan:"):
-            return t.name[len("plan:") :]
+def _plan_slug_from_feature(feat: dict) -> str | None:
+    for name in feat.get("tags") or []:
+        if name.startswith("plan:") and len(name) > len("plan:"):
+            return name[len("plan:") :]
     return None
 
 
-def _dispatch_meta_from_task(task: Task) -> DispatchMeta:
-    brief = task.brief if isinstance(task.brief, dict) else {}
+def _dispatch_meta_from_task(task: dict) -> DispatchMeta:
+    brief = task.get("brief") if isinstance(task.get("brief"), dict) else {}
     role = (
         (brief.get("role") or "").strip()
-        or role_from_tags(list(task.tags or []))
+        or role_from_tags(list(task.get("tags") or []))
         or "code-edit"
     )
     files = brief.get("files") if isinstance(brief.get("files"), list) else []
@@ -1605,11 +1478,11 @@ def _dispatch_meta_from_task(task: Task) -> DispatchMeta:
 
 
 def tasks_to_work_item_doc(
-    tasks: list[Task],
+    tasks: list[dict],
     *,
     plan: PlanMeta,
 ) -> WorkItemDoc:
-    """Convert a Task board slice (+ blocked_by graph) into a WorkItemDoc.
+    """Convert a task board slice (+ blocked_by graph) into a WorkItemDoc.
 
     In-set ``blocked_by`` links become ``depends_on``. Blockers outside the
     selected set are omitted (``recompute_waves`` ignores them). Status is
@@ -1621,36 +1494,36 @@ def tasks_to_work_item_doc(
     used: set[str] = set()
     id_by_task: dict[int, str] = {}
     for t in tasks:
-        raw = item_id_from_source_ref(t.source_ref or "") or f"task-{t.id}"
+        raw = item_id_from_source_ref(t.get("source_ref") or "") or f"task-{t['id']}"
         item_id = raw
         n = 2
         while item_id in used:
             item_id = f"{raw}-{n}"
             n += 1
         used.add(item_id)
-        id_by_task[t.id] = item_id
+        id_by_task[t["id"]] = item_id
 
     items: list[WorkItem] = []
     for t in tasks:
-        item_id = id_by_task[t.id]
+        item_id = id_by_task[t["id"]]
         deps: list[str] = []
-        for b in t.blocked_by or []:
-            if b.id not in id_by_task:
+        for b in t.get("blocked_by") or []:
+            if b not in id_by_task:
                 continue
-            deps.append(id_by_task[b.id])
-        tags = list(t.tags or [])
+            deps.append(id_by_task[b])
+        tags = list(t.get("tags") or [])
         dispatch = _dispatch_meta_from_task(t)
         if role_tag(dispatch.role) not in tags:
             tags.append(role_tag(dispatch.role))
         items.append(
             WorkItem(
                 id=item_id,
-                title=t.title,
-                priority=t.priority or "med",
-                status=t.status or "backlog",
+                title=t.get("title") or "",
+                priority=t.get("priority") or "med",
+                status=t.get("status") or "backlog",
                 tags=tags,
                 depends_on=deps,
-                source_ref=t.source_ref or "",
+                source_ref=t.get("source_ref") or "",
                 dispatch=dispatch,
             )
         )
@@ -1660,7 +1533,7 @@ def tasks_to_work_item_doc(
 DECISION_TAG = "kind:decision"
 
 
-def _refuse_if_gated_by_open_decision(tasks: list[Task], dropped_ids: set[int]) -> None:
+def _refuse_if_gated_by_open_decision(tasks: list[dict], dropped_ids: set[int]) -> None:
     """Abort the export when a selected task is blocked by a filtered-out decision.
 
     ``tasks_to_work_item_doc`` drops blockers outside the selected set, which is only
@@ -1674,10 +1547,12 @@ def _refuse_if_gated_by_open_decision(tasks: list[Task], dropped_ids: set[int]) 
     it ships either. Changing this to "skip the gated task and export the rest" would
     silently reintroduce the transitive hole.
     """
-    gated = [t for t in tasks if any(b.id in dropped_ids for b in (t.blocked_by or []))]
+    gated = [
+        t for t in tasks if any(b in dropped_ids for b in (t.get("blocked_by") or []))
+    ]
     if not gated:
         return
-    detail = "; ".join(f"#{t.id} {t.title!r}" for t in gated)
+    detail = "; ".join(f"#{t['id']} {t.get('title')!r}" for t in gated)
     raise SystemExit(
         f"taskman plan to-dispatch: blocked by an open decision: {detail} "
         "— resolve the decision(s), unlink the blocker, or re-run with "
@@ -1685,7 +1560,7 @@ def _refuse_if_gated_by_open_decision(tasks: list[Task], dropped_ids: set[int]) 
     )
 
 
-def _select_tasks_for_export(session, project: Project, args) -> tuple[list[Task], PlanMeta]:
+def _select_tasks_for_export(state: dict, slug: str, args) -> tuple[list[dict], PlanMeta]:
     """Apply --feature / --status / --lane / --tag selectors; return tasks + plan meta.
 
     Also enforces the decision-task gate: ``kind:decision`` rows are questions, not
@@ -1704,55 +1579,42 @@ def _select_tasks_for_export(session, project: Project, args) -> tuple[list[Task
         _require_lane(lane_filter)
 
     feature_id = getattr(args, "feature", None)
-    feat: Feature | None = None
-    slug: str | None = None
+    feat: dict | None = None
+    plan_slug: str | None = None
     slugs: list[str] = []
 
-    q = (
-        select(Task)
-        .where(Task.project_id == project.id)
-        .options(selectinload(Task.blocked_by))
-        .order_by(_priority_rank(Task.priority), Task.id)
+    tasks = sorted(
+        state["task"].values(), key=lambda t: (_priority_rank(t), t["id"])
     )
-    tasks = list(session.scalars(q).all())
 
     if feature_id is not None:
-        feat = session.scalar(
-            select(Feature)
-            .where(Feature.id == feature_id, Feature.project_id == project.id)
-            .options(selectinload(Feature.tags))
-        )
+        feat = state["feature"].get(feature_id)
         if feat is None:
             raise SystemExit(
-                f"taskman: feature #{feature_id} not found in project '{project.slug}'."
+                f"taskman: feature #{feature_id} not found in project '{slug}'."
             )
-        slug = _plan_slug_from_feature(feat)
-        if slug:
-            needle = slug
+        plan_slug = _plan_slug_from_feature(feat)
+        if plan_slug:
+            needle = plan_slug
             tasks = [
                 t
                 for t in tasks
-                if t.source_ref and needle in t.source_ref.replace("\\", "/")
+                if t.get("source_ref") and needle in t["source_ref"].replace("\\", "/")
             ]
         else:
             # No plan: tag — fall back to tasks under this feature's PBIs
             pbi_ids = {
-                p.id
-                for p in session.scalars(
-                    select(PBI).where(
-                        PBI.project_id == project.id, PBI.feature_id == feat.id
-                    )
-                ).all()
+                p["id"]
+                for p in _live_pbis(state)
+                if p.get("feature_id") == feat["id"]
             }
-            tasks = [t for t in tasks if t.pbi_id is not None and t.pbi_id in pbi_ids]
+            tasks = [t for t in tasks if t.get("pbi_id") is not None and t["pbi_id"] in pbi_ids]
 
     if lane_filter:
         # Restrict to tasks whose plan feature (via source_ref slug / plan: tag) matches lane
-        feat_rows = session.scalars(
-            select(Feature)
-            .where(Feature.project_id == project.id, Feature.lane == lane_filter)
-            .options(selectinload(Feature.tags))
-        ).all()
+        feat_rows = [
+            f for f in state["feature"].values() if (f.get("lane") or "") == lane_filter
+        ]
         slugs = []
         for f in feat_rows:
             s = _plan_slug_from_feature(f)
@@ -1765,31 +1627,28 @@ def _select_tasks_for_export(session, project: Project, args) -> tuple[list[Task
                 tasks = [
                     t
                     for t in tasks
-                    if t.source_ref
-                    and any(s in t.source_ref.replace("\\", "/") for s in slugs)
+                    if t.get("source_ref")
+                    and any(s in t["source_ref"].replace("\\", "/") for s in slugs)
                 ]
             else:
                 # Features with lane but no plan tag: PBI-linked tasks
-                fids = {f.id for f in feat_rows}
+                fids = {f["id"] for f in feat_rows}
                 pbi_ids = {
-                    p.id
-                    for p in session.scalars(
-                        select(PBI).where(
-                            PBI.project_id == project.id, PBI.feature_id.in_(fids)
-                        )
-                    ).all()
+                    p["id"]
+                    for p in _live_pbis(state)
+                    if p.get("feature_id") in fids
                 }
                 tasks = [
-                    t for t in tasks if t.pbi_id is not None and t.pbi_id in pbi_ids
+                    t for t in tasks if t.get("pbi_id") is not None and t["pbi_id"] in pbi_ids
                 ]
-        elif feat is not None and feat.lane and feat.lane != lane_filter:
+        elif feat is not None and feat.get("lane") and feat.get("lane") != lane_filter:
             tasks = []
 
     if statuses is not None:
-        tasks = [t for t in tasks if t.status in statuses]
+        tasks = [t for t in tasks if t.get("status") in statuses]
 
     if tag_filter:
-        tasks = [t for t in tasks if tag_filter in (t.tags or [])]
+        tasks = [t for t in tasks if tag_filter in (t.get("tags") or [])]
 
     # A kind:decision task is an open question, not a slice of build work — never
     # hand one to a blind subagent as a brief. The filter exists to stop a question
@@ -1797,8 +1656,8 @@ def _select_tasks_for_export(session, project: Project, args) -> tuple[list[Task
     # --tag counts as asking for decisions outright, same as --include-decisions.
     matched_before_decisions = len(tasks)
     if not getattr(args, "include_decisions", False) and tag_filter != DECISION_TAG:
-        dropped_ids = {t.id for t in tasks if DECISION_TAG in (t.tags or [])}
-        tasks = [t for t in tasks if t.id not in dropped_ids]
+        dropped_ids = {t["id"] for t in tasks if DECISION_TAG in (t.get("tags") or [])}
+        tasks = [t for t in tasks if t["id"] not in dropped_ids]
         _refuse_if_gated_by_open_decision(tasks, dropped_ids)
 
     if not tasks:
@@ -1813,11 +1672,11 @@ def _select_tasks_for_export(session, project: Project, args) -> tuple[list[Task
     # Plan meta from feature when available; else synthesize from first task
     if feat is not None:
         plan = PlanMeta(
-            slug=slug or f"feature-{feat.id}",
-            title=feat.title,
-            lane=feat.lane or "",
-            surface=feat.surface or "",
-            source_ref=(feat.description or "").strip(),
+            slug=plan_slug or f"feature-{feat['id']}",
+            title=feat.get("title") or "",
+            lane=feat.get("lane") or "",
+            surface=feat.get("surface") or "",
+            source_ref=(feat.get("description") or "").strip(),
         )
     elif lane_filter and slugs:
         plan = PlanMeta(
@@ -1849,15 +1708,15 @@ def cmd_plan_to_dispatch(args) -> None:
             "taskman plan to-dispatch: provide --feature and/or --status/--lane/--tag"
         )
 
-    with Session() as session:
-        proj = _project(session)
-        tasks, plan = _select_tasks_for_export(session, proj, args)
-        doc = tasks_to_work_item_doc(tasks, plan=plan)
-        try:
-            validate(doc)
-            lanes = write_dispatch_folder(doc, dest)
-        except ValueError as e:
-            raise SystemExit(f"taskman plan to-dispatch: {e}") from e
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    tasks, plan = _select_tasks_for_export(state, slug, args)
+    doc = tasks_to_work_item_doc(tasks, plan=plan)
+    try:
+        validate(doc)
+        lanes = write_dispatch_folder(doc, dest)
+    except ValueError as e:
+        raise SystemExit(f"taskman plan to-dispatch: {e}") from e
 
     print(
         f"taskman plan to-dispatch: wrote {len(lanes)} lane(s) / {len(doc.items)} brief(s) "
@@ -2024,36 +1883,41 @@ def cmd_plan_mark_shipped(args) -> None:
     force = bool(getattr(args, "force", False))
     moved = 0
 
-    with Session() as session:
-        proj = _project(session)
-        tasks = session.scalars(
-            select(Task).where(Task.project_id == proj.id, Task.source_ref.in_(ref_values))
-        ).all()
+    _slug, board_dir = _board()
+    tasks = sorted(
+        (
+            t
+            for t in store.state(board_dir)["task"].values()
+            if t.get("source_ref") in ref_values
+        ),
+        key=lambda t: t["id"],
+    )
 
-        for task in tasks:
-            if task.status == "done":
+    for task in tasks:
+        if task.get("status") == "done":
+            continue
+        # req #433 / d#856: kind:decision rows are open questions, not build
+        # slices — never sweep them to done (even under --force).
+        if DECISION_TAG in (task.get("tags") or []):
+            continue
+        if has_report:
+            todo_id = item_id_from_source_ref(task.get("source_ref") or "")
+            if task["id"] not in shipped_task_ids and (
+                not todo_id or todo_id not in shipped_todos
+            ):
                 continue
-            # req #433 / d#856: kind:decision rows are open questions, not build
-            # slices — never sweep them to done (even under --force).
-            if DECISION_TAG in (task.tags or []):
-                continue
-            if has_report:
-                todo_id = item_id_from_source_ref(task.source_ref or "")
-                if task.id not in shipped_task_ids and (
-                    not todo_id or todo_id not in shipped_todos
-                ):
-                    continue
-            if task.status == "blocked" and not force:
-                print(
-                    f"taskman plan mark-shipped: skipping blocked task #{task.id}",
-                    file=sys.stderr,
-                )
-                continue
-            task.status = "done"
-            moved += 1
-            print(f"#{task.id}  {task.title}  -> done")
-
-        session.commit()
+        if task.get("status") == "blocked" and not force:
+            print(
+                f"taskman plan mark-shipped: skipping blocked task #{task['id']}",
+                file=sys.stderr,
+            )
+            continue
+        store.update(
+            board_dir, "task", task["id"],
+            {"status": "done", "updated_at": _now_iso()},
+        )
+        moved += 1
+        print(f"#{task['id']}  {task.get('title', '')}  -> done")
 
     if moved:
         print(f"taskman plan mark-shipped: moved {moved} task(s) to done")
@@ -2118,51 +1982,57 @@ def _sole_active_mow_stem(repo_root: Path) -> tuple[str | None, int | None]:
 
 
 def _task_matches_feature(
-    task: Task,
-    feat: Feature,
+    task: dict,
+    feat: dict,
     slug: str | None,
+    pbi_ids: set[int] | None = None,
 ) -> bool:
-    if slug and task.source_ref and slug in task.source_ref.replace("\\", "/"):
+    if slug and task.get("source_ref") and slug in task["source_ref"].replace("\\", "/"):
         return True
     plan_tag = f"plan:{slug}" if slug else ""
-    if plan_tag and plan_tag in (task.tags or []):
+    if plan_tag and plan_tag in (task.get("tags") or []):
+        return True
+    if pbi_ids is not None and task.get("pbi_id") in pbi_ids:
         return True
     return False
 
 
-def _is_recommend_eligible(task: Task) -> bool:
-    if task.status not in {"backlog", "todo", "in_progress"}:
+def _is_recommend_eligible(task: dict, tasks_by_id: dict[int, dict]) -> bool:
+    if task.get("status") not in {"backlog", "todo", "in_progress"}:
         return False
-    for blocker in task.blocked_by or []:
-        if blocker.status != "done":
+    for blocker_id in task.get("blocked_by") or []:
+        blocker = tasks_by_id.get(blocker_id)
+        if blocker is None:
+            continue  # dangling id (other-project dep, deleted task) is not a live block
+        if blocker.get("status") != "done":
             return False
     return True
 
 
 def _score_recommend_task(
-    task: Task,
+    task: dict,
     *,
     now: dt.datetime,
     sole_stem: str | None,
     sole_feature_id: int | None,
-    feat_by_id: dict[int, Feature],
+    feat_by_id: dict[int, dict],
     slug_by_feature: dict[int, str | None],
 ) -> tuple[int, str]:
-    score = RECOMMEND_PRIORITY_SCORE.get(task.priority or "med", RECOMMEND_PRIORITY_SCORE["med"])
-    reasons = [f"{task.priority or 'med'} priority (+{score})"]
+    priority = task.get("priority") or "med"
+    score = RECOMMEND_PRIORITY_SCORE.get(priority, RECOMMEND_PRIORITY_SCORE["med"])
+    reasons = [f"{priority} priority (+{score})"]
 
-    if task.status == "in_progress":
+    if task.get("status") == "in_progress":
         score += RECOMMEND_IN_PROGRESS_BONUS
         reasons.append(f"in progress (+{RECOMMEND_IN_PROGRESS_BONUS})")
-        updated = task.updated_at
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=dt.UTC)
-        now_aware = now if now.tzinfo else now.replace(tzinfo=dt.UTC)
-        days_stale = (now_aware.date() - updated.date()).days
-        if days_stale > RECOMMEND_STALE_GRACE_DAYS:
-            penalty = (days_stale - RECOMMEND_STALE_GRACE_DAYS) * RECOMMEND_STALE_PENALTY_PER_DAY
-            score -= penalty
-            reasons.append(f"stale {days_stale}d (−{penalty})")
+        updated = _parse_iso(task.get("updated_at"))
+        if updated is not None:
+            now_aware = now if now.tzinfo else now.replace(tzinfo=dt.UTC)
+            days_stale = (now_aware.date() - updated.date()).days
+            if days_stale > RECOMMEND_STALE_GRACE_DAYS:
+                penalty = (days_stale - RECOMMEND_STALE_GRACE_DAYS) * RECOMMEND_STALE_PENALTY_PER_DAY
+                score -= penalty
+                reasons.append(f"stale {days_stale}d (−{penalty})")
 
     if sole_stem and sole_feature_id is not None:
         feat = feat_by_id.get(sole_feature_id)
@@ -2175,25 +2045,43 @@ def _score_recommend_task(
 
 
 def _filter_tasks_for_recommend(
-    tasks: list[Task],
+    tasks: list[dict],
     *,
     feature_id: int | None,
     lane: str | None,
     tag: str | None,
-    feat_by_id: dict[int, Feature],
+    feat_by_id: dict[int, dict],
     slug_by_feature: dict[int, str | None],
-) -> list[Task]:
+    state: dict,
+) -> list[dict]:
     filtered = tasks
+    live_pbis = _live_pbis(state)
     if feature_id is not None:
         feat = feat_by_id.get(feature_id)
         if feat is None:
             return []
         slug = slug_by_feature.get(feature_id)
-        filtered = [t for t in filtered if _task_matches_feature(t, feat, slug)]
+        pbi_ids = {p["id"] for p in live_pbis if p.get("feature_id") == feature_id}
+        filtered = [
+            t for t in filtered if _task_matches_feature(t, feat, slug, pbi_ids)
+        ]
     if lane:
-        filtered = [t for t in filtered if (t.lane or "") == lane]
+        feat_rows = [
+            f for f in feat_by_id.values() if (f.get("lane") or "") == lane
+        ]
+        fids = {f["id"] for f in feat_rows}
+        pbi_ids = {p["id"] for p in live_pbis if p.get("feature_id") in fids}
+        slugs = [s for s in (_plan_slug_from_feature(f) for f in feat_rows) if s]
+        def _lane_match(t: dict) -> bool:
+            if (t.get("lane") or "") == lane:
+                return True
+            if t.get("pbi_id") in pbi_ids:
+                return True
+            src = (t.get("source_ref") or "").replace("\\", "/")
+            return any(s in src for s in slugs)
+        filtered = [t for t in filtered if _lane_match(t)]
     if tag:
-        filtered = [t for t in filtered if tag in (t.tags or [])]
+        filtered = [t for t in filtered if tag in (t.get("tags") or [])]
     return filtered
 
 
@@ -2356,102 +2244,69 @@ def cmd_recommend_next(args) -> None:
     )
     now = dt.datetime.now(dt.UTC)
 
-    with Session() as session:
-        proj = _project(session)
-        if feature_id is not None:
-            _get_feature(session, proj, feature_id)
+    slug, board_dir = _board()
+    state = store.state(board_dir)
+    if feature_id is not None:
+        _get_feature(state, slug, feature_id)
 
-        features = session.scalars(
-            select(Feature)
-            .where(Feature.project_id == proj.id)
-            .options(selectinload(Feature.tags))
-        ).all()
-        feat_by_id = {f.id: f for f in features}
-        slug_by_feature = {f.id: _plan_slug_from_feature(f) for f in features}
+    feat_by_id = dict(state["feature"])
+    slug_by_feature = {fid: _plan_slug_from_feature(f) for fid, f in feat_by_id.items()}
+    tasks_by_id = state["task"]
 
-        tasks = list(
-            session.scalars(
-                select(Task)
-                .where(Task.project_id == proj.id)
-                .options(selectinload(Task.blocked_by))
-            ).all()
-        )
+    candidates = _filter_tasks_for_recommend(
+        list(tasks_by_id.values()),
+        feature_id=feature_id,
+        lane=lane,
+        tag=tag,
+        feat_by_id=feat_by_id,
+        slug_by_feature=slug_by_feature,
+        state=state,
+    )
+    eligible = [t for t in candidates if _is_recommend_eligible(t, tasks_by_id)]
 
-        candidates = _filter_tasks_for_recommend(
-            tasks,
-            feature_id=feature_id,
-            lane=lane,
-            tag=tag,
+    if not eligible:
+        if getattr(args, "json", False):
+            print("[]")
+        else:
+            print("taskman recommend next: none")
+        return
+
+    scored: list[tuple[int, dict, str]] = []
+    for task in eligible:
+        score, reason = _score_recommend_task(
+            task,
+            now=now,
+            sole_stem=sole_stem,
+            sole_feature_id=sole_feature_id,
             feat_by_id=feat_by_id,
             slug_by_feature=slug_by_feature,
         )
-        eligible = [t for t in candidates if _is_recommend_eligible(t)]
+        scored.append((score, task, reason))
 
-        if not eligible:
-            if getattr(args, "json", False):
-                print("[]")
-            else:
-                print("taskman recommend next: none")
-            return
+    scored.sort(key=lambda row: (-row[0], row[1]["id"]))
+    top = scored[:3]
 
-        scored: list[tuple[int, Task, str]] = []
-        for task in eligible:
-            score, reason = _score_recommend_task(
-                task,
-                now=now,
-                sole_stem=sole_stem,
-                sole_feature_id=sole_feature_id,
-                feat_by_id=feat_by_id,
-                slug_by_feature=slug_by_feature,
-            )
-            scored.append((score, task, reason))
-
-        scored.sort(key=lambda row: (-row[0], row[1].id))
-        top = scored[:3]
-
-        if getattr(args, "json", False):
-            payload = [
-                {"id": t.id, "title": t.title, "reason": reason, "score": score}
-                for score, t, reason in top
-            ]
-            print(json.dumps(payload))
-            return
-
-        print("taskman recommend next:")
-        for rank, (score, task, reason) in enumerate(top, start=1):
-            print(f"  {rank}. #{task.id}  {task.title}  (score {score}) — {reason}")
-
-
-
-
-def cmd_db_upgrade(args) -> None:
-    cur = _db.current_revision()
-    head = _db.head_revision()
-    if cur == head:
-        print(f"taskman db: already at head ({head})")
+    if getattr(args, "json", False):
+        payload = [
+            {"id": t["id"], "title": t.get("title"), "reason": reason, "score": score}
+            for score, t, reason in top
+        ]
+        print(json.dumps(payload))
         return
-    upgrade_head()
-    print(f"taskman db: upgraded {cur or '(empty)'} -> {_db.head_revision()}")
+
+    print("taskman recommend next:")
+    for rank, (score, task, reason) in enumerate(top, start=1):
+        print(f"  {rank}. #{task['id']}  {task.get('title', '')}  (score {score}) — {reason}")
 
 
 def main(argv=None) -> None:
-    from taskman.config import load_dotenv_from_cwd
-
-    # Re-read cwd project env on every invocation (tests + multi-project shells).
-    load_dotenv_from_cwd(force=True)
-
     parser = argparse.ArgumentParser(
         prog="taskman", description="Per-project task board, by agents for agents."
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_db = sub.add_parser("db", help="database schema operations")
-    dbsub = p_db.add_subparsers(dest="dbcmd", required=True)
-    p_dbup = dbsub.add_parser("upgrade", help="apply package migrations to head (the only thing that moves the schema)")
-    p_dbup.set_defaults(func=cmd_db_upgrade)
-
-    p_init = sub.add_parser("init-db", help="alembic upgrade head + register this project")
-    p_init.set_defaults(func=cmd_init_db)
+    p_init = sub.add_parser("init", help="create board/ next to the nearest .taskman.toml")
+    p_init.set_defaults(func=cmd_init)
 
     # feature
     p_feat = sub.add_parser("feature", help="feature operations")
@@ -2617,16 +2472,10 @@ def main(argv=None) -> None:
         default=None,
         help="owner task id (accountability link; d#865)",
     )
-    p_dadd.add_argument(
-        "--project",
-        default=None,
-        help="project slug override (e.g. workflow — no directory .taskman.toml)",
-    )
     p_dadd.set_defaults(func=cmd_decision_add)
 
     p_dshow = dsub.add_parser("show", help="show one decision (why / implications)")
     p_dshow.add_argument("id", type=int)
-    p_dshow.add_argument("--project", default=None, help="project slug override")
     p_dshow.set_defaults(func=cmd_decision_show)
 
     p_dlist = dsub.add_parser("list", help="list recent decisions")
@@ -2643,37 +2492,13 @@ def main(argv=None) -> None:
         default="",
         help="filter: path:<glob> tags that fnmatch this path",
     )
-    p_dlist.add_argument(
-        "--all-projects",
-        action="store_true",
-        dest="all_projects",
-        help="list across projects; annotate each row with [slug]",
-    )
-    p_dlist.add_argument(
-        "--project",
-        default=None,
-        help="project slug override (ignored with --all-projects)",
-    )
     p_dlist.add_argument("--limit", type=int, default=50)
     p_dlist.set_defaults(func=cmd_decision_list)
 
     p_dlink = dsub.add_parser("link", help="link a decision to an owner task")
     p_dlink.add_argument("id", type=int)
     p_dlink.add_argument("--task", type=int, required=True)
-    p_dlink.add_argument("--project", default=None, help="project slug override")
     p_dlink.set_defaults(func=cmd_decision_link)
-
-    p_dmove = dsub.add_parser(
-        "move",
-        help="move a decision to another project (creates workflow on demand)",
-    )
-    p_dmove.add_argument("id", type=int)
-    p_dmove.add_argument(
-        "--project",
-        required=True,
-        help="destination project slug (workflow creates the row if missing)",
-    )
-    p_dmove.set_defaults(func=cmd_decision_move)
 
     # requirement (living spec)
     p_req = sub.add_parser("requirement", help="living spec: SHALL requirements + scenarios")
@@ -2738,11 +2563,6 @@ def main(argv=None) -> None:
         default=None,
         help="link to task (also auto-detected from summary prefix #123)",
     )
-    p_cadd.add_argument(
-        "--project",
-        default=None,
-        help="project slug override (e.g. workflow)",
-    )
     p_cadd.set_defaults(func=cmd_capture_add)
 
     p_clink = csub.add_parser("link", help="link a capture to a task")
@@ -2768,23 +2588,11 @@ def main(argv=None) -> None:
         default="",
         help="filter: path:<glob> tags that fnmatch this path",
     )
-    p_clist.add_argument(
-        "--all-projects",
-        action="store_true",
-        dest="all_projects",
-        help="list across projects; annotate each row with [slug]",
-    )
-    p_clist.add_argument(
-        "--project",
-        default=None,
-        help="project slug override (ignored with --all-projects)",
-    )
     p_clist.add_argument("--limit", type=int, default=50)
     p_clist.set_defaults(func=cmd_capture_list)
 
     p_cshow = csub.add_parser("show", help="show one capture (body)")
     p_cshow.add_argument("id", type=int)
-    p_cshow.add_argument("--project", default=None, help="project slug override")
     p_cshow.set_defaults(func=cmd_capture_show)
 
     # board
@@ -2800,7 +2608,7 @@ def main(argv=None) -> None:
     # session
     p_session = sub.add_parser("session", help="session metrics (Phase 1)")
     ssub = p_session.add_subparsers(dest="sessioncmd", required=True)
-    p_rec = ssub.add_parser("record", help="emit meta.json + DB row for one transcript")
+    p_rec = ssub.add_parser("record", help="emit meta.json + session.record event for one transcript")
     p_rec.add_argument("--file", required=True, help="path to archived .jsonl")
     p_rec.set_defaults(func=cmd_session_record)
 
@@ -2974,7 +2782,4 @@ def main(argv=None) -> None:
     p_wrec.set_defaults(func=cmd_wrapup_record)
 
     args = parser.parse_args(argv)
-    # d#859: everything except the migration commands warns (never blocks) when behind head.
-    if args.cmd not in {"db", "init-db"}:
-        _db.warn_if_behind()
     args.func(args)

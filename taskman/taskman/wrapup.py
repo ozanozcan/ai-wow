@@ -20,11 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-
 from taskman.config import find_project
-from taskman.db import Session
-from taskman.models import Project, Task
+from taskman.eventlog import store
 
 MARKER_DIRNAME = ".session-markers"
 RECEIPT_SUFFIX = ".receipt.json"
@@ -228,9 +225,9 @@ def changed_paths(worktree: Path, start_sha: str) -> list[str]:
     return out
 
 
-def claims_from_task(task: Task) -> set[str]:
+def claims_from_task(task: dict[str, Any]) -> set[str]:
     claims: set[str] = set()
-    brief = task.brief if isinstance(task.brief, dict) else {}
+    brief = task.get("brief") if isinstance(task.get("brief"), dict) else {}
     files = brief.get("files") if isinstance(brief.get("files"), list) else []
     for raw in files:
         norm = normalize_path(str(raw))
@@ -239,30 +236,28 @@ def claims_from_task(task: Task) -> set[str]:
     return claims
 
 
-def open_task_claims(project_id: int) -> dict[int, set[str]]:
-    with Session() as session:
-        rows = session.scalars(
-            select(Task).where(
-                Task.project_id == project_id,
-                Task.status.in_(sorted(OPEN_STATUSES)),
-            )
-        ).all()
-        return {t.id: claims_from_task(t) for t in rows}
+def open_task_claims(board_dir: Path) -> dict[int, set[str]]:
+    tasks = store.state(board_dir)["task"].values()
+    return {
+        t["id"]: claims_from_task(t)
+        for t in tasks
+        if t.get("status") in OPEN_STATUSES
+    }
 
 
-def in_progress_tasks(project_id: int) -> list[Task]:
-    with Session() as session:
-        return list(
-            session.scalars(
-                select(Task)
-                .where(Task.project_id == project_id, Task.status == STALE_STATUS)
-                .order_by(Task.id)
-            ).all()
-        )
+def in_progress_tasks(board_dir: Path) -> list[dict[str, Any]]:
+    return sorted(
+        (
+            t
+            for t in store.state(board_dir)["task"].values()
+            if t.get("status") == STALE_STATUS
+        ),
+        key=lambda t: t["id"],
+    )
 
 
-def extract_verify_command(task: Task) -> str | None:
-    brief = task.brief if isinstance(task.brief, dict) else {}
+def extract_verify_command(task: dict[str, Any]) -> str | None:
+    brief = task.get("brief") if isinstance(task.get("brief"), dict) else {}
     explicit = brief.get("verify")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
@@ -277,29 +272,29 @@ def extract_verify_command(task: Task) -> str | None:
     return None
 
 
-def is_design_ticket(task: Task) -> bool:
-    tags = {str(t).lower() for t in (task.tags or [])}
+def is_design_ticket(task: dict[str, Any]) -> bool:
+    tags = {str(t).lower() for t in (task.get("tags") or [])}
     if tags & DESIGN_TAG_MARKERS:
         return True
-    brief = task.brief if isinstance(task.brief, dict) else {}
+    brief = task.get("brief") if isinstance(task.get("brief"), dict) else {}
     role = str(brief.get("role") or "").strip().lower()
     if role in DESIGN_ROLES and not extract_verify_command(task):
         return True
     return False
 
 
-def _project_id() -> int:
-    slug, _ = find_project()
-    with Session() as session:
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            raise RuntimeError(f"project slug={slug!r} not registered — run taskman init-db")
-        return proj.id
+def _board_dir() -> Path:
+    """Board for the cwd project (identity via the marker; d-p6)."""
+    find_project()  # stops loudly on a missing marker or slug
+    board = find_repo_root() / "board"
+    if not board.is_dir():
+        raise RuntimeError(f"{board} missing — run taskman init")
+    return board
 
 
-def unattributed_paths(worktree: Path, start_sha: str, project_id: int) -> list[str]:
+def unattributed_paths(worktree: Path, start_sha: str, board_dir: Path) -> list[str]:
     changed = [p for p in changed_paths(worktree, start_sha) if not path_ignored(p)]
-    claims_by_task = open_task_claims(project_id)
+    claims_by_task = open_task_claims(board_dir)
     all_claims: set[str] = set()
     for claims in claims_by_task.values():
         all_claims |= claims
@@ -320,8 +315,21 @@ def _parse_marker_started_at(marker: Marker) -> dt.datetime | None:
     return when
 
 
+def _parse_board_ts(raw: Any) -> dt.datetime | None:
+    """Board timestamps are ISO strings; tolerate absent/naive values."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        when = dt.datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    return when
+
+
 def task_touched_this_session(
-    task: Task,
+    task: dict[str, Any],
     *,
     marker: Marker,
     changed: set[str],
@@ -334,9 +342,11 @@ def task_touched_this_session(
     if all_stale:
         return True
     started = _parse_marker_started_at(marker)
-    if task.claimed_at is not None and started is not None and task.claimed_at >= started:
+    claimed_at = _parse_board_ts(task.get("claimed_at"))
+    if claimed_at is not None and started is not None and claimed_at >= started:
         return True
-    if task.updated_at is not None and started is not None and task.updated_at >= started:
+    updated_at = _parse_board_ts(task.get("updated_at"))
+    if updated_at is not None and started is not None and updated_at >= started:
         return True
     claims = claims_from_task(task)
     if claims and any(path_claimed(p, claims) for p in changed):
@@ -345,7 +355,7 @@ def task_touched_this_session(
 
 
 def stale_candidates(
-    project_id: int,
+    board_dir: Path,
     *,
     marker: Marker,
     changed: list[str] | None = None,
@@ -353,7 +363,7 @@ def stale_candidates(
 ) -> list[dict[str, Any]]:
     changed_set = set(changed or [])
     out: list[dict[str, Any]] = []
-    for task in in_progress_tasks(project_id):
+    for task in in_progress_tasks(board_dir):
         if not task_touched_this_session(
             task, marker=marker, changed=changed_set, all_stale=all_stale
         ):
@@ -362,9 +372,9 @@ def stale_candidates(
         design = is_design_ticket(task)
         out.append(
             {
-                "id": task.id,
-                "title": task.title,
-                "status": task.status,
+                "id": task["id"],
+                "title": task.get("title") or "",
+                "status": task.get("status") or "",
                 "verify": verify,
                 "needs_operator_ack": design and verify is None,
                 "files": sorted(claims_from_task(task)),
@@ -440,11 +450,11 @@ def run_gate(
     if not marker.start_sha or marker.start_sha == "UNKNOWN":
         raise ValueError(f"marker {marker.path} has no usable start_sha")
 
-    project_id = _project_id()
+    board_dir = _board_dir()
     changed = changed_paths(marker.worktree, marker.start_sha)
-    raw_u = unattributed_paths(marker.worktree, marker.start_sha, project_id)
+    raw_u = unattributed_paths(marker.worktree, marker.start_sha, board_dir)
     raw_s = stale_candidates(
-        project_id,
+        board_dir,
         marker=marker,
         changed=changed,
         all_stale=all_stale,

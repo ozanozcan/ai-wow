@@ -4,61 +4,12 @@ from __future__ import annotations
 
 import io
 from contextlib import redirect_stdout
-
-import pytest
-from sqlalchemy import select, text
+from pathlib import Path
 
 from taskman.cli import main
-from taskman.config import find_project
-from taskman.db import Session, upgrade_head
-from taskman.models import Capture, Decision, Project, Task
+from taskman.eventlog import store
 
 MARKER = "decision-tags-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        projs = list(
-            session.scalars(
-                select(Project).where(Project.slug.in_([slug, "workflow"]))
-            ).all()
-        )
-        for proj in projs:
-            pid = proj.id
-            session.execute(
-                text(
-                    "UPDATE taskman_decision SET task_id = NULL "
-                    "WHERE project_id = :pid AND title LIKE :m"
-                ),
-                {"pid": pid, "m": f"%{MARKER}%"},
-            )
-            session.execute(
-                text(
-                    "DELETE FROM taskman_decision WHERE project_id = :pid AND title LIKE :m"
-                ),
-                {"pid": pid, "m": f"%{MARKER}%"},
-            )
-            session.execute(
-                text(
-                    "DELETE FROM taskman_capture WHERE project_id = :pid AND summary LIKE :m"
-                ),
-                {"pid": pid, "m": f"%{MARKER}%"},
-            )
-            session.execute(
-                text(
-                    "DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"
-                ),
-                {"pid": pid, "m": f"%{MARKER}%"},
-            )
-        session.commit()
 
 
 def _run(argv: list[str]) -> str:
@@ -68,7 +19,7 @@ def _run(argv: list[str]) -> str:
     return buf.getvalue()
 
 
-def test_decision_add_with_tags_persists_array():
+def test_decision_add_with_tags_persists_array(board_dir: Path):
     out = _run(
         [
             "decision",
@@ -82,10 +33,8 @@ def test_decision_add_with_tags_persists_array():
     )
     dec_id = int(out.split("#")[1].split()[0])
 
-    with Session() as session:
-        dec = session.get(Decision, dec_id)
-        assert dec is not None
-        assert dec.tags == ["path:app/domain/formation*.py", "backend"]
+    dec = store.state(board_dir)["decision"][dec_id]
+    assert dec["tags"] == ["path:app/domain/formation*.py", "backend"]
 
 
 def test_decision_list_touching_path_include_and_exclude():
@@ -106,7 +55,7 @@ def test_decision_list_touching_path_include_and_exclude():
     assert f"Formation {MARKER}" not in miss
 
 
-def test_decision_add_task_link_survives_list_and_show():
+def test_decision_add_task_link_survives_list_and_show(board_dir: Path):
     out = _run(["task", "add", f"Owner {MARKER}", "--source", "tests"])
     task_id = int(out.split("#")[1].split()[0])
 
@@ -128,11 +77,10 @@ def test_decision_add_task_link_survives_list_and_show():
     assert f"task=#{task_id}" in listed
     assert f"task: #{task_id}" in shown
 
-    with Session() as session:
-        assert session.get(Decision, dec_id).task_id == task_id
+    assert store.state(board_dir)["decision"][dec_id]["task_id"] == task_id
 
 
-def test_capture_add_with_tags():
+def test_capture_add_with_tags(board_dir: Path):
     out = _run(
         [
             "capture",
@@ -146,8 +94,7 @@ def test_capture_add_with_tags():
         ]
     )
     cap_id = int(out.split("#")[1].split()[0])
-    with Session() as session:
-        assert session.get(Capture, cap_id).tags == ["path:docs/**/*.md"]
+    assert store.state(board_dir)["capture"][cap_id]["tags"] == ["path:docs/**/*.md"]
 
 
 def test_decision_list_tag_filter():
@@ -166,32 +113,3 @@ def test_decision_list_tag_filter():
     miss = _run(["decision", "list", "--tag", "frontend", "--limit", "200"])
     assert f"Area {MARKER}" in hit
     assert f"Area {MARKER}" not in miss
-
-
-def test_decision_add_project_workflow_override():
-    out = _run(
-        [
-            "decision",
-            "add",
-            f"Workflow scoped {MARKER}",
-            "--why",
-            "no directory toml",
-            "--project",
-            "workflow",
-            "-t",
-            "path:docs/workflow/**",
-        ]
-    )
-    assert "[workflow]" in out or "Workflow scoped" in out
-    with Session() as session:
-        from taskman.cli import WORKFLOW_SLUG
-
-        workflow = session.scalar(select(Project).where(Project.slug == WORKFLOW_SLUG))
-        assert workflow is not None
-        dec = session.scalar(
-            select(Decision)
-            .where(Decision.title.like(f"%{MARKER}%"))
-            .order_by(Decision.id.desc())
-        )
-        assert dec is not None
-        assert dec.project_id == workflow.id

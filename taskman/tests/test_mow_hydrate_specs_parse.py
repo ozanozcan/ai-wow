@@ -1,12 +1,18 @@
-"""Unit tests for mow_hydrate_specs pointer parsing (no DB)."""
+"""Unit tests for mow_hydrate_specs pointer parsing + board-state resolution (no CLI)."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock
-
-from taskman.models import Capture, Decision, Requirement
 from taskman.mow import hydrate_specs as _mod
+
+
+def _state(**entities) -> dict:
+    """Replayed-board shape: entity -> id -> fields dict."""
+    base: dict = {
+        e: {} for e in ("task", "feature", "pbi", "requirement", "decision", "capture", "session")
+    }
+    for entity, rows in entities.items():
+        base[entity] = {row["id"]: row for row in rows}
+    return base
 
 
 def test_parse_pointer_cell_catalog_style():
@@ -26,85 +32,28 @@ def test_parse_pointer_cell_dash():
     assert _mod.parse_pointer_cell("`-`") == []
 
 
-def test_resolve_entries_accepts_decision_in_workflow_project():
-    """d#856: machinery decisions under slug workflow resolve from any cwd project."""
-    demo = SimpleNamespace(id=1, slug="demo-api")
-    workflow = SimpleNamespace(id=99, slug="workflow")
-    dec = SimpleNamespace(
-        id=856,
-        project_id=workflow.id,
-        title="Cross-project visibility",
-        implications="Visible from demo cwd",
-        why="",
+def test_resolve_entries_decision_from_board_state():
+    state = _state(
+        decision=[
+            {
+                "id": 856,
+                "title": "Cross-project visibility",
+                "implications": "Visible from demo cwd",
+                "why": "",
+            }
+        ]
     )
-    session = MagicMock()
-
-    def _get(model, oid):
-        if model is Decision and oid == 856:
-            return dec
-        if model is Project and oid == workflow.id:
-            return workflow
-        return None
-
-    session.get.side_effect = _get
-    session.scalar.return_value = workflow
-
-    lines, errors = _mod.resolve_entries(session, demo, [("d", 856)])
+    lines, errors = _mod.resolve_entries(state, [("d", 856)])
     assert errors == []
     assert len(lines) == 1
     assert "d #856" in lines[0]
     assert "Cross-project visibility" in lines[0]
 
 
-def test_resolve_entries_rejects_decision_in_unrelated_project():
-    demo = SimpleNamespace(id=1, slug="demo-api")
-    other = SimpleNamespace(id=50, slug="other-app")
-    dec = SimpleNamespace(
-        id=1,
-        project_id=other.id,
-        title="Foreign",
-        implications="",
-        why="",
-    )
-    session = MagicMock()
-
-    def _get(model, oid):
-        if model is Decision and oid == 1:
-            return dec
-        if model is Project and oid == other.id:
-            return other
-        return None
-
-    session.get.side_effect = _get
-    session.scalar.return_value = None  # no workflow project
-
-    lines, errors = _mod.resolve_entries(session, demo, [("d", 1)])
+def test_resolve_entries_reports_missing_ids():
+    lines, errors = _mod.resolve_entries(_state(), [("d", 1), ("req", 430)])
     assert lines == []
-    assert errors == ["decision #1 not found"]
-
-
-def test_resolve_entries_keeps_requirements_project_scoped():
-    demo = SimpleNamespace(id=1, slug="demo-api")
-    workflow = SimpleNamespace(id=99, slug="workflow")
-    req = SimpleNamespace(
-        id=430,
-        project_id=workflow.id,
-        title="Should stay scoped",
-        statement="The system SHALL not leak reqs across projects",
-    )
-    session = MagicMock()
-
-    def _get(model, oid):
-        if model is Requirement and oid == 430:
-            return req
-        return None
-
-    session.get.side_effect = _get
-    session.scalar.return_value = workflow
-
-    lines, errors = _mod.resolve_entries(session, demo, [("req", 430)])
-    assert lines == []
-    assert errors == ["requirement #430 not found"]
+    assert errors == ["decision #1 not found", "requirement #430 not found"]
 
 
 def test_parse_waived_extracts_id_and_reason():
@@ -153,25 +102,16 @@ def test_waived_marker_with_unclosed_paren_is_not_a_marker():
     assert _mod._cell_without_waived(cell) == cell
 
 
-def test_resolve_entries_accepts_capture_in_workflow_project():
-    demo = SimpleNamespace(id=1, slug="demo-api")
-    workflow = SimpleNamespace(id=99, slug="workflow")
-    cap = SimpleNamespace(
-        id=848,
-        project_id=workflow.id,
-        kind="grill",
-        summary="Machinery capture",
+def test_resolve_entries_capture_from_board_state():
+    state = _state(
+        capture=[
+            {
+                "id": 848,
+                "kind": "grill",
+                "summary": "Machinery capture",
+            }
+        ]
     )
-    session = MagicMock()
-
-    def _get(model, oid):
-        if model is Capture and oid == 848:
-            return cap
-        return None
-
-    session.get.side_effect = _get
-    session.scalar.return_value = workflow
-
-    lines, errors = _mod.resolve_entries(session, demo, [("cap", 848)])
+    lines, errors = _mod.resolve_entries(state, [("cap", 848)])
     assert errors == []
     assert "cap #848" in lines[0]

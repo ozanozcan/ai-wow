@@ -6,35 +6,10 @@ import io
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-import pytest
-from sqlalchemy import select, text
-
 from taskman.cli import main
-from taskman.db import Session, upgrade_head
-from taskman.config import find_project
-from taskman.models import Project, Task
+from taskman.eventlog import store
 
 MARKER = "mark-shipped-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        session.execute(
-            text("DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": proj.id, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> tuple[str, str]:
@@ -43,6 +18,10 @@ def _run(argv: list[str]) -> tuple[str, str]:
     with redirect_stdout(out_buf), redirect_stderr(err_buf):
         main(argv)
     return out_buf.getvalue(), err_buf.getvalue()
+
+
+def _status(board_dir: Path, task_id: int) -> str:
+    return store.state(board_dir)["task"][task_id]["status"]
 
 
 def _add_task(source_ref: str, *, status: str = "todo", priority: str = "med") -> int:
@@ -116,7 +95,7 @@ Test fixture.
 """
 
 
-def test_moves_matching_tasks_without_action_report(tmp_path: Path):
+def test_moves_matching_tasks_without_action_report(tmp_path: Path, board_dir: Path):
     ref_a = f"docs/plans/{MARKER}/dispatch/01-a.md"
     ref_b = f"docs/plans/{MARKER}/dispatch/02-b.md"
     task_a = _add_task(ref_a, status="in_progress")
@@ -132,13 +111,12 @@ def test_moves_matching_tasks_without_action_report(tmp_path: Path):
     out, err = _run(["plan", "mark-shipped", str(dispatch)])
     assert "no action-report" in err.lower()
 
-    with Session() as session:
-        assert session.get(Task, task_a).status == "done"
-        assert session.get(Task, task_b).status == "done"
+    assert _status(board_dir, task_a) == "done"
+    assert _status(board_dir, task_b) == "done"
     assert f"#{task_a}" in out or "done" in out.lower()
 
 
-def test_skips_deferred_in_action_report(tmp_path: Path):
+def test_skips_deferred_in_action_report(tmp_path: Path, board_dir: Path):
     ref_done = f"docs/plans/{MARKER}/dispatch/01-done.md"
     ref_deferred = f"docs/plans/{MARKER}/dispatch/02-deferred.md"
     task_done = _add_task(ref_done, status="todo")
@@ -163,12 +141,11 @@ def test_skips_deferred_in_action_report(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, task_done).status == "done"
-        assert session.get(Task, task_deferred).status == "todo"
+    assert _status(board_dir, task_done) == "done"
+    assert _status(board_dir, task_deferred) == "todo"
 
 
-def test_skips_already_done(tmp_path: Path):
+def test_skips_already_done(tmp_path: Path, board_dir: Path):
     ref = f"docs/plans/{MARKER}/dispatch/01-a.md"
     task_id = _add_task(ref, status="done")
     dispatch = _write_dispatch(
@@ -178,11 +155,10 @@ def test_skips_already_done(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, task_id).status == "done"
+    assert _status(board_dir, task_id) == "done"
 
 
-def test_skips_blocked_without_force(tmp_path: Path):
+def test_skips_blocked_without_force(tmp_path: Path, board_dir: Path):
     ref = f"docs/plans/{MARKER}/dispatch/01-a.md"
     blocker = _add_task(f"docs/plans/{MARKER}/dispatch/blocker.md", status="todo")
     blocked = _add_task(ref, status="blocked")
@@ -194,12 +170,11 @@ def test_skips_blocked_without_force(tmp_path: Path):
 
     _, err = _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, blocked).status == "blocked"
+    assert _status(board_dir, blocked) == "blocked"
     assert f"#{blocked}" in err
 
 
-def test_moves_tasks_for_briefs_not_listed_in_index(tmp_path: Path):
+def test_moves_tasks_for_briefs_not_listed_in_index(tmp_path: Path, board_dir: Path):
     """Sequential lane todos may share one INDEX Brief cell; scan picks up the rest."""
     ref_index = f"docs/plans/{MARKER}/dispatch/01-index-only.md"
     ref_extra = f"docs/plans/{MARKER}/dispatch/02-not-in-index.md"
@@ -216,12 +191,11 @@ def test_moves_tasks_for_briefs_not_listed_in_index(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, task_index).status == "done"
-        assert session.get(Task, task_extra).status == "done"
+    assert _status(board_dir, task_index) == "done"
+    assert _status(board_dir, task_extra) == "done"
 
 
-def test_skips_extra_brief_when_deferred_in_action_report(tmp_path: Path):
+def test_skips_extra_brief_when_deferred_in_action_report(tmp_path: Path, board_dir: Path):
     ref_index = f"docs/plans/{MARKER}/dispatch/01-done.md"
     ref_extra = f"docs/plans/{MARKER}/dispatch/02-deferred.md"
     task_index = _add_task(ref_index, status="todo")
@@ -247,12 +221,11 @@ def test_skips_extra_brief_when_deferred_in_action_report(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, task_index).status == "done"
-        assert session.get(Task, task_extra).status == "todo"
+    assert _status(board_dir, task_index) == "done"
+    assert _status(board_dir, task_extra) == "todo"
 
 
-def test_force_moves_blocked(tmp_path: Path):
+def test_force_moves_blocked(tmp_path: Path, board_dir: Path):
     ref = f"docs/plans/{MARKER}/dispatch/01-a.md"
     blocked = _add_task(ref, status="blocked")
     dispatch = _write_dispatch(
@@ -262,11 +235,10 @@ def test_force_moves_blocked(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch), "--force"])
 
-    with Session() as session:
-        assert session.get(Task, blocked).status == "done"
+    assert _status(board_dir, blocked) == "done"
 
 
-def test_skips_kind_decision_tasks(tmp_path: Path):
+def test_skips_kind_decision_tasks(tmp_path: Path, board_dir: Path):
     """req #433 / mis-sourced-decision-survives: kind:decision never swept to done."""
     ref = f"docs/plans/{MARKER}/dispatch/01-decision.md"
     out, _ = _run(
@@ -291,6 +263,5 @@ def test_skips_kind_decision_tasks(tmp_path: Path):
 
     _run(["plan", "mark-shipped", str(dispatch)])
 
-    with Session() as session:
-        assert session.get(Task, decision_task).status == "todo"
-        assert session.get(Task, build_task).status == "done"
+    assert _status(board_dir, decision_task) == "todo"
+    assert _status(board_dir, build_task) == "done"

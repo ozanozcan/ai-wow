@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from taskman.models import LANES, PRIORITIES, STATUSES, SURFACES
+from taskman.eventlog.schema import LANES, PRIORITIES, STATUSES, SURFACES
 
 log = logging.getLogger("taskman.plan")
 

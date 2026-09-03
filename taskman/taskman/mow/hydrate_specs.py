@@ -20,15 +20,8 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import select
-
 from taskman.config import find_project  # noqa: E402
-from taskman.db import Session  # noqa: E402
-from taskman.models import Capture, Decision, Project, Requirement, Task  # noqa: E402
-
-# Reserved slug for machinery decisions/captures (d#856). Visible from any
-# project cwd when hydrating d/cap pointers by global id.
-WORKFLOW_SLUG = "workflow"
+from taskman.eventlog import store  # noqa: E402
 
 # Repeated ids under one prefix may be separated by whitespace, a comma, or the
 # `·` the INDEX legend uses between pointers. Whitespace alone silently dropped
@@ -179,72 +172,67 @@ def _split_index_lanes(index_text: str) -> list[tuple[str, str, str]]:
     return rows
 
 
-def _project(session) -> Project:
-    slug, _name = find_project()
-    proj = session.scalar(select(Project).where(Project.slug == slug))
-    if proj is None:
-        raise SystemExit(f"taskman: project slug {slug!r} not found")
-    return proj
-
-
-def _visible_project_ids_for_decisions(session, project: Project) -> set[int]:
-    """Current project plus reserved ``workflow`` (d#856 cross-project visibility)."""
-    ids = {project.id}
-    workflow = session.scalar(select(Project).where(Project.slug == WORKFLOW_SLUG))
-    if workflow is not None:
-        ids.add(workflow.id)
-    return ids
+def _board_dir() -> Path:
+    """Board for the cwd project: next to the nearest .taskman.toml (d-p6)."""
+    find_project()  # identity check — stops loudly on a missing marker or slug
+    here = Path.cwd().resolve()
+    for d in (here, *here.parents):
+        if (d / ".taskman.toml").exists():
+            board = d / "board"
+            if not board.is_dir():
+                raise SystemExit(f"taskman: {board} missing — run `taskman init` first.")
+            return board
+    raise SystemExit("taskman: no .taskman.toml found above cwd")
 
 
 def resolve_entries(
-    session, project: Project, pointers: list[tuple[str, int]]
+    state: dict, pointers: list[tuple[str, int]]
 ) -> tuple[list[str], list[str]]:
-    """Return (markdown bullets, errors).
+    """Return (markdown bullets, errors) resolved over the replayed board.
 
-    Decisions and captures resolve by global id when they live in the cwd
-    project **or** the reserved ``workflow`` project. Requirements and tasks
-    stay project-scoped.
+    One board per repo (d-p6): every pointer resolves against the cwd
+    project's own log — the old cross-project ``workflow`` visibility died
+    with the Project table.
     """
     lines: list[str] = []
     errors: list[str] = []
-    visible = _visible_project_ids_for_decisions(session, project)
     for kind, oid in pointers:
         if kind == "d":
-            dec = session.get(Decision, oid)
-            if dec is None or dec.project_id not in visible:
+            dec = state["decision"].get(oid)
+            if dec is None:
                 errors.append(f"decision #{oid} not found")
                 continue
-            bit = dec.implications or dec.why or ""
+            bit = dec.get("implications") or dec.get("why") or ""
             one = bit.split("\n")[0].strip()
             if len(one) > 160:
                 one = one[:157] + "…"
             suffix = f" — {one}" if one else ""
-            lines.append(f"- d #{oid} — {dec.title}{suffix}")
+            lines.append(f"- d #{oid} — {dec.get('title', '')}{suffix}")
         elif kind == "req":
-            req = session.get(Requirement, oid)
-            if req is None or req.project_id != project.id:
+            req = state["requirement"].get(oid)
+            if req is None:
                 errors.append(f"requirement #{oid} not found")
                 continue
-            stmt = (req.statement or "").split("\n")[0].strip()
+            stmt = (req.get("statement") or "").split("\n")[0].strip()
             if len(stmt) > 200:
                 stmt = stmt[:197] + "…"
-            lines.append(f"- req #{oid} — {req.title}: {stmt}")
+            lines.append(f"- req #{oid} — {req.get('title', '')}: {stmt}")
         elif kind == "task":
-            task = session.get(Task, oid)
-            if task is None or task.project_id != project.id:
+            task = state["task"].get(oid)
+            if task is None:
                 errors.append(f"task #{oid} not found")
                 continue
-            note = (task.notes or "").split("\n")[0].strip()
+            note = (task.get("notes") or "").split("\n")[0].strip()
             if len(note) > 120:
                 note = note[:117] + "…"
             suffix = f" — {note}" if note else ""
-            lines.append(f"- task #{oid} — {task.title}{suffix}")
+            lines.append(f"- task #{oid} — {task.get('title', '')}{suffix}")
         elif kind == "cap":
-            cap = session.get(Capture, oid)
-            if cap is None or cap.project_id not in visible:
+            cap = state["capture"].get(oid)
+            if cap is None:
                 errors.append(f"capture #{oid} not found")
                 continue
-            lines.append(f"- cap #{oid} — [{cap.kind}] {cap.summary}")
+            lines.append(f"- cap #{oid} — [{cap.get('kind', '')}] {cap.get('summary', '')}")
         else:
             errors.append(f"unknown pointer kind {kind!r}")
     return lines, errors
@@ -281,26 +269,25 @@ def hydrate_stem(stem_dir: Path) -> Path:
         rel_index = index
     sections.insert(3, f"Source: `{rel_index}`")
 
-    with Session() as session:
-        proj = _project(session)
-        for lane, cell, brief in lanes:
-            pointers = parse_pointer_cell(cell)
-            for oid in unclaimed_ids(cell, pointers):
-                errors.append(
-                    f"lane {lane}: #{oid} in the Decisions / Specs cell is not claimed by a "
-                    "d/req/task/cap prefix — write it as `<kind> `#id`` (ranges like "
-                    "`#198`–`#202` must be spelled out) so the lane gets the whole lock set"
-                )
-            sections.append(f"## Lane {lane} ({brief})")
+    state = store.state(_board_dir())
+    for lane, cell, brief in lanes:
+        pointers = parse_pointer_cell(cell)
+        for oid in unclaimed_ids(cell, pointers):
+            errors.append(
+                f"lane {lane}: #{oid} in the Decisions / Specs cell is not claimed by a "
+                "d/req/task/cap prefix — write it as `<kind> `#id`` (ranges like "
+                "`#198`–`#202` must be spelled out) so the lane gets the whole lock set"
+            )
+        sections.append(f"## Lane {lane} ({brief})")
+        sections.append("")
+        if not pointers:
+            sections.append("_No Decisions / Specs pointers (`-`)._")
             sections.append("")
-            if not pointers:
-                sections.append("_No Decisions / Specs pointers (`-`)._")
-                sections.append("")
-                continue
-            bullets, errs = resolve_entries(session, proj, pointers)
-            errors.extend(f"lane {lane}: {e}" for e in errs)
-            sections.extend(bullets or ["_No resolvable entries._"])
-            sections.append("")
+            continue
+        bullets, errs = resolve_entries(state, pointers)
+        errors.extend(f"lane {lane}: {e}" for e in errs)
+        sections.extend(bullets or ["_No resolvable entries._"])
+        sections.append("")
 
     if errors:
         for e in errors:

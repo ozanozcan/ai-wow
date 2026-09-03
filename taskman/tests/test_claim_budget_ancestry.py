@@ -4,37 +4,14 @@ from __future__ import annotations
 
 import io
 from contextlib import redirect_stdout
+from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
 
 from taskman.cli import main
-from taskman.db import Session, upgrade_head
-from taskman.config import find_project
-from taskman.models import Project, Task
+from taskman.eventlog import store
 
 MARKER = "claim-budget-ancestry-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        pid = proj.id
-        session.execute(
-            text("DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": pid, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> str:
@@ -44,7 +21,7 @@ def _run(argv: list[str]) -> str:
     return buf.getvalue()
 
 
-def test_task_claim_sets_claimed_by_on_board_and_show():
+def test_task_claim_sets_claimed_by_on_board_and_show(board_dir: Path):
     out = _run(["task", "add", f"Claimable {MARKER}", "--source", "tests"])
     task_id = int(out.split("#")[1].split()[0])
 
@@ -59,11 +36,9 @@ def test_task_claim_sets_claimed_by_on_board_and_show():
     out = _run(["task", "show", str(task_id)])
     assert "claimed=alice" in out
 
-    with Session() as session:
-        task = session.get(Task, task_id)
-        assert task is not None
-        assert task.claimed_by == "alice"
-        assert task.claimed_at is not None
+    task = store.state(board_dir)["task"][task_id]
+    assert task["claimed_by"] == "alice"
+    assert task["claimed_at"] is not None
 
 
 def test_task_claim_rejects_second_agent_then_release_allows_reclaim():
@@ -82,7 +57,7 @@ def test_task_claim_rejects_second_agent_then_release_allows_reclaim():
     assert "bob" in out
 
 
-def test_task_add_budget_tool_calls_stored_and_shown():
+def test_task_add_budget_tool_calls_stored_and_shown(board_dir: Path):
     out = _run(
         [
             "task",
@@ -96,10 +71,8 @@ def test_task_add_budget_tool_calls_stored_and_shown():
     )
     task_id = int(out.split("#")[1].split()[0])
 
-    with Session() as session:
-        task = session.get(Task, task_id)
-        assert task is not None
-        assert task.brief == {"budget": {"max_tool_calls": 20}}
+    task = store.state(board_dir)["task"][task_id]
+    assert task["brief"] == {"budget": {"max_tool_calls": 20}}
 
     out = _run(["board"])
     assert "budget=20" in out

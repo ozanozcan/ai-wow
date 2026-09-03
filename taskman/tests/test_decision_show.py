@@ -6,36 +6,10 @@ import io
 from contextlib import redirect_stdout
 
 import pytest
-from sqlalchemy import select, text
 
 from taskman.cli import main
-from taskman.db import Session, upgrade_head
-from taskman.config import find_project
-from taskman.models import Decision, Project
 
 MARKER = "decision-show-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        session.execute(
-            text(
-                "DELETE FROM taskman_decision WHERE project_id = :pid AND title LIKE :m"
-            ),
-            {"pid": proj.id, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> str:

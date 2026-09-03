@@ -1,51 +1,15 @@
-"""Capture ↔ task linking (optional FK + CLI)."""
+"""Capture ↔ task linking (optional link + CLI)."""
 
 from __future__ import annotations
 
 import io
 from contextlib import redirect_stdout
-
-import pytest
-from sqlalchemy import select, text
+from pathlib import Path
 
 from taskman.cli import main
-from taskman.db import Session, upgrade_head
-from taskman.config import find_project
-from taskman.models import Capture, Project, Task
+from taskman.eventlog import store
 
 MARKER = "capture-task-link-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        pid = proj.id
-        session.execute(
-            text(
-                "UPDATE taskman_capture SET task_id = NULL "
-                "WHERE project_id = :pid AND summary LIKE :m"
-            ),
-            {"pid": pid, "m": f"%{MARKER}%"},
-        )
-        session.execute(
-            text("DELETE FROM taskman_capture WHERE project_id = :pid AND summary LIKE :m"),
-            {"pid": pid, "m": f"%{MARKER}%"},
-        )
-        session.execute(
-            text("DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": pid, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> str:
@@ -55,7 +19,7 @@ def _run(argv: list[str]) -> str:
     return buf.getvalue()
 
 
-def test_capture_add_auto_links_task_from_summary_prefix():
+def test_capture_add_auto_links_task_from_summary_prefix(board_dir: Path):
     out = _run(["task", "add", f"Target task {MARKER}", "--source", "tests"])
     task_id = int(out.split("#")[1].split()[0])
 
@@ -71,14 +35,13 @@ def test_capture_add_auto_links_task_from_summary_prefix():
     )
     assert f"task=#{task_id}" in out
 
-    with Session() as session:
-        cap = session.scalar(
-            select(Capture)
-            .where(Capture.summary.like(f"%{MARKER}%"))
-            .order_by(Capture.id.desc())
-        )
-        assert cap is not None
-        assert cap.task_id == task_id
+    caps = [
+        c
+        for c in store.state(board_dir)["capture"].values()
+        if MARKER in (c.get("summary") or "")
+    ]
+    assert caps
+    assert max(caps, key=lambda c: c["id"])["task_id"] == task_id
 
 
 def test_capture_link_and_show():
@@ -104,7 +67,7 @@ def test_capture_link_and_show():
     assert f"Unlinked plan {MARKER}" in out
 
 
-def test_task_add_from_capture_promotes_and_links():
+def test_task_add_from_capture_promotes_and_links(board_dir: Path):
     out = _run(
         [
             "capture",
@@ -136,14 +99,13 @@ def test_task_add_from_capture_promotes_and_links():
     task_id = int(out.split("#")[1].split()[0])
     assert f"capture=#{cap_id}" in out
 
-    with Session() as session:
-        cap = session.get(Capture, cap_id)
-        task = session.get(Task, task_id)
-        assert cap is not None and task is not None
-        assert cap.task_id == task_id
-        assert "Future idea" in task.title
-        assert "Detailed scope" in task.notes
-        assert f"Promoted from capture #{cap_id}" in task.notes
+    state = store.state(board_dir)
+    cap = state["capture"][cap_id]
+    task = state["task"][task_id]
+    assert cap["task_id"] == task_id
+    assert "Future idea" in task["title"]
+    assert "Detailed scope" in task["notes"]
+    assert f"Promoted from capture #{cap_id}" in task["notes"]
 
 
 def test_capture_list_unlinked_filter():

@@ -360,10 +360,14 @@ def test_claim_release():
         check("re-claim by the holder also loses", store.claim(board, tid, "alpha") is False)
         check("claimed_by shows the winner",
               store.state(board)["task"][tid]["claimed_by"] == "alpha")
+        check("claimed_at rides on the claim event",
+              store.state(board)["task"][tid].get("claimed_at") is not None)
         check("claim of a missing id loses", store.claim(board, 99, "alpha") is False)
         store.release(board, tid)
         check("released task is unclaimed",
               store.state(board)["task"][tid]["claimed_by"] is None)
+        check("release clears claimed_at",
+              store.state(board)["task"][tid].get("claimed_at") is None)
         check("released task can be claimed again", store.claim(board, tid, "beta") is True)
         check("claimed_by shows the new winner",
               store.state(board)["task"][tid]["claimed_by"] == "beta")

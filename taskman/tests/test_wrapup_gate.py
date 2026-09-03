@@ -8,35 +8,12 @@ from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
 
 from taskman.cli import main
-from taskman.config import find_project
-from taskman.db import Session, upgrade_head
-from taskman.models import Project, Task
+from taskman.eventlog import store
 from taskman import wrapup as W
 
 MARKER = "wrapup-gate-test"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        session.execute(
-            text("DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": proj.id, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> tuple[int, str, str]:
@@ -79,13 +56,13 @@ def _add(
         "files": files or [],
         "acceptance": acceptance,
     }
-    with Session() as session:
-        task = session.get(Task, tid)
-        assert task is not None
-        task.brief = brief
-        if tags:
-            task.tags = [t.strip() for t in tags.split(",") if t.strip()]
-        session.commit()
+    board = Path.cwd() / "board"
+    store.update(board, "task", tid, {"brief": brief})
+    if tags:
+        store.update(
+            board, "task", tid,
+            {"tags": [t.strip() for t in tags.split(",") if t.strip()]},
+        )
     return tid
 
 
@@ -99,12 +76,12 @@ def test_normalize_and_claim_paths():
 
 
 def test_cli_gate_blocked_then_cleared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    slug, _ = find_project()
     repo = tmp_path / "repo"
     marker_dir = repo / ".session-markers"
     marker_dir.mkdir(parents=True)
-    (repo / ".taskman.toml").write_text(f'[project]\nslug = "{slug}"\n', encoding="utf-8")
+    (repo / ".taskman.toml").write_text('[project]\nslug = "wrapup-gate"\n', encoding="utf-8")
     monkeypatch.chdir(repo)
+    _run(["init"])
 
     start_sha = "deadbeef"
     from datetime import datetime, timezone, timedelta
@@ -178,13 +155,13 @@ def test_cli_gate_blocked_then_cleared(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_unattributed_minus_open_claims(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    slug, _ = find_project()
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / ".taskman.toml").write_text(f'[project]\nslug = "{slug}"\n', encoding="utf-8")
+    (repo / ".taskman.toml").write_text('[project]\nslug = "wrapup-gate"\n', encoding="utf-8")
     monkeypatch.chdir(repo)
+    _run(["init"])
 
-    # Use real project DB but fake git via monkeypatch on changed_paths.
+    # Real board, fake git via monkeypatch on changed_paths.
     tid = _add("owns snacks", status="in_progress", files=["workouts/snack_stats.py"])
 
     def fake_changed(worktree: Path, start_sha: str) -> list[str]:
@@ -195,10 +172,7 @@ def test_unattributed_minus_open_claims(tmp_path: Path, monkeypatch: pytest.Monk
         ]
 
     monkeypatch.setattr(W, "changed_paths", fake_changed)
-    with Session() as session:
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        assert proj is not None
-        left = W.unattributed_paths(repo, "abc", proj.id)
+    left = W.unattributed_paths(repo, "abc", repo / "board")
 
     assert "nutrition/views.py" in left
     assert "workouts/snack_stats.py" not in left
@@ -280,16 +254,16 @@ def test_done_with_verify_requires_verify_ok():
 
 
 def test_extract_verify_and_design_flags():
-    t = Task(title="x", status="in_progress", tags=["kind:design"], brief={})
+    t = {"title": "x", "status": "in_progress", "tags": ["kind:design"], "brief": {}}
     assert W.is_design_ticket(t)
-    t2 = Task(
-        title="y",
-        status="in_progress",
-        tags=[],
-        brief={
+    t2 = {
+        "title": "y",
+        "status": "in_progress",
+        "tags": [],
+        "brief": {
             "role": "code-edit",
             "acceptance": "- SHALL x\n- `pytest tests/workouts/test_x.py -q`",
         },
-    )
+    }
     assert W.extract_verify_command(t2) == "pytest tests/workouts/test_x.py -q"
     assert not W.is_design_ticket(t2)

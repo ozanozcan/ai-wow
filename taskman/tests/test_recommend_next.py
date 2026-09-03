@@ -6,41 +6,13 @@ import io
 import json
 from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
-
-import pytest
-from sqlalchemy import select, text, update
+from pathlib import Path
 
 from taskman.cli import main
-from taskman.db import Session, upgrade_head
-from taskman.config import find_project
-from taskman.models import Project, Task
+from taskman.eventlog import store
 
 MARKER = "recommend-next-test"
 TAG = "recommend-next-test-tag"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _schema_ready():
-    upgrade_head()
-
-
-@pytest.fixture(autouse=True)
-def _cleanup():
-    yield
-    with Session() as session:
-        slug, _ = find_project()
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return
-        session.execute(
-            text("DELETE FROM taskman_task WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": proj.id, "m": f"%{MARKER}%"},
-        )
-        session.execute(
-            text("DELETE FROM taskman_feature WHERE project_id = :pid AND title LIKE :m"),
-            {"pid": proj.id, "m": f"%{MARKER}%"},
-        )
-        session.commit()
 
 
 def _run(argv: list[str]) -> str:
@@ -92,14 +64,10 @@ def test_keystone_beats_med_at_equal_status():
     assert out.index(f"#{key_id}") < out.index(f"#{med_id}")
 
 
-def test_stale_in_progress_penalty_in_reason():
+def test_stale_in_progress_penalty_in_reason(board_dir: Path):
     task_id = _add("stale wip", priority="high", status="in_progress")
-    stale_at = datetime.now(UTC) - timedelta(days=10)
-    with Session() as session:
-        session.execute(
-            update(Task).where(Task.id == task_id).values(updated_at=stale_at)
-        )
-        session.commit()
+    stale_at = (datetime.now(UTC) - timedelta(days=10)).isoformat(timespec="seconds")
+    store.update(board_dir, "task", task_id, {"updated_at": stale_at})
 
     out = _recommend()
 
@@ -129,6 +97,49 @@ def test_json_output_valid_shape():
     row = payload[0]
     assert set(row.keys()) == {"id", "title", "reason", "score"}
     assert isinstance(row["score"], int)
+
+
+def test_feature_filter_includes_pbi_member_without_plan_tag():
+    """`--feature` matches PBI membership, same as `plan to-dispatch`."""
+    feat_out = _run(["feature", "add", f"NoPlan {MARKER}"])
+    feat_id = int(feat_out.split("#")[1].split()[0])
+    pbi_out = _run(["pbi", "add", f"Slice {MARKER}", "--feature", str(feat_id)])
+    pbi_id = int(pbi_out.split("#")[1].split()[0])
+    task_out = _run(
+        [
+            "task", "add", f"under-pbi {MARKER}",
+            "--pbi", str(pbi_id), "-p", "high", "--status", "todo",
+        ]
+    )
+    task_id = int(task_out.split("#")[1].split()[0])
+
+    out = _run(["recommend", "next", "--feature", str(feat_id)])
+    assert f"#{task_id}" in out
+
+
+def test_dangling_blocker_does_not_disqualify():
+    task_id = _add("blocked-by-ghost", priority="high", status="todo")
+    from pathlib import Path
+    from taskman.eventlog import store
+    board = Path.cwd() / "board"
+    store.link(board, "task", task_id, "blocked_by", 99999)
+
+    out = _recommend()
+    assert f"#{task_id}" in out
+
+
+def test_lane_filter_matches_feature_lane_via_pbi():
+    feat_out = _run(["feature", "add", f"Plat {MARKER}", "--lane", "platform"])
+    feat_id = int(feat_out.split("#")[1].split()[0])
+    pbi_out = _run(["pbi", "add", f"Plat slice {MARKER}", "--feature", str(feat_id)])
+    pbi_id = int(pbi_out.split("#")[1].split()[0])
+    task_out = _run(
+        ["task", "add", f"no-own-lane {MARKER}", "--pbi", str(pbi_id), "-p", "high"]
+    )
+    task_id = int(task_out.split("#")[1].split()[0])
+
+    out = _run(["recommend", "next", "--lane", "platform"])
+    assert f"#{task_id}" in out
 
 
 def test_tag_filter_excludes_non_matching():

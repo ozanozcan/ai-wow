@@ -606,3 +606,14 @@ def test_pointer_only_cells_pass_prose_lint():
         )
         == []
     )
+
+
+def test_load_visible_decisions_missing_tags_is_untagged(board_dir):
+    """A decision add without a tags field must not AttributeError in preflight."""
+    from taskman.eventlog import store
+    from taskman.matching import decisions_touching
+
+    store.add(board_dir, "decision", {"title": "no-tags-field"})
+    rows = _mod._load_visible_decisions()
+    # Must not raise; untagged decisions match nothing.
+    assert decisions_touching(rows, paths=["x.py"], tags=["backend"]) == []

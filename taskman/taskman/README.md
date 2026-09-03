@@ -1,34 +1,39 @@
 # taskman
 
-A per-project task board, **by agents, for agents**. Self-contained plugin
-folder — not a separate product. It lives inside the project (`demo/taskman`),
-uses the project's **own Postgres**, and adds nothing to maintain centrally.
-
-Full design rationale: the project's own design notes (Scope note v0.3).
+A per-project task board, **by agents, for agents**. Self-contained package —
+not a separate product. The board is a **committed text file** in the project's
+own git tree; there is no database, no server, and nothing to maintain
+centrally.
 
 ## How it's wired
 
 - **Identity:** `.taskman.toml` at the repo root names the project (`slug = "demo"`).
   If it's missing, taskman **stops** rather than guess — that's how projects
   never mix.
-- **Storage:** reuses this repo's Postgres. Prefer `TASKMAN_DATABASE_URL` (sync
-  `postgresql+psycopg://…`); otherwise if `DATABASE_URL` is asyncpg it is rewritten
-  to psycopg (same credentials/host/db); else `DATABASE_URL` as-is; else the demo
-  docker-compose default. Tables are prefixed `taskman_`, isolated from app tables.
-  Schema evolves via Alembic (`python -m taskman init-db` → `alembic upgrade head`).
-- **Interface:** one CLI, run as a module — argparse + SQLAlchemy/psycopg, no runtime
-  dependency beyond those. The `mow` gate scripts ship as separate console entry points
-  (see [Gate scripts](#gate-scripts)).
+- **Storage:** `board/` next to `.taskman.toml` — an append-only event log
+  (`board/events.jsonl`, one JSON event per line) plus per-entity id counters
+  (`board/next_ids`). State is rebuilt by replay on every command; mutations
+  serialize through an `O_EXCL` lockfile (`board/board.lock`), safe on Windows.
+  Replay is **fail-closed**: an event this reader does not recognise (unknown
+  entity/verb, missing or future `v`) stops the command loudly, naming the
+  line — that refusal is the schema-drift guard.
+- **Interface:** one CLI, run as a module or the `taskman` script. argparse +
+  the stdlib-only `taskman.eventlog` store; pydantic only for the plan bridge's
+  Work-Item documents. The `mow` gate scripts ship as separate console entry
+  points (see [Gate scripts](#gate-scripts)).
+- **Dependencies:** `pydantic` — that's all. `pip install "taskman[pgexport]"`
+  adds psycopg for the one-way legacy-Postgres exporter (`pgexport`).
 
 ## Implemented
 
 | Area | Commands / artifacts |
 |---|---|
-| Session cost metrics | `session record`, `session backfill`, `session list` + `*.meta.json` sidecars |
+| Session cost metrics | `session record`, `session backfill`, `session list` — one `session.record` board event per transcript + `*.meta.json` sidecars |
 | Hierarchy | Feature → PBI → Task; Decision; Capture |
 | Living spec | Feature → Requirement (SHALL + GIVEN/WHEN/THEN scenarios); ADDED/MODIFIED/REMOVED |
 | Board | Hierarchical (default) or `--flat` |
 | Plan bridge | `plan from-decisions` / `plan to-dispatch` ⇄ `mow` (Work-Item JSON) |
+| Recommend | `recommend next` — rule-based top-3 suggestions |
 | Gate scripts | `mow-preflight` refuses fan-out; `mow-closeout` refuses the `shipped` flip (exit 3) |
 | Capture hook | `scripts/archive-session.sh` + SessionEnd hooks → `project=<slug>/…` hive paths |
 | End-of-chat | `/wrap-up` skill (home) — **evidence gate** (`taskman wrapup gate` / `scripts/wrapup_reconcile.py`) then report + board sync (incl. in-context capture of unbooked chat items). Session markers from Claude `SessionStart` / Cursor `sessionStart`. |
@@ -36,39 +41,41 @@ Full design rationale: the project's own design notes (Scope note v0.3).
 ## Usage
 
 ```bash
-# DB must be up:  docker compose up -d db
-.venv/bin/python -m taskman init-db
+# One-time per repo: create the board next to .taskman.toml
+python -m taskman init
 
 # Hierarchy
-.venv/bin/python -m taskman feature add "Onboarding" -t onboarding
-.venv/bin/python -m taskman pbi add "Sign-up API" --feature 1
-.venv/bin/python -m taskman pbi move 1 --status in_progress
-.venv/bin/python -m taskman task add "Wire email verification" --pbi 1 -t onboarding,api
-.venv/bin/python -m taskman task add "Overnight CI check" --lane platform --surface prod-internal --afk overnight --notes "check CI"
-.venv/bin/python -m taskman task show 1     # status, tags, toolkit, notes, brief ref
-.venv/bin/python -m taskman task move 1 --status in_progress
-.venv/bin/python -m taskman task link 2 --blocked-by 1
-.venv/bin/python -m taskman decision add "Use Postgres not markdown" --why "single source of truth"
-.venv/bin/python -m taskman capture add --kind grill --summary "Locked Alembic for taskman_*"
-.venv/bin/python -m taskman capture link 370 --task 2142   # attach capture to a task
-.venv/bin/python -m taskman capture list --unlinked --kind plan
-.venv/bin/python -m taskman task add --from-capture 370    # promote plan capture → task + link
+python -m taskman feature add "Onboarding" -t onboarding
+python -m taskman pbi add "Sign-up API" --feature 1
+python -m taskman pbi move 1 --status in_progress
+python -m taskman task add "Wire email verification" --pbi 1 -t onboarding,api
+python -m taskman task add "Overnight CI check" --lane platform --surface prod-internal --afk overnight --notes "check CI"
+python -m taskman task show 1     # status, tags, toolkit, notes, brief ref
+python -m taskman task move 1 --status in_progress
+python -m taskman task link 2 --blocked-by 1
+python -m taskman task claim 2 --agent lane-a   # atomic checkout lock (CAS)
+python -m taskman task release 2
+python -m taskman decision add "Use the event log, not markdown" --why "single source of truth"
+python -m taskman capture add --kind grill --summary "Locked replay to fail closed"
+python -m taskman capture link 370 --task 2142   # attach capture to a task
+python -m taskman capture list --unlinked --kind plan
+python -m taskman task add --from-capture 370    # promote plan capture → task + link
 
 # Living spec (requirements + scenarios, scoped to a Feature)
-.venv/bin/python -m taskman requirement add "Session Timeout" --feature 1 \
+python -m taskman requirement add "Session Timeout" --feature 1 \
   --statement "The system SHALL expire a session after 30 minutes of inactivity." \
   --scenario "Idle timeout|an authenticated session|30 minutes pass with no activity|the session is invalidated"
-.venv/bin/python -m taskman requirement list --feature 1
-.venv/bin/python -m taskman requirement modify 1 --statement "..." --pbi 3   # MODIFIED, in place
-.venv/bin/python -m taskman requirement remove 1                             # REMOVED (soft delete)
-.venv/bin/python -m taskman board
-.venv/bin/python -m taskman board --flat
-.venv/bin/python -m taskman board --status todo,in_progress
+python -m taskman requirement list --feature 1
+python -m taskman requirement modify 1 --statement "..." --pbi 3   # MODIFIED, in place
+python -m taskman requirement remove 1                             # REMOVED (soft delete)
+python -m taskman board
+python -m taskman board --flat
+python -m taskman board --status todo,in_progress
 
 # Session metrics (after SessionEnd archive, or backfill existing jsonl)
-.venv/bin/python -m taskman session backfill
-.venv/bin/python -m taskman session list
-.venv/bin/python -m taskman session record --file path/to/archived.jsonl
+python -m taskman session backfill
+python -m taskman session list
+python -m taskman session record --file path/to/archived.jsonl
 ```
 
 Statuses: `backlog → todo → in_progress → blocked → done`, plus `disabled` — retired
@@ -76,6 +83,19 @@ until explicitly revisited. It sits off the main line on purpose: marking someth
 `done` that never happened is a lie the board carries forever.
 
 `source_ref` format: `{relative_transcript_path}#L{line_number}`.
+
+### The board is committed
+
+`board/` travels in git like source. Two consequences:
+
+- **No machine-absolute paths on the board.** Session transcript paths are
+  stored home-relative (`~/...`, posix separators); every reader expands them.
+- **Board and code share one tree**, so an older CLI meeting a newer board
+  refuses at replay rather than silently dropping events.
+
+Removal semantics: the log is append-only, so `pbi remove` and
+`requirement remove` are soft deletes (a `deleted: true` / `status: removed`
+field every reader filters) — history stays replayable.
 
 ### Captures ↔ tasks
 
@@ -88,8 +108,8 @@ Captures (`qa` / `grill` / `plan`) are session notes; optional `task_id` links t
 
 ### Tags
 
-- **Task:** Postgres `ARRAY` on the row (v1 compat).
-- **Feature / PBI:** normalized `taskman_tag` + M2M join tables.
+Plain string arrays on every entity (Feature/PBI/Task/Decision/Capture) — the
+old normalized tag tables died with the database.
 
 ### Toolkit recommendations
 
@@ -99,9 +119,7 @@ prints a `toolkit:` line derived from the task's tags at render time — union
 across tags, deduped, stable order; nothing is stored on the row. Tags of the
 form `skill:<name>` / `agent:<name>` pass through verbatim as explicit
 recommendations; unmapped tags (e.g. `docs`) contribute nothing and the line is
-omitted. Human-readable source of truth: the **Toolkit** column in
-[`docs/agents/protocols.md`](../docs/agents/protocols.md) (P1). Display-only —
-taskman never auto-runs a skill.
+omitted. Display-only — taskman never auto-runs a skill.
 
 ### Requirement conventions (living spec)
 
@@ -123,18 +141,13 @@ test someone could run, not a summary:
 - `requirement list --feature <id>` **is** the current spec for that
   Feature — read it before writing a new requirement to avoid a duplicate.
 
-## Session archive
+## Migrating from the legacy Postgres board
 
-See [`docs/infra/taskman-capture.md`](../docs/infra/taskman-capture.md).
-
-Hive path:
-
-```
-docs/chat-history/agent-sessions/project=<slug>/source={claude|cursor}/year=…/month=…/day=…/<ts>-<session>.jsonl
-```
-
-Global Claude/Cursor SessionEnd hooks call thin wrappers that exec this repo's
-`scripts/archive-session.sh` when `.taskman.toml` is present. Fail-open always.
+`python -m taskman.pgexport` (needs the `pgexport` extra) reads a legacy
+`taskman_*` schema over raw SQL and writes a complete `board/` with **every id
+preserved**; `--verify` re-reads every row and diffs it field-by-field against
+the replayed board — zero diffs is the cutover gate. One-way by design: the
+old database stays untouched as its own archive.
 
 ## Gate scripts
 
@@ -172,7 +185,7 @@ Invoke **`/wrap-up`** (Claude Code skill at `~/.claude/skills/wrap-up/SKILL.md`)
 It will:
 
 1. Scan the chat for tasks / decisions / captures / status moves
-2. Sync via `python -m taskman …` (never writes Postgres directly)
+2. Sync via `python -m taskman …` (never writes the log directly)
 3. Write `docs/session-reports/<YYYY-MM-DD-HHMM>-<slug>.md`
 4. Close an active checkpoint if one was picked up
 
@@ -181,50 +194,34 @@ board sync.
 
 ## Dropping it into another project
 
-1. Copy the `taskman/` folder and `scripts/archive-session.sh`.
+1. `pip install` the package (or copy the `taskman/` folder).
 2. Add `.taskman.toml` with that project's `slug`.
-3. Commit or reuse SessionEnd hooks (see `docs/infra/taskman-capture.md`).
-4. If the project's DB isn't the demo default, set `TASKMAN_DATABASE_URL`
-   (preferred) or sync-compatible `DATABASE_URL`.
-5. `python -m taskman init-db`.
+3. `python -m taskman init` — then commit `board/` with the repo.
 
-Each copy is **independent on purpose** — except when copies share one physical
-Postgres (demo + web-app deliberately do). Then the `taskman_*` schema is shared state:
-
-> **Migration rule:** any new Alembic revision must land in **every** repo's
-> `taskman/alembic/versions/` (copy the file to all embedded taskman copies in
-> the same change). A migration applied from one repo but missing in another
-> leaves that other copy unable to resolve the DB's head — `alembic upgrade head`
-> and the test fixtures fail with "Can't locate revision". This bit for real with
-> `0006_task_lens` (2026-07-11).
+Each copy is **independent on purpose**: one repo, one board, no shared state.
 
 ## Plan bridge
 
-**Operator guide (when to invoke what):** [`docs/workflow/work-loop.md`](../docs/workflow/work-loop.md).
-
 Shared Work-Item format (`taskman-plan.json`) closes the loop with the
-`mow` skill. Spec: [`docs/workflow/taskman-dispatch-bridge.md`](../docs/workflow/taskman-dispatch-bridge.md).
+`mow` skill.
 
 ```bash
 # Pull a decomposed plan (.dispatch/ folder or taskman-plan.json) → Feature + Tasks
-.venv/bin/python -m taskman plan from-decisions .cursor/plans/<stem>.dispatch
-# (or an archived copy under docs/plans/<stem>/dispatch/)
+python -m taskman plan from-decisions docs/plans/<stem>/dispatch
 
 # Push a board slice → runnable .dispatch/ folder
-.venv/bin/python -m taskman plan to-dispatch --feature <id> --dir /tmp/out
-.venv/bin/python -m taskman plan to-dispatch --status todo,in_progress --lane platform --dir /tmp/out
+python -m taskman plan to-dispatch --feature <id> --dir /tmp/out
+python -m taskman plan to-dispatch --status todo,in_progress --lane platform --dir /tmp/out
 ```
 
 `from-decisions` is idempotent on `source_ref` (re-run updates title/brief/tags/deps in
 place; **does not overwrite** board status — use `task move` / `/wrap-up`).
 `to-dispatch` recomputes waves from `blocked_by` and enforces the dispatch hard rule
 (same-wave lanes own disjoint file-sets). Role travels as a `role:` tag and in
-`Task.brief` JSONB.
+the task's `brief` field.
 
 ## Deliberately deferred
 
-- **Recommender / planner** — "what to work on next" (spec Phase 2).
 - **Kanban web UI**
-- **Cross-project `board --all-projects`**
-- **Phase 3 bridge** — wrap-up capture → plan → dispatch as one flow; status-close on wrap-up
-  (see spec §8; still design-only).
+- **Cross-project `board --all-projects`** — one board per repo is the model now (d-p6)
+- **Log compaction** — replay of thousands of events is milliseconds; revisit above ~50k events or ~5 MB

@@ -1,52 +1,7 @@
 from __future__ import annotations
 
-import os
 import pathlib
 import tomllib
-
-from dotenv import load_dotenv
-
-# Reuses this project's existing Postgres. Prefer TASKMAN_DATABASE_URL; else
-# rewrite asyncpg DATABASE_URL to psycopg; else DATABASE_URL; else this default.
-DEFAULT_DATABASE_URL = "postgresql+psycopg://taskman:taskman@localhost:5432/taskman"
-
-
-# Load .env.local / .env from the nearest .taskman.toml ancestor of cwd.
-# Import-time load covers entry points that never call cli.main(); main()
-# reloads with override so chdir-into-project (and the env-loading tests) work.
-_DOTENV_LOADED = False
-
-
-def load_dotenv_from_cwd(*, force: bool = False) -> None:
-    global _DOTENV_LOADED
-    if _DOTENV_LOADED and not force:
-        return
-    _DOTENV_LOADED = True
-    here = pathlib.Path.cwd().resolve()
-    for d in (here, *here.parents):
-        if (d / ".taskman.toml").exists():
-            local = d / ".env.local"
-            env = d / ".env"
-            if local.exists():
-                load_dotenv(local, override=force)
-            elif env.exists():
-                load_dotenv(env, override=force)
-            break
-
-
-load_dotenv_from_cwd()
-
-def database_url() -> str:
-    taskman_url = os.environ.get("TASKMAN_DATABASE_URL")
-    if taskman_url:
-        return taskman_url
-
-    url = os.environ.get("DATABASE_URL")
-    if url is None:
-        return DEFAULT_DATABASE_URL
-    if "+asyncpg" in url:
-        return url.replace("+asyncpg", "+psycopg", 1)
-    return url
 
 
 def find_project() -> tuple[str, str]:

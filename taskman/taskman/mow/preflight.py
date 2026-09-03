@@ -647,28 +647,17 @@ def _split_lanes_table_extended(index_text: str) -> list[dict[str, str]]:
 
 
 def _load_visible_decisions(project_slug: str | None = None) -> list[Any]:
-    """Load decisions from cwd project + workflow (same visibility as hydrate)."""
-    from sqlalchemy import select
+    """Load the cwd project's decisions from its replayed board (same board as
+    hydrate — one board per repo, d-p6). Attribute-shaped for decisions_touching."""
+    from types import SimpleNamespace
 
-    from taskman.config import find_project
-    from taskman.db import Session
-    from taskman.models import Decision, Project
-    from taskman.mow.hydrate_specs import WORKFLOW_SLUG
+    from taskman.eventlog import store
+    from taskman.mow.hydrate_specs import _board_dir
 
-    slug = project_slug or find_project()[0]
-    with Session() as session:
-        proj = session.scalar(select(Project).where(Project.slug == slug))
-        if proj is None:
-            return []
-        ids = {proj.id}
-        wf = session.scalar(select(Project).where(Project.slug == WORKFLOW_SLUG))
-        if wf is not None:
-            ids.add(wf.id)
-        return list(
-            session.scalars(
-                select(Decision).where(Decision.project_id.in_(ids))
-            ).all()
-        )
+    return [
+        SimpleNamespace(**{**d, "tags": d.get("tags") or []})
+        for d in store.state(_board_dir())["decision"].values()
+    ]
 
 
 def run_preflight(

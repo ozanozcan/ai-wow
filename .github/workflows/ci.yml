@@ -56,9 +56,9 @@ jobs:
           test file under any directory below is picked up by the next run with
           no edit to this workflow.
 
-          taskman/tests/ is deliberately absent from the scan. taskman/conftest.py
-          calls psycopg.connect() at import time, unconditionally, so that suite
-          hard-requires a reachable Postgres and cannot run on either runner.
+          taskman/tests/ is deliberately absent from the scan: it is a pytest
+          suite with fixtures and a conftest, not a set of plain scripts, so it
+          gets its own step below rather than being folded into this one.
           """
           import glob
           import os
@@ -116,3 +116,12 @@ jobs:
               print("FAILED: " + ", ".join(failed))
               sys.exit(1)
           print(f"all {ran} test file(s) passed")
+
+      # The taskman package suite runs dbless against tmp-board fixtures
+      # (taskman/conftest.py) — no Postgres on either runner, which is the
+      # point: the event-log port is proven on windows-latest the way the
+      # spike was. Kept separate from the plain-script scan above on purpose.
+      - name: Run taskman package tests
+        run: |
+          pip install -e taskman pytest
+          pytest taskman/tests
