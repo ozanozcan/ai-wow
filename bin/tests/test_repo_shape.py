@@ -76,6 +76,30 @@ def _tracked_under(dirs):
     return [REPO / rel for rel in out.split("\0") if rel]
 
 
+def _headed_py(prefix):
+    """Python files under `prefix` as of HEAD — what a clone sees.
+
+    An rglob of the working tree counts untracked files a clone never gets, and
+    misses tracked files deleted only in the worktree. Both were observed: the
+    README's test count matched disk (186) while HEAD held 182, the gap being a
+    peer's uncommitted `taskman/tests/test_metrics_paths.py`. The scrub next to
+    this already uses `git ls-files` for the same reason; this matches it.
+    """
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "ls-tree", "-r", "-z", "--name-only",
+         "HEAD", "--", prefix],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    return [rel for rel in out.split("\0") if rel.endswith(".py")]
+
+
+def _blob(rel):
+    return subprocess.run(
+        ["git", "-C", str(REPO), "show", f"HEAD:{rel}"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+
+
 def _scan(path):
     """[] or [relative path] — one leaked file, so callers can extend()."""
     if not path.is_file() or "__pycache__" in path.parts:
@@ -159,8 +183,8 @@ def main():
     # is what the docs' hook counts describe. Both rotted while unguarded.
     hook_defs = json.loads((REPO / "hooks.def.json").read_text(encoding="utf-8"))["hooks"]
     taskman_tests = sum(
-        len(re.findall(r"^\s*(?:async )?def test_", p.read_text(encoding="utf-8"), re.M))
-        for p in (REPO / "taskman" / "tests").rglob("*.py"))
+        len(re.findall(r"^\s*(?:async )?def test_", _blob(rel), re.M))
+        for rel in _headed_py("taskman/tests"))
     expected = {"skills": len(skill_dirs), "subagents": len(agents),
                 "third_party": len(third_party),
                 "original": len(skill_dirs) - len(third_party),

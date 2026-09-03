@@ -51,6 +51,11 @@ Minimum code that solves the problem. Nothing speculative.
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
+- Cutting a real corner on purpose — a global lock, an O(n²) scan, a naive heuristic —
+  leaves a marker: `# debt: <the ceiling>, <what triggers the upgrade>`, e.g.
+  `# debt: O(n²) scan, index it above ~1k rows`. A ceiling with no trigger is the one
+  that rots, so write both. Read the ledger on demand with a search for `debt:` —
+  never into a file that accumulates.
 
 ## Surgical changes
 

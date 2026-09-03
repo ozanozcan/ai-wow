@@ -16,11 +16,14 @@ Before implementing:
 
 Minimum code that solves the problem. Nothing speculative.
 
+- Look before you write: grep for an existing helper, util, or pattern first — re-implementing what already lives a few files over is the most common slop.
+- Reach for the platform before writing code: a native input type, a CSS rule, or a DB constraint beats app-level logic doing the same job.
 - No features beyond what was asked.
 - No abstractions for single-use code.
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
+- Cutting a real corner on purpose — a global lock, an O(n²) scan, a naive heuristic — leaves a marker: `# debt: <the ceiling>, <what triggers the upgrade>`, e.g. `# debt: O(n²) scan, index it above ~1k rows`. A ceiling with no trigger is the one that rots, so write both. Read the ledger on demand with `grep -rnE '(#|//) ?debt:' .` — never into a file that accumulates (L27).
 
 <important if="you are editing existing code">
 ## Surgical changes
@@ -71,6 +74,30 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 
 Toolkit is advisory, never a gate: recommend or invoke, don't block on it.
 </important>
+
+## Reading accumulated context
+
+Session reports, checkpoints, brainstorm ledgers, plan folders and lessons files
+grow every session. Reading them whole is the expensive failure mode — most of a
+long file is irrelevant to the question in hand, and the cost is paid in the
+context you then don't have for the work.
+
+Read in three layers, stopping at the first that answers you:
+
+1. **Index** — filenames, index lines, one-liners, headings.
+   Cheap, and usually enough to tell you which items are candidates.
+2. **Neighbours** — for a candidate, the items next to it in time. What was
+   happening around a session explains it more often than the session's own
+   write-up does.
+3. **Bodies** — open only what survived layers 1 and 2, and open those in full.
+
+Never open bodies before reading the index. If you are opening a fourth file to
+answer one question, you skipped a layer.
+
+This is a rule about *search*, not about editing: an index line is never the file
+(L01). Layer 1 tells you which file to open — it never tells you what the file
+says, so anything you are about to change, retire, or delete still gets opened
+first, in the same turn.
 
 ## Verification habits
 
