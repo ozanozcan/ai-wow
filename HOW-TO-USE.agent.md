@@ -149,12 +149,12 @@ work in the tree cannot ride along. Anything skipped is logged, not silently dro
 | `imprint` | auto-runs after any UI change → `ui-registry.md` |
 | `playwright-cli` | browser automation |
 | `bs` | idea stage, before `grill-with-docs`; every session ends pursue/reject/park, never chat-only |
-| `mow` | needs taskman + Postgres |
+| `mow` | needs taskman |
 | `grill-with-docs` | pre-build; one question at a time, write back each answer |
 | `ship-check` | end gate |
 | `docs` | documents a human reads — wiki, runbook, README, plan write-up; no clickable TOC, no ship |
 | `checkpoint` / `pick-up-where-i-left-off` | continuity; board half needs taskman |
-| `wrap-up` | needs taskman + Postgres |
+| `wrap-up` | needs taskman |
 
 **Runs on a bare clone with no config:** everything except `mow`, `wrap-up`, and the
 board-sync half of the continuity skills.
