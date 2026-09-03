@@ -2,11 +2,11 @@
   "schema": 1,
   "stem": "taskman-port",
   "title": "Land the dbless board \u2014 CLI, migration, mirror, guarantees",
-  "run_status": "running",
+  "run_status": "shipped",
   "board_port": 8362,
   "pulse": true,
   "started": "2026-09-02T21:50:23Z",
-  "updated": "2026-09-03T06:31:37Z",
+  "updated": "2026-09-03T10:24:17Z",
   "waves": [
     {
       "wave": 1,
@@ -148,10 +148,11 @@
     },
     {
       "wave": 2,
-      "status": "pending",
+      "status": "done",
       "parallelism": "parallel",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "8-angle review: 6 criticals fixed (board orphans, recommend PBI ancestry + dangling blocker, claim claimed_at on the CAS event, preflight tags default, pbi remove nulls source_pbi_id). Deferred to action report / lane Z: session upsert TOCTOU, extra replays, board-discovery dup, BOOTSTRAP.md db upgrade (L05). 209 pytest + eventlog suites green."
       },
       "lanes": [
         {
@@ -159,39 +160,130 @@
           "brief": "03-pg-exporter.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "pg-exporter",
               "title": "One-way Postgres exporter + --verify zero-loss gate",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-09-03T06:32:15Z",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                },
+                {
+                  "name": "test-coverage (in-lane gap sweep)",
+                  "status": "done"
+                }
+              ],
+              "ended": "2026-09-03T06:42:25Z",
+              "tokens": 103916,
+              "detail": "worktree: .claude/worktrees/agent-a83a6f0f7a796f6bf; verify gate proven to fire (L33 probe)",
+              "artifacts": [
+                {
+                  "label": "pgexport.py",
+                  "path": "taskman/taskman/pgexport.py"
+                },
+                {
+                  "label": "test_pgexport.py",
+                  "path": "taskman/tests/test_pgexport.py"
+                }
+              ]
+            }
+          ],
+          "started": "2026-09-03T06:32:15Z",
+          "tokens": 103916
         },
         {
           "lane": "D",
           "brief": "04-cli-wiring.md",
           "role": "code-edit",
           "afk": true,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "cli-wiring",
               "title": "Rewire 42 subcommands onto the store; delete the DB layer",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "tdd-builder",
+              "status": "done",
+              "started": "2026-09-03T06:32:15Z",
+              "skills": [
+                {
+                  "name": "tdd",
+                  "status": "done"
+                },
+                {
+                  "name": "test-coverage (session paths)",
+                  "status": "done"
+                },
+                {
+                  "name": "adversarial-tester (scoped: cli pure helpers)",
+                  "status": "done",
+                  "detail": "hypothesis sweep clean; 2/2 mutants killed; mutmut deferred"
+                }
+              ],
+              "ended": "2026-09-03T07:03:00Z",
+              "tokens": 347455,
+              "detail": "worktree: .claude/worktrees/agent-a442a462221376ba5; 191 tests green dbless; scope flag: mow/hydrate_specs+preflight rewired (unowned, ratify at gate)",
+              "artifacts": [
+                {
+                  "label": "cli.py",
+                  "path": "taskman/taskman/cli.py"
+                },
+                {
+                  "label": "conftest.py",
+                  "path": "taskman/conftest.py"
+                },
+                {
+                  "label": "ci.yml",
+                  "path": ".github/workflows/ci.yml"
+                },
+                {
+                  "label": "test_claim_race.py",
+                  "path": "taskman/tests/test_claim_race.py"
+                }
+              ]
+            },
+            {
+              "name": "code-review (wave gate)",
+              "status": "issues",
+              "started": "2026-09-03T07:06:57Z",
+              "ended": "2026-09-03T08:37:47Z"
+            },
+            {
+              "name": "orchestrator (gate fix)",
+              "status": "done",
+              "started": "2026-09-03T08:37:47Z",
+              "ended": "2026-09-03T08:37:47Z",
+              "detail": "6 criticals fixed foreground; original repros re-run green; 209 pytest"
+            }
+          ],
+          "started": "2026-09-03T06:32:15Z",
+          "tokens": 347455
         }
-      ]
+      ],
+      "started": "2026-09-03T06:32:15Z",
+      "ended": "2026-09-03T08:38:07Z"
     },
     {
       "wave": 3,
-      "status": "pending",
+      "status": "done",
       "parallelism": "sequential",
       "gate": {
-        "status": "pending"
+        "status": "done",
+        "detail": "CI both runners green (33741328650); boards and df pushed; ship-check recorded with L1 waiver for claude.ai artifact URL"
       },
       "lanes": [
         {
@@ -199,17 +291,74 @@
           "brief": "05-cutover-and-amend.md",
           "role": "shell",
           "afk": false,
-          "status": "pending",
+          "status": "done",
           "todos": [
             {
               "id": "cutover-and-amend",
               "title": "Migrate live boards, mirror, amend guarantees",
-              "status": "pending"
+              "status": "done"
             }
           ],
-          "agents": []
+          "agents": [
+            {
+              "name": "orchestrator (foreground shell)",
+              "status": "done",
+              "started": "2026-09-03T08:50:24Z",
+              "detail": "cutover, CI, board pushes, df push; work-PC source HTML patched, claude.ai URL not writable from Cursor",
+              "skills": [],
+              "tools": [
+                {
+                  "name": "freeze gate",
+                  "status": "done"
+                },
+                {
+                  "name": "wave-2 commit 22c3ba8",
+                  "status": "done"
+                },
+                {
+                  "name": "pgexport --verify both boards",
+                  "status": "done"
+                },
+                {
+                  "name": "dotfiles-ai mirror + uv sync",
+                  "status": "done"
+                },
+                {
+                  "name": "PATH smoke",
+                  "status": "done"
+                },
+                {
+                  "name": "I10/README amend",
+                  "status": "done"
+                },
+                {
+                  "name": "CI push",
+                  "status": "done"
+                },
+                {
+                  "name": "work-PC artifact",
+                  "status": "done"
+                }
+              ],
+              "ended": "2026-09-03T10:24:17Z",
+              "artifacts": [
+                {
+                  "label": "board-a",
+                  "path": "board-a/"
+                },
+                {
+                  "label": "board-b",
+                  "path": "board-b/"
+                }
+              ]
+            }
+          ],
+          "started": "2026-09-03T08:50:24Z",
+          "ended": "2026-09-03T10:24:17Z"
         }
-      ]
+      ],
+      "started": "2026-09-03T08:50:24Z",
+      "ended": "2026-09-03T10:24:17Z"
     }
   ]
 }

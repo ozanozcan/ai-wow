@@ -87,6 +87,51 @@ stale citation, same class as lane A's.
 
 ---
 
+## Post-Integrate — same session, operator-directed
+
+Three items were closed after the registry flipped to `shipped`, at the operator's
+request. They are recorded here rather than as a second run because they close gaps this
+run surfaced.
+
+| Item | Outcome |
+|---|---|
+| Push to GitHub | **No action needed.** The run's work was already on `origin/master` — the background sync had pushed it. The two unpushed commits were a parallel session's (`bin/ai-sync`, taskman alembic guard); not published. |
+| Port `agents/` to dotfiles-ai | **Done.** The mirror asymmetry that bit lane B applies to `agents/` too — `~/.claude/agents` and `~/.cursor/agents` both symlink to `dotfiles-ai/agents`, so the shipped roster was live in git but reverted in the runtime. Applied the same gated patch after confirming all seven pre-existing agents were byte-identical across repos (no private variants in `agents/`, unlike skills/templates). Roster confirmed live. |
+| Fix the tracker hook (was deferred item 5) | **Done.** See below. |
+
+### `hooks/stamp-tracker.py` — backgrounded agents mis-stamped
+
+`on_task` wrote `"ended": _now()` on every `PostToolUse`. For a backgrounded spawn that
+event fires when the *launch* returns, so every AFK lane was stamped as finishing seconds
+after it started — which froze that lane's clock on the board and made a live run read as
+dead. It was visible only on a still-running lane, because the orchestrator's own write
+overwrote the bad value the moment a report landed. This run hit it on lane A and the
+operator caught it from the board.
+
+The fix adds `_returns_at_launch(tool_name, tool_input)` and writes `ended: None` for an
+async spawn. The load-bearing subtlety: the `Agent` tool **backgrounds by default**, so an
+absent `run_in_background` key still means async — testing `flag == True` would have left
+the bug in place for most calls. Cursor's `Task` is the opposite. An explicit value wins
+in both.
+
+Written test-first into `hooks/tests/test_stamp_tracker.py` (plain `python3`, no pytest —
+the interpreter these hooks run under has no third-party packages). Red before the fix:
+
+```
+FAIL  backgrounded agent does NOT get ended — ended='2026-08-21T12:02:41Z'
+FAIL  Agent with no run_in_background key does NOT get ended — ended='2026-08-21T12:02:41Z'
+```
+
+7/7 green after, with the four synchronous-path assertions passing both before and after —
+that is what pins down that the fix did not trade one bug for another. The hook's other two
+jobs (`updated` stamping, `.activity` trail) were smoke-tested separately. `TRACKER.md` was
+corrected alongside: it claimed the hook takes both bounds "from the Task tool call itself",
+which is the precise false premise.
+
+All three landed in **dotfiles-ai** (the source) and are live on this Mac via the symlinks.
+The hook fix had not yet propagated into ai-wow when the session ended — the sync appears to
+run on session end rather than a timer.
+
 ## Open / deferred
 
 Operator elected to leave these as follow-ups:
@@ -100,12 +145,10 @@ Operator elected to leave these as follow-ups:
 3. **Plain-Python diffs have no reviewer.** A consequence of the FastAPI-only decision:
    `backend-reviewer` hands off when the stack doesn't match, but no sibling owns plain
    Python. A CLI script or data pipeline falls through the gate.
-4. **`ai-wow` is `ahead 1` and unpushed.** The work PC clones GitHub, so nothing reaches
-   it until a push. Left to the operator.
-5. **`hooks/stamp-tracker.py` mis-times backgrounded agents.** Its `PostToolUse` pairing
-   fires when the *launch* returns, not when the agent finishes, so every AFK lane gets an
-   `ended` ~20s after spawn. Visible only on a still-running lane, where it freezes the
-   board's clock and makes a live run look dead. Fix belongs in dotfiles-ai.
+4. ~~**`ai-wow` is `ahead 1` and unpushed.**~~ **Resolved** — the claim was stale when
+   written; the run's work was already on `origin/master`. See Post-Integrate above.
+5. ~~**`hooks/stamp-tracker.py` mis-times backgrounded agents.**~~ **Fixed this session** —
+   see Post-Integrate above.
 6. **`.claude/worktrees/` is not gitignored.** The auto-sync committed two worktree
    gitlinks mid-run; they were removed from the index during Integrate. The next
    worktree-isolated run will recreate them.

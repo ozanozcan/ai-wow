@@ -62,6 +62,8 @@ n/a — every pointer cell is `-`.
 **Grill checkpoint:** done 2026-09-03
 **Grill write-back:** plan.md ✓ (d-p1…d-p9 operator-confirmed Q1–Q5; d-p10 zero-loss gate added at Q1; per-question log in `## Grill write-back`) · briefs: 03-pg-exporter.md (`--verify`, orphan-tag rule), 05-cutover-and-amend.md (quiesced cutover, zero-diff gate) — 01/02/04 held as written · taskman: n/a (repo is board-less)
 
+**Action report:** [`../action-report.md`](../action-report.md)
+
 ## Conflicts check
 
 No two same-wave lanes share a file:

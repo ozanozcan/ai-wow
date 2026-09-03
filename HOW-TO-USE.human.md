@@ -524,8 +524,8 @@ the board carries forever.
 ### Two rules worth learning early
 
 **Identity is never guessed.** taskman walks up from your working directory looking
-for `.taskman.toml`. No marker, no operation. That is how two projects sharing one
-Postgres never mix rows.
+for `.taskman.toml`. No marker, no operation. That is how two projects on one
+machine never mix boards.
 
 **Tags replace, they don't append.** `task set <id> -t a,b` discards existing tags.
 Read them with `task show <id>` first.
