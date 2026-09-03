@@ -136,8 +136,22 @@ CLAIMS = [
     ("original",    r"the\s+([a-z]+)\s+original\s+skills"),
     ("hooks",       r"\|\s*\*\*Hooks\*\*\s*\|\s*(\d+)\s*\|"),
     ("hooks",       r"inventory:.*?(\d+)\s+hooks"),
-    ("taskman_tests", r"\|\s*`taskman/`\s*\|[^|\n]*?(\d+)\s+tests"),
+    ("taskman_tests", r"\|\s*`taskman/`\s*\|[^|\n]*?(\d+)\+?\s+tests"),
 ]
+
+# Kinds asserted as a floor ("200+ tests") rather than an exact equality.
+#
+# An exact test count is a claim that breaks every time someone adds a test, and
+# it broke three times in three days — 142, then 135, then 210 — each time
+# blocking a push over a number no reader depends on being exact. The inventory
+# counts above are different: skills, subagents and hooks change rarely and
+# deliberately, so an exact claim there catches a real omission.
+#
+# A floor keeps the signal a reader actually wants ("this package is heavily
+# tested") and still fails on the case worth catching: tests disappearing. An
+# understated floor is never *wrong*, only conservative, so it can be raised
+# whenever someone feels like it rather than under the pressure of a red gate.
+FLOOR_KINDS = {"taskman_tests"}
 
 # Count-shaped phrases that are not inventory claims. Tested against the whole
 # line the phrase sits on, so the exemption is judged in context.
@@ -208,8 +222,14 @@ def main():
         coverage[name] = spans = claim_spans(raw)
         for _, _, kind, whole, token in spans:
             seen[kind] += 1
-            check(f"{name}: {kind} count in {re.sub(r"\\s+", " ", whole)[:44].strip()!r}",
-                  number(token), expected[kind])
+            label = re.sub(r"\s+", " ", whole)[:44].strip()
+            claimed = number(token)
+            if kind in FLOOR_KINDS:
+                check(f"{name}: {kind} floor {claimed}+ holds in {label!r}"
+                      f" (actual {expected[kind]})",
+                      claimed is not None and claimed <= expected[kind], True)
+            else:
+                check(f"{name}: {kind} count in {label!r}", claimed, expected[kind])
     for kind, n in seen.items():
         check(f"claim patterns for {kind} actually matched something", n > 0, True)
 
