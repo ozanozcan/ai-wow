@@ -127,3 +127,71 @@ Ledger state: 92 lines, one unrouted rule (L22), no BACKLOG or PRUNE signal.
 - **Resume pointer:** this report ·
   [`bin/tests/test_ai_sync_encoding.py`](../../bin/tests/test_ai_sync_encoding.py) ·
   `git show 7ec9cea` · `~/Desktop/dotfiles-ai/bin/ai-sync` for item 3.
+
+---
+
+## Addendum — 2026-09-03, same thread
+
+The open-thread list above is left as written: it was accurate when the report was
+filed. This records what has since closed, because that list is where a resume pointer
+sends the next session and four of its six items are now done.
+
+### The encoding work finished, and it was bigger than the list said
+
+Items 1 and 2 are **closed** by `b40a1db` (this tree) and `810ad25` (dotfiles-ai).
+
+They were framed as two spots — one `subprocess.run(text=True)` and four bare
+`read_text()`. Widening the guard's AST layer from `bin/ai-sync` alone to the whole
+Python surface (`bin/ai-sync` plus `hooks/*.py`), and teaching it that subprocess in
+text mode decodes with the locale encoding too, found **nine**:
+
+| File | Sites |
+|---|---|
+| `bin/ai-sync` | `subprocess.run(text=True)` |
+| `hooks/peer-session-guard.py` | `read_text` ×2, **`write_text`**, `subprocess.run` |
+| `hooks/peer-session-notice.py` | `read_text` ×2, `subprocess.run` |
+| `hooks/session-start-marker.py` | **`subprocess.run`** |
+
+The two in bold appeared in neither open thread. They were found by the scan, not by
+anyone reading the code — the same argument `.github/workflows/ci.yml` already makes
+about discovering test files rather than enumerating them, applied to call sites.
+Two anti-vacuity checks landed with it: one fails if the `hooks/*.py` glob stops
+matching, one if the code stops decoding text at all.
+
+### The two trees are now locked, not merely both fixed
+
+`bin/tests/test_ai_sync_encoding.py` and the three hooks are `match` in dotfiles-ai's
+`tree-drift.json`, and were verified byte-identical **origin to origin** after both
+pushes. Parity is enforced by that guard now rather than remembered. Item 3 closed
+with it (`31db64f`); that tree reports 0 bare reads on its own origin.
+
+### Item 4 closed by someone else, better than it was offered
+
+`README.md`'s post-clone block no longer enumerates four suites — it says
+`bash githooks/pre-push`, which runs all ten and names the UTF-8 property in prose.
+An enumeration that would have gone stale was replaced by the gate itself.
+
+### Still open
+
+5. **`~/.copilot/agents` remains unverified for VS Code's Copilot.** Unchanged. Nothing
+   in this thread tested it; the README's claim still rests on documentation, and that
+   path is also the Copilot CLI's.
+6. **`global/CLAUDE.md` still reaches only `~/.claude/CLAUDE.md`** — `LINK_FILES` has
+   exactly one entry. `templates/copilot-instructions.template.md` is now *tracked*,
+   so the gap has a documented manual answer, but nothing wires it: a Copilot user
+   still gets skills and subagents without the standards unless they copy it by hand.
+
+### Verify
+
+Both remotes were re-checked by cloning at `origin/master` and running each tree's own
+suite from inside the clone, so `REPO` resolved to the probe rather than the live
+checkout — the flaw that invalidated an earlier attempt at this same check.
+
+| Check | Result |
+|---|---|
+| ai-wow origin: bare `read_text()` in `bin/ai-sync` + `hooks/*.py` | 0 |
+| dotfiles-ai origin: same | 0 |
+| Text-mode subprocess sites naming an encoding, both origins | all 4 |
+| `test_ai_sync_encoding.py` verdict, both origins | 0 failure(s) |
+| Full db-free suite | 13/13 ai-wow · 11/11 dotfiles-ai (incl. `test_tree_drift`) |
+| `match` files, origin vs origin | 4/4 byte-identical |
