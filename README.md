@@ -4,7 +4,7 @@
 
 **A portable way of working with AI coding agents.** Skills, subagents, slash
 commands, lifecycle hooks, and a durable task board — versioned in one repo, synced
-into Claude Code, Cursor, and GitHub Copilot (VS Code) by one script, identical on
+into Claude Code, Cursor, and GitHub Copilot by one script, identical on
 every machine.
 
 A team has a way of working: standards everyone follows, specialists you hand things
@@ -83,12 +83,19 @@ because Copilot's *personal* custom-agent path differs from Claude's. Hooks and
 MCP are rendered into Copilot's own schema, same as Cursor's.
 
 > [!NOTE]
-> Copilot's hook scripts are wired to the right lifecycle events (`PreToolUse`,
-> `PostToolUse`, `SessionStart`, `Stop`, `SubagentStart`), but the scripts
-> themselves were written for Claude Code's stdin/stdout JSON shape. Hooks fail
-> open, so a schema mismatch just makes a hook inert rather than unsafe — but
-> don't treat `guard-destructive` as a real guardrail under Copilot until you've
-> confirmed live that it fires.
+> **Which Copilot.** The hook, subagent and MCP renders target **Copilot CLI**, and
+> that is where they were verified live (CLI 1.0.80, 2026-08-21): `ai-sync` renders
+> PascalCase event names, which Copilot answers with the Claude-compatible payload on
+> both sides, so the scripts run unchanged — `guard-destructive` denied a real command,
+> and `Stop` fires. The one mapping that does not survive is `stamp-tracker-spawn`:
+> `SubagentStart` delivers Copilot's native payload with no `tool_input`, so the hook
+> runs, exits 0, and stamps nothing. That is not fixable by renaming keys.
+>
+> In **VS Code**, the extension shares the `~/.agents/skills` farm and picks up slash
+> commands as `.github/prompts/*.prompt.md`, but the `~/.copilot/` renders are CLI
+> paths — nothing reads them there. For a VS Code-only setup, the standing-instructions
+> surface is `.github/copilot-instructions.md`; a starting point ships in
+> [`templates/copilot-instructions.template.md`](templates/copilot-instructions.template.md).
 
 `ai-sync` runs `import → link → reconcile skills → render → commit`, and is
 registered as a session-end hook so it happens on its own.
@@ -130,12 +137,19 @@ intent.
 ```mermaid
 flowchart LR
   T["plan"] --> MP["/mow plan"] --> D["briefs + wave map"]
-  D --> GO["/mow go"] --> R["review gate"] --> S["ship-check"] --> W["/wrap-up"]
+  D --> GO["/mow go"] --> R["review gate"] --> S["ship-check"]
+  S --> CO["close-out gate"] --> W["/wrap-up"]
 ```
 
 Work is decomposed into per-todo briefs and a wave map, fanned out to subagents wave
 by wave with a review gate between waves, then closed out through an evidence gate
 that will not pass while changed files are unattributed or tasks are left in flight.
+
+**Two of those gates are scripts, not judgment.** `taskman.mow.preflight` refuses to
+fan out a run that is not fit to start; `taskman.mow.closeout` refuses the
+`Status: shipped` flip — exit 3, writing nothing — when there is no ship-check verdict,
+a missing or skeletal action report, or a tracker still holding running lanes. The
+scripts hold the accounting; the verdict stays human.
 
 **The hard rule:** lanes in the same wave own disjoint file sets. Overlap is detected
 before fan-out, not discovered afterwards.
@@ -151,9 +165,9 @@ before fan-out, not discovered afterwards.
 | `commands/` | Slash commands |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
-| `taskman/` | The board package — CLI, models, migrations, 135 tests |
+| `taskman/` | The board package — CLI, models, migrations, 187 tests |
 | `docs/workflow/` | Work-loop, dispatch bridge, compact template |
-| `templates/` | Bootstrap checklist for adopting the harness in a new repo |
+| `templates/` | Bootstrap checklist for adopting the harness in a new repo, plus per-repo starting points (protocols, `ui-designer`, Copilot instructions) |
 | `bin/ai-sync` | The sync tool |
 | `local.config.example.json` | Copy to `local.config.json` (gitignored) for machine paths |
 
@@ -177,14 +191,22 @@ Check the harness itself after a fresh clone — no database, no dependencies, s
 this runs anywhere the core does, a locked-down Windows box included:
 
 ```bash
-python3 hooks/tests/test_stamp_tracker.py && python3 bin/tests/test_ai_sync_status.py && python3 bin/tests/test_ai_sync_commit.py && python3 bin/tests/test_repo_shape.py
+bash githooks/pre-push
 ```
 
-Those cover what a clone is most likely to get wrong: whether the mow board
-times a backgrounded lane correctly, whether `ai-sync status` reports the mode
-you actually installed with, whether `ai-sync` commits only the paths it manages
-rather than sweeping the tree, and whether the inventory counts above still
-match what is on disk.
+That runs the whole harness suite — ten files. It covers what a clone is most likely
+to get wrong: whether the mow board times a backgrounded lane correctly, whether
+`ai-sync status` reports the mode you actually installed with, whether `ai-sync`
+commits only the paths it manages rather than sweeping the tree, whether every text
+file it touches is read and written as UTF-8, whether the session hooks behave when a
+peer session is live, and whether the inventory counts in this README still match what
+is on disk.
+
+Run any one of them directly — they take no arguments:
+
+```bash
+python3 bin/tests/test_repo_shape.py
+```
 
 Have git run them for you before every push — this repo is public, and the
 scrub test is what keeps employer and personal strings out of it:
@@ -214,6 +236,7 @@ TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman
 | [`HOW-TO-USE.human.md`](HOW-TO-USE.human.md) | Setup, mental model, day-to-day use, Windows appendix |
 | [`HOW-TO-USE.agent.md`](HOW-TO-USE.agent.md) | Invariants, decision trees, procedures with VERIFY conditions |
 | [`templates/BOOTSTRAP.md`](templates/BOOTSTRAP.md) | Adopting the harness in a new repo |
+| [`templates/copilot-instructions.template.md`](templates/copilot-instructions.template.md) | Standing instructions for a repo worked on in Copilot for VS Code |
 | [`docs/workflow/work-loop.md`](docs/workflow/work-loop.md) | The operator's idea → board → build loop |
 | [`taskman/taskman/README.md`](taskman/taskman/README.md) | The board package in depth |
 | [`THIRD-PARTY.md`](THIRD-PARTY.md) | Which skills came from elsewhere, and under what terms |

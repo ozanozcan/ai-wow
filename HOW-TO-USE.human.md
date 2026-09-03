@@ -129,12 +129,19 @@ per-project hooks are workspace-scoped in Copilot (`.github/prompts/`,
 instead of a global symlink — see §4.
 
 > [!NOTE]
-> The hook *scripts* were written to parse Claude Code's stdin/stdout JSON shape.
-> They're now registered for Copilot's matching lifecycle events too, but Copilot's
-> exact runtime payload hasn't been verified against them. Hooks fail open, so a
-> mismatch just makes a hook silently inert — it won't misfire — but don't treat
-> `guard-destructive` as an active guardrail under Copilot until you've confirmed
-> live that it actually fires.
+> **The hooks were verified live under Copilot CLI** (1.0.80, 2026-08-21). The scripts
+> parse Claude Code's stdin/stdout JSON shape, and they work unchanged because Copilot
+> picks its contract by event-name *casing*: the PascalCase names `ai-sync` renders
+> (`PreToolUse`) get the Claude-compatible payload on both sides. `guard-destructive`
+> denied a real command; `Stop` fires. Keep the PascalCase rendering.
+>
+> **One mapping is inert:** `stamp-tracker-spawn`. `SubagentStart` delivers Copilot's
+> own camelCase payload with no `tool_input`, so the hook runs, exits 0, and stamps
+> nothing. Renaming keys cannot fix it — the fields simply aren't there.
+>
+> **This is the CLI, not the VS Code extension.** Everything under `~/.copilot/` is a
+> CLI path. In VS Code you get the skills farm and `.github/prompts/`, but no hooks,
+> subagents or MCP from this harness — see the note at the end of §4.
 
 Skills take one extra hop, and it's the hop that breaks:
 
@@ -160,13 +167,17 @@ flowchart LR
 - **link** — point the editor directories at this repo
 - **reconcile** — make both editors expose the same skill set
 - **render** — write `hooks.def.json` and `mcp.json` into each editor's own format
-- **commit** — stage everything and commit
+- **commit** — stage the managed paths by name, commit, and push unless disabled
 
-> ⚠️ **`ai-sync` commits with `git add -A` and pushes without asking.** It is
-> registered as a session-end hook, so this happens on its own. Never leave anything
-> private in the working tree. On a machine that must never push to an external
-> remote — a corporate laptop — set `{ "push": false }` in `local.config.json`:
-> commits still happen (local history is the backup), the push is skipped.
+> ⚠️ **`ai-sync` pushes without asking.** It is registered as a session-end hook, so
+> this happens on its own. On a machine that must never push to an external remote — a
+> corporate laptop — set `{ "push": false }` in `local.config.json`: commits still
+> happen (local history is the backup), the push is skipped.
+>
+> It commits **only the paths it manages**, staged and committed by name — never
+> `git add -A`. A half-finished refactor or a peer session's staged file cannot ride
+> along in a `sync:` commit, and what it left behind is logged rather than silently
+> skipped.
 
 ---
 
@@ -183,12 +194,28 @@ python3 ~/ai-wow/bin/ai-sync status
 should be:
 
 ```
-.claude/agents    linked
-.claude/commands  linked
-.claude/hooks     linked
-.claude/CLAUDE.md linked
-shared skills (~/.agents):  16
+repo: /path/to/ai-wow
+  link mode: symlink
+  .claude/agents    linked
+  .cursor/agents    linked
+  .claude/commands  linked
+  .cursor/commands  linked
+  .claude/hooks     linked
+  .cursor/hooks     linked
+  .copilot/agents   linked
+  .claude/CLAUDE.md linked
+  claude/settings.json hooks: present
+  cursor/hooks.json:          present
+  copilot/hooks/ai-wow.json:  present
+  copilot/mcp-config.json:    present
+  shared skills (~/.agents):  16  (Copilot reads this path directly — no extra render needed)
+  duplicate hook registrations: none
+  managed-doc drift: none
 ```
+
+The three renders and the skills count are the lines worth reading: a `present` on
+each render means the hook and MCP translation ran for that editor, and the count is
+the one number that proves the skill farm reconciled.
 
 Anything `ai-sync` overwrites is copied to `.backups/<timestamp>/` first, so a wrong
 first run is recoverable.
@@ -202,6 +229,25 @@ render pointed at your own projects, copy `local.config.example.json` to
 ```
 
 Absent or empty is a valid state. That feature simply doesn't run.
+
+### If your Copilot is the VS Code extension, not the CLI
+
+Worth being explicit, because the split is easy to miss. Everything `ai-sync` writes
+under `~/.copilot/` — the subagent symlink, the rendered hooks, the MCP config — is
+read by **Copilot CLI**. The VS Code extension does not read those paths, so on a
+machine where Copilot means the editor sidebar, you get:
+
+| You get | You don't |
+|---|---|
+| The whole skill farm, via `~/.agents/skills` | Hooks — no lifecycle guarantees |
+| Slash commands, as `.github/prompts/*.prompt.md` in each `managed_repos` entry | Subagents |
+| | MCP servers from `mcp.json` |
+
+Nothing breaks; the unread renders just sit there. The gap worth filling is standing
+instructions — the extension's equivalent of `global/CLAUDE.md` is a per-repo
+`.github/copilot-instructions.md`, which `ai-sync` does **not** render. Copy
+[`templates/copilot-instructions.template.md`](templates/copilot-instructions.template.md)
+into the repo and fill in its placeholders.
 
 VS Code needs nothing extra — see [Appendix A](#appendix-a--vs-code-and-locked-down-machines),
 which also covers machines that forbid symlinks. Windows needs three extra things:
@@ -551,7 +597,7 @@ flowchart TD
 | `plan` | in the chat where the decisions are still live | writes one brief per todo + the wave map, lands board rows |
 | `list` | in a fresh chat | shows every active run with its full wave map |
 | `ready` | before fan-out | grills the plan, one question at a time, writing each answer back |
-| `go` | anywhere | fans out to subagents, wave by wave, review gate between waves |
+| `go` | anywhere | fans out to subagents, wave by wave, review gate between waves; ends at the close-out gate |
 
 **The hard rule:** lanes in the same wave own **disjoint file sets**.
 
@@ -573,11 +619,32 @@ flowchart TD
 Two agents editing the same file in parallel is how you lose work. Overlap is
 detected before fan-out, not discovered afterwards.
 
+### The two gates that are scripts
+
+Most of what mow enforces is judgment, applied by an agent reading a brief. Two points
+are not: they are scripts, and they refuse.
+
+| Gate | Refuses | On finding |
+|---|---|---|
+| `taskman.mow.preflight` | fan-out | a run not fit to start — an ungrilled plan, a thin brief, two same-wave lanes claiming one file |
+| `taskman.mow.closeout` | the `Status: shipped` flip, exit 3, writing nothing | a run not fit to be called finished — no ship-check verdict, a missing or skeletal action report, a tracker still holding running lanes or untriaged findings |
+
+Preflight refuses a run that is not fit to start; close-out refuses one that is not fit
+to be called finished. Run close-out's checks yourself at any point:
+
+```bash
+python -m taskman.mow.closeout docs/plans/<stem>
+```
+
+When it exits 3, fix what it names rather than hand-editing the registry row — the row
+is the claim, and the gate is what makes the claim mean something.
+
 ---
 
 ## 8. Session lifecycle
 
-Three hooks and one skill bracket every working session.
+Four of the nine hooks and one skill bracket every working session — the marker that
+opens it, the guard that watches it, and the pair that close it.
 
 ```mermaid
 sequenceDiagram

@@ -83,15 +83,20 @@ Do not spawn a subagent where a skill suffices.
 
 ```mermaid
 flowchart LR
-  R1["repo/agents"] -->|symlink| T1["~/.claude/agents"]
-  R2["repo/commands"] -->|symlink| T2["~/.claude/commands"]
-  R3["repo/hooks"] -->|symlink| T3["~/.claude/hooks"]
+  R1["repo/agents"] -->|symlink| T1["~/.claude/agents <br/>~/.cursor/agents <br/>~/.copilot/agents"]
+  R2["repo/commands"] -->|symlink| T2["~/.claude/commands <br/>~/.cursor/commands"]
+  R3["repo/hooks"] -->|symlink| T3["~/.claude/hooks <br/>~/.cursor/hooks"]
   R4["repo/global/CLAUDE.md"] -->|symlink| T4["~/.claude/CLAUDE.md"]
   R5["repo/skills"] -->|"MANUAL symlink"| AG["~/.agents/skills"]
-  AG -->|"farm, ai-sync"| T5["~/.claude/skills/*"]
-  R6["hooks.def.json"] -->|render| T6["settings.json"]
-  R7["mcp.json"] -->|render| T7["mcp config"]
+  AG -->|"farm, ai-sync"| T5["~/.claude/skills/* <br/>~/.cursor/skills/*"]
+  R6["hooks.def.json"] -->|render| T6["settings.json · hooks.json <br/>~/.copilot/hooks/ai-wow.json"]
+  R7["mcp.json"] -->|render| T7["mcp config <br/>~/.copilot/mcp-config.json"]
+  R2 -->|"render, per managed_repos"| T8[".github/prompts/*.prompt.md"]
 ```
+
+Copilot reads `~/.agents/skills` directly, so skills need no per-tool render for it.
+Slash commands and workspace hooks are repo-scoped in Copilot, so they render into each
+`managed_repos` entry rather than a global path.
 
 **Diagnosis table.** Match the symptom, do not guess:
 
@@ -103,7 +108,9 @@ flowchart LR
 | `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§9); if policy forbids, §8a copy mode |
 | hooks registered but never fire | `bash` or `python3` unresolvable | §9 — verify from Git Bash |
 
-`ai-sync` pipeline: `import → link → reconcile skills → render → git add -A → commit → push`.
+`ai-sync` pipeline: `import → link → reconcile skills → render → commit → push`. The
+commit stages **only the managed paths, by name** — never `git add -A` — so unrelated
+work in the tree cannot ride along. Anything skipped is logged, not silently dropped.
 
 > **Machine-specific paths belong in `local.config.json` (gitignored), never in tracked
 > files.** Shape: `{"managed_repos": ["~/projects/x"], "link_mode": "copy", "push": false}`.
@@ -197,7 +204,7 @@ anything else. Never ask for, echo, or store the token value.
 | 1 | `git clone <repo> ~/ai-wow` | `bin/ai-sync` exists |
 | 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **16** entries — **FAIL → STOP** |
 | 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
-| 4 | `python3 bin/ai-sync status` | 3 dirs `linked`, `CLAUDE.md linked`, `shared skills: 16` |
+| 4 | `python3 bin/ai-sync status` | every category `linked`, `CLAUDE.md linked`, all four render lines `present`, `shared skills (~/.agents):  16` |
 | 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
 | 6 | if step 3 reported symlink denial | switch to §8a copy mode — do not abandon the install |
 
@@ -223,7 +230,13 @@ flowchart LR
 ```
 
 Command surface: `db` `init-db` `feature` `pbi` `task` `requirement` `decision`
-`capture` `board` `session` `harvest` `plan` `recommend` `wrapup`.
+`capture` `board` `session` `plan` `recommend` `wrapup`.
+
+The `mow` scripts are separate console entry points, **not** `taskman` subcommands —
+`mow-preflight`, `mow-hydrate-specs`, `mow-plan-import`, `mow-check-grill-writeback`,
+`mow-set-registry-status`, `mow-check-ship-check`, `mow-check-action-report`,
+`mow-check-tracker`, `mow-closeout`, `wrapup-reconcile`. Each is also runnable as
+`python -m taskman.mow.<module>`, which is how the skills invoke them.
 
 ### Decision-task protocol
 
@@ -288,6 +301,15 @@ n/a in the report):
 | lane verification, new logic | `test-coverage` |
 | lane verification, pure logic | `adversarial-tester` |
 | Integrate | `ship-check` as auto-gate |
+| Integrate, before the `Status: shipped` flip | close-out gate — `python -m taskman.mow.closeout docs/plans/<stem>` |
+
+**The close-out gate refuses, it does not warn.** It exits **3 and writes nothing** when
+the run is not fit to be called finished: no ship-check verdict (or one stale against
+`plan.md`), an action report that is missing, skeletal or unlinked, a tracker still
+holding `running` lanes or findings with no triage record. Warnings print but never
+block. Fix what it names and flip again — **never hand-edit the registry row to route
+around it**, which is the documented fallback only when the script is absent from the
+repo. Preflight refuses a run unfit to start; this refuses one unfit to be called done.
 
 ---
 
@@ -303,6 +325,7 @@ flowchart TD
   H --> VSC["VS Code extension"]
   H --> JB["JetBrains extension"]
   CUR["~/.cursor"] --> C["Cursor"]
+  CO["~/.copilot"] --> CP["Copilot CLI"]
   P[".claude/ in the open folder"] -.->|"layers on top"| VSC
 ```
 
@@ -314,6 +337,29 @@ Two editor-specific facts that do matter:
 | A project `.claude/` layers over `~/.claude` | Do not register hooks there — I8 (double execution) |
 
 Do **not** tell a user to add VS Code settings for this harness. There are none.
+
+### Copilot — which surface
+
+`~/.copilot/` is **Copilot CLI**, and that is where the hook renders were verified live
+(CLI 1.0.80, 2026-08-21). Do not promise the same under the VS Code extension.
+
+| Surface | Reads | Does not read |
+|---|---|---|
+| Copilot CLI | `~/.copilot/agents`, `~/.copilot/hooks/ai-wow.json`, `~/.copilot/mcp-config.json`, `~/.agents/skills` | — |
+| Copilot in VS Code | `~/.agents/skills`, `.github/prompts/*.prompt.md` | everything under `~/.copilot/` |
+
+Two consequences to state rather than discover:
+
+- **`stamp-tracker-spawn` is inert under Copilot even on the CLI.** `SubagentStart`
+  delivers Copilot's native camelCase payload with no `tool_input`, so the hook runs,
+  exits 0, and stamps nothing. It cannot be fixed by renaming keys.
+- **A VS Code-only user has no hooks, subagents or MCP from this harness.** The
+  standing-instructions surface there is a per-repo `.github/copilot-instructions.md`,
+  which `ai-sync` does not render; `templates/copilot-instructions.template.md` is the
+  starting point. Never tell them a hook is guarding anything.
+
+Hook event names render in **PascalCase** for Copilot deliberately — the casing selects
+the Claude-compatible payload contract on both sides. Do not "normalize" it to camelCase.
 
 ## 8a. PROCEDURE — machines that forbid symlinks
 

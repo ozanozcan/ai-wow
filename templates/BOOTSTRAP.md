@@ -54,6 +54,13 @@ without reading anything from another project's repo.
    and confirm it returns nothing — the new repo's protocols.md should read as this repo's own
    document, not a copy with leftover foreign terms.
 
+8. **If this repo is worked on in Copilot for VS Code**, give it standing instructions:
+   `cp templates/copilot-instructions.template.md <new-repo>/.github/copilot-instructions.md`
+   Fill every `<angle-bracket>` placeholder — the commands table especially, since a canonical
+   test/lint command is the single most useful thing that file carries. `ai-sync` does **not**
+   render this; the VS Code extension reads no `~/.copilot/` path, so without it that repo has
+   no standing-instruction layer at all. Skip for CLI-only or non-Copilot repos.
+
 ## UI bootstrap (frontend repos only)
 
 Do these once per repo with a UI surface, in order — this is what makes the anti-slop

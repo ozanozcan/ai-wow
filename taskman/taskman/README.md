@@ -16,8 +16,9 @@ Full design rationale: the project's own design notes (Scope note v0.3).
   to psycopg (same credentials/host/db); else `DATABASE_URL` as-is; else the demo
   docker-compose default. Tables are prefixed `taskman_`, isolated from app tables.
   Schema evolves via Alembic (`python -m taskman init-db` → `alembic upgrade head`).
-- **Interface:** one CLI, run as a module. Harvest uses **pydantic-ai** (already in
-  `requirements.txt`); everything else is argparse + SQLAlchemy/psycopg.
+- **Interface:** one CLI, run as a module — argparse + SQLAlchemy/psycopg, no runtime
+  dependency beyond those. The `mow` gate scripts ship as separate console entry points
+  (see [Gate scripts](#gate-scripts)).
 
 ## Implemented
 
@@ -27,8 +28,8 @@ Full design rationale: the project's own design notes (Scope note v0.3).
 | Hierarchy | Feature → PBI → Task; Decision; Capture |
 | Living spec | Feature → Requirement (SHALL + GIVEN/WHEN/THEN scenarios); ADDED/MODIFIED/REMOVED |
 | Board | Hierarchical (default) or `--flat` |
-| Harvest | Scan transcripts → LLM candidates → approve → commit with `source_ref` |
 | Plan bridge | `plan from-decisions` / `plan to-dispatch` ⇄ `mow` (Work-Item JSON) |
+| Gate scripts | `mow-preflight` refuses fan-out; `mow-closeout` refuses the `shipped` flip (exit 3) |
 | Capture hook | `scripts/archive-session.sh` + SessionEnd hooks → `project=<slug>/…` hive paths |
 | End-of-chat | `/wrap-up` skill (home) — **evidence gate** (`taskman wrapup gate` / `scripts/wrapup_reconcile.py`) then report + board sync (incl. in-context capture of unbooked chat items). Session markers from Claude `SessionStart` / Cursor `sessionStart`. |
 
@@ -68,11 +69,11 @@ Full design rationale: the project's own design notes (Scope note v0.3).
 .venv/bin/python -m taskman session backfill
 .venv/bin/python -m taskman session list
 .venv/bin/python -m taskman session record --file path/to/archived.jsonl
-
-# Harvest (safety net — not a substitute for live task add during chats)
 ```
 
-Statuses: `backlog → todo → in_progress → blocked → done`.
+Statuses: `backlog → todo → in_progress → blocked → done`, plus `disabled` — retired
+until explicitly revisited. It sits off the main line on purpose: marking something
+`done` that never happened is a lie the board carries forever.
 
 `source_ref` format: `{relative_transcript_path}#L{line_number}`.
 
@@ -135,17 +136,34 @@ docs/chat-history/agent-sessions/project=<slug>/source={claude|cursor}/year=…/
 Global Claude/Cursor SessionEnd hooks call thin wrappers that exec this repo's
 `scripts/archive-session.sh` when `.taskman.toml` is present. Fail-open always.
 
-## Harvest
+## Gate scripts
+
+The `mow` gates ship as console entry points rather than `taskman` subcommands. Each is
+equally runnable as `python -m taskman.mow.<module>`, which is how the skills call them.
+
+| Script | Refuses |
+|---|---|
+| `mow-preflight` | fan-out, when a run is not fit to start |
+| `mow-closeout` | the `Status: shipped` flip — exit 3, writing nothing |
+| `mow-check-ship-check` | — reports on the ship-check verdict alone |
+| `mow-check-action-report` | — reports on the action report alone |
+| `mow-check-tracker` | — reports on `tracker.json` alone |
+| `mow-hydrate-specs`, `mow-plan-import`, `mow-check-grill-writeback`, `mow-set-registry-status` | plan/board plumbing for `/mow plan` and `/mow go` |
+| `wrapup-reconcile` | the wrap-up evidence gate |
+
+`mow-closeout` composes the three `check-*` scripts. Run it directly at any point:
 
 ```bash
+python -m taskman.mow.closeout docs/plans/<stem>          # add --json for machine-readable
 ```
 
-LLM model: `TASKMAN_HARVEST_MODEL` (default `openai:gpt-4o-mini`; for Anthropic
-e.g. `anthropic:claude-haiku-4-5`). Needs an API key in the **process environment**
-(`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` / `GEMINI_API_KEY` /
-`AZURE_OPENAI_API_KEY`) — harvest reads `os.environ` directly and does **not** load
-`.env.local`. Source a key into the shell for one-off runs if it only lives there.
-For offline stub extraction set `TASKMAN_HARVEST_MOCK=1`.
+Exit 3 means the run is not finished: no ship-check verdict (or one stale against
+`plan.md`), a missing, skeletal or unlinked action report, or a tracker still holding
+running lanes and untriaged findings. Warnings print but never block.
+
+> Harvest — the LLM transcript miner — was retired. Its job moved into `/wrap-up`, which
+> books unlanded work from the live session while the chat is still in context. No API
+> key or model configuration is needed anywhere in this package any more.
 
 ## End-of-chat ritual
 
