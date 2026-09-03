@@ -53,7 +53,7 @@ Violating any of these corrupts state or silently voids a guarantee.
 | I7 | Only a `done` blocker clears `recommend next` | A task blocked by a `disabled` decision is hidden permanently |
 | I8 | Hook registration lives only in `hooks.def.json` | Two registrations = everything runs twice |
 | I9 | `disabled` ≠ `done` | `done` on work that never happened is unrecoverable misinformation |
-| I10 | taskman requires Postgres (`ARRAY`, `JSONB`) | Never propose SQLite |
+| I10 | The board is a committed event log under `board/` | Never propose a database |
 
 ---
 
@@ -219,17 +219,10 @@ install failure** — judge on the four VERIFY lines.
 ## 6. PROCEDURE — taskman
 
 Preconditions, both required: `.taskman.toml` in cwd or an ancestor (I4), and a
-reachable Postgres (I10).
+`board/` directory next to that marker (I10). Create the directory with
+`taskman init` if it is missing.
 
-URL resolution:
-
-```mermaid
-flowchart LR
-  A["TASKMAN_DATABASE_URL"] -->|unset| B["DATABASE_URL <br/>+asyncpg rewritten to +psycopg"]
-  B -->|unset| C["built-in default"]
-```
-
-Command surface: `db` `init-db` `feature` `pbi` `task` `requirement` `decision`
+Command surface: `init` `feature` `pbi` `task` `requirement` `decision`
 `capture` `board` `session` `plan` `recommend` `wrapup`.
 
 The `mow` scripts are separate console entry points, **not** `taskman` subcommands —

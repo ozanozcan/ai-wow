@@ -39,10 +39,9 @@ without reading anything from another project's repo.
    # ...one row per tag used in protocols.md P1
    ```
 
-5. **Upgrade the shared taskman database.** `uv run taskman db upgrade` from the repo root
-   (requires the repo's `.taskman.toml` identity + a reachable Postgres per the package config).
-   Migrations are explicit: the CLI warns when the DB is behind the package head but never
-   auto-migrates. The repo carries no alembic tree of its own.
+5. **Create the board directory.** `taskman init` from the repo root (requires the
+   repo's `.taskman.toml` identity). That writes `board/` next to the marker; commit
+   it. There is no database to stand up.
 
 6. **Confirm reviewer agents exist for the stack.** Before citing `agent:backend-reviewer` /
    `agent:frontend-reviewer` etc. in protocols.md, verify that agent

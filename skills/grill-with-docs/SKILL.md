@@ -162,7 +162,7 @@ taskman task link <build-task-id> --blocked-by <decision-id>   # if it blocks wo
 ```
 
 Rules:
-- Prefer `taskman`. Never write Postgres directly.
+- Prefer `taskman`. Never edit `board/` by hand.
 - A **decision task** is a question, not work: its title is the question, it is resolved by an answer rather than a diff, and its `blocked_by` edges are what stop dependent build work being recommended. Resolve it with `task set <id> --notes "Answer: …"` → `decision add "<answer>" --why "…"` → `task move <id> --status done`, then write the answer into the plan's `## Decisions locked`. If it turns out to sit past the plan's goal, `task move <id> --status disabled` + tag `scope:out` — **not** `done`, which would falsely claim the work happened.
 - Before `requirement add`, always `requirement list --feature <id>` — `modify` if the behavior already exists.
 - If Feature id is unknown and the grill was about existing board work, resolve via `taskman board` / `feature list`.

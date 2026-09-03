@@ -179,10 +179,10 @@ gitignored. Nothing in the tracked tree points at a particular machine or projec
 ## Requirements
 
 - **Core** — Python 3 and git. That's it.
-- **Board** — Postgres (the schema uses `ARRAY` and `JSONB`; SQLite is not a
-  substitute) and Python 3.12+. Standing one up is four commands, in
-  [§6 of the human guide](HOW-TO-USE.human.md#standing-one-up). The board is
-  optional: the harness itself needs no database, and
+- **Board** — optional. A committed `board/` directory next to `.taskman.toml`
+  (Python 3.12+ for the CLI). Standing one up is in
+  [§6 of the human guide](HOW-TO-USE.human.md#standing-one-up). The harness
+  itself needs no board, and
   [§5](HOW-TO-USE.human.md#5-working-without-a-board) covers working without one.
 - **Windows** — Developer Mode for symlinks, Git Bash, and a `python3` on PATH.
   See Appendix A of the human guide.
@@ -219,12 +219,11 @@ git config core.hooksPath githooks
 --no-verify` bypasses it when you mean to. The setting is per-clone and not
 carried in the repo, so a fresh clone is unprotected until you run that line.
 
-Run the board's tests against a throwaway database:
+Run the board's tests — they use a tmp `board/` and need no database:
 
 ```bash
 cd taskman
-TASKMAN_TEST_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/taskman_test" \
-  uv run --group dev pytest -q
+uv run --group dev pytest -q
 ```
 
 ---

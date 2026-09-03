@@ -383,9 +383,9 @@ finding is wasted work.
 
 ## 6. The board
 
-`taskman` is a per-project board — no web UI, nothing to deploy. A CLI that talks to
-Postgres and prints tables. It exists because **chat context dies and the board
-doesn't**.
+`taskman` is a per-project board — no web UI, nothing to deploy. A CLI that
+reads a committed `board/` directory and prints tables. It exists because
+**chat context dies and the board doesn't**.
 
 Adopt it when you have work spanning more sessions than you can hold in your head.
 
@@ -396,14 +396,13 @@ ai-wow ships taskman as a **tool**, and carries no board of its own — there is
 that is accurate, not because someone forgot.
 
 Two reasons, both about what a clone inherits. A tracked `.taskman.toml` would hand every
-cloner this repo's project identity, pointed at their database. And this harness's headline
-claim is that it needs no database — making its own session workflow require one, in the
-very repo people clone to evaluate it, would undercut that.
+cloner this repo's project identity. And this harness's headline
+claim is that it needs no database — making its own session workflow require a
+board, in the very repo people clone to evaluate it, would undercut that.
 
 Worth knowing, because it is easy to misread: `taskman wrapup gate` exits **2** here
-either way. Board-less it reports `no .taskman.toml above cwd`; with a board and no
-reachable Postgres it reports a connection failure. The wrap-up skill's exit table reads 2
-as "no session marker" — which is neither of those things. That is a misdiagnosis in
+when there is no `.taskman.toml` above cwd. The wrap-up skill's exit table reads 2
+as "no session marker" — which is not that. That is a misdiagnosis in
 taskman, not an argument for or against a board, and it is recorded as an open item rather
 than fixed here.
 
@@ -417,15 +416,14 @@ Two consequences worth recognising when you see them:
   repo.
 
 None of this stops you working: [§5](#5-working-without-a-board) is the full board-less
-workflow. And if the board ever loses its database dependency, this decision is worth
-revisiting — it is a judgement about today's constraints, not a rule.
+workflow. The board itself is now a text file in git; this repo still ships without
+one, because a clone should not inherit a project identity.
 
 ### Standing one up
 
-Install the CLI once per machine, then do steps 1, 2 and 4 once per project. The
-board needs a Postgres it can reach and a role that may create tables — it does
-**not** need a database of its own, because every table is prefixed `taskman_` and
-sits happily beside an application's own schema.
+Install the CLI once per machine, then do steps 1 and 3 once per project. The
+board is a directory of text files next to `.taskman.toml`. There is no
+database.
 
 **1. Name the project.** Put a `.taskman.toml` at the repo root:
 
@@ -435,21 +433,10 @@ slug = "my-service"
 name = "My Service"
 ```
 
-Without it taskman stops rather than guess, which is how two projects sharing one
-Postgres never mix their rows.
+Without it taskman stops rather than guess, which is how two projects never
+mix their rows — each has its own `board/`.
 
-**2. Point it at the database.** Either export `TASKMAN_DATABASE_URL`, or put it in a
-`.env` beside the `.taskman.toml` — taskman walks up from the working directory to
-find that file and loads the `.env` next to it.
-
-```bash
-export TASKMAN_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/mydb"
-```
-
-The driver must be `psycopg`, not `asyncpg`. If your app already sets a `DATABASE_URL`
-using `+asyncpg`, taskman rewrites it for you and reuses the same credentials.
-
-**3. Install the CLI — once per machine, from your ai-wow clone.**
+**2. Install the CLI — once per machine, from your ai-wow clone.**
 
 ```bash
 cd ~/ai-wow/taskman && uv sync
@@ -466,24 +453,23 @@ export PATH="$HOME/ai-wow/taskman/.venv/bin:$PATH"
 command in this guide and in the skills assumes it is on `PATH`, which is what lets
 the same instruction be correct in every repo.
 
-**4. Create the schema — from your project's root, not from ai-wow.**
+**3. Create the board — from your project's root, not from ai-wow.**
 
 ```bash
 cd ~/projects/my-service
-taskman init-db
+taskman init
 ```
 
 taskman identifies the project by **walking up from the directory you run it in**,
 looking for `.taskman.toml`. So this has to happen inside the repo you set up in
-step 1. It runs the Alembic migrations to head, registers the project, and prints:
+step 1. It creates `board/` next to the marker and prints:
 
 ```
-taskman: schema ready. project 'my-service' (id=1).
+taskman: board ready at …/my-service/board (project 'my-service').
 ```
 
 If it names a slug you did not expect, you are in the wrong directory — that is the
-check worth doing, because taskman will happily set up whichever project it finds
-first on the way up.
+check worth doing. Commit `board/` with the repo.
 
 **Verify** — from the same directory, this should print the board's header and
 `(empty)`:
@@ -847,7 +833,4 @@ cooperate, delete the `hooks` key from `settings.json` and run `ai-sync` by hand
 | Hooks never fire | `bash` or `python3` unresolvable | Appendix B step 3 |
 | `status` exits 1 on managed-doc drift | `local.config.json` points at a repo that moved | Fix the path, or drop the entry |
 | `taskman` refuses to run | No `.taskman.toml` in the tree | Add one at the project root |
-| `taskman` can't connect | No Postgres, or no `TASKMAN_DATABASE_URL` | Start one; set the URL |
-| `password authentication failed for user "taskman"` | Nothing set the URL, so the built-in default was used — it assumes a `taskman` role that your Postgres probably has no reason to have | Set `TASKMAN_DATABASE_URL` to a role that exists (section 6) |
-| Board tests fail to collect, same auth error | `TASKMAN_TEST_DATABASE_URL` unset — the suite falls back to the same default | Pass a reachable URL whose role may `CREATE DATABASE` |
-| Alembic "Can't locate revision" | Two taskman copies, one database, different migrations | Bring both to the same revision set |
+| `taskman: …/board missing` | No `board/` next to the marker | `taskman init` from the project root, then commit `board/` |
