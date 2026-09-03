@@ -394,7 +394,7 @@ Field notes:
 |---|---|
 | go §1 load done | full skeleton from INDEX: every wave/lane/todo `pending`, `run_status: running`, agents seeded empty; set run `started`; stamp each wave's `parallelism` from the INDEX map; set `board_port` to the port the serving block printed |
 | wave fan-out | **post the chat board** (see above) after the write; wave + its lanes → `running`; set wave `started` (a real timestamp — `run.started` too, never a placeholder date); append each spawned agent (`running`) with its own `started` and Toolkit skills as `pending` |
-| lane reports done (write **before** verifying its claims) | **post the chat board** after the write; lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
+| lane reports done (write **before** verifying its claims) | **post the chat board** after the write; lane agent → `done` with its `ended`; reconcile skills + artifacts from its `## Verification`; **write `dispatch/verification/<brief>`** (the four-bullet block — the wave gate reads the file, not chat); lane → `done` (or `error` if it failed); todos → per report; copy any reported `tokens` onto the agent/lane |
 | wave lanes all terminal | set wave `ended`; roll up `tokens` from lanes/agents if the runtime gave them |
 | review gate starts | `gate.status: running`; append reviewer agents |
 | gate verdict | **post the chat board** after the write; clean → gate `done`; findings filed → gate + affected lanes `issues` with `findings[]`; critical unfixed → `error` |

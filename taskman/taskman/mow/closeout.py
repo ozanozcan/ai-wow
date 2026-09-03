@@ -10,6 +10,8 @@ Composes:
   - check_action_report — the report exists, has its sections, is linked from INDEX
   - check_ship_check    — the plan-vs-code verdict, its plan digest, its waivers
   - check_tracker       — no pending work, findings have board rows, run_status shipped
+  - check_verification  — each INDEX lane wrote dispatch/verification/<brief>
+  - check_board_sync    — when a board exists, dispatch tasks are actually `done`
   - a cross-artifact check neither of them can make alone: findings on the tracker
     must have a finding-triage record in the report (§4.1)
 
@@ -31,7 +33,13 @@ import json
 import sys
 from pathlib import Path
 
-from taskman.mow import check_action_report, check_ship_check, check_tracker
+from taskman.mow import (
+    check_action_report,
+    check_board_sync,
+    check_ship_check,
+    check_tracker,
+    check_verification,
+)
 
 
 def _tracker_findings(stem_dir: Path) -> int:
@@ -56,6 +64,8 @@ def run_closeout(stem_dir: Path) -> tuple[list[str], list[str]]:
         errors += check_ship_check.check_stem(stem_dir)
 
     errors += check_tracker.check_stem(stem_dir)
+    errors += check_verification.check_stem(stem_dir)
+    errors += check_board_sync.check_stem(stem_dir)
 
     findings = _tracker_findings(stem_dir)
     if findings and not check_action_report.has_triage_record(stem_dir):

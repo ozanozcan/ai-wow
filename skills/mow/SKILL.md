@@ -353,6 +353,8 @@ Your final message MUST end with:
 - Contract items: <each item → met / not-applicable + why>
 - Artifacts: <paths, or "none">
 - Decisions honored: <d#N: how, file:line — one per Decisions/Specs pointer, or "none pointed">
+
+**Also write that block to** `docs/plans/<stem>/dispatch/verification/<this-brief>` (same filename as the brief). Chat is not a record — the wave gate reads the file, not this message. Create the `verification/` folder if missing.
 ```
 
 `AFK` and `Background` must agree (both yes or both no). Prefer stating **AFK** in operator-facing text; keep **Background** for runtime fan-out compatibility.
@@ -694,7 +696,13 @@ When a wave's lanes report done:
    a footnote. Wait for it, or run that review yourself at the gate and say in the record that the lane
    shipped unreviewed. A lane once reported success while its reviewer was still running; the reviewer
    came back with four Criticals.
-1. **Check each lane's `## Verification` block** against its brief's QA contract **and** its Decisions / Specs pointers: every pointed id must have a `Decisions honored:` line (`d#N: how, file:line`, or `none pointed`). A lane without Verification (or with unmet contract items / missing honored lines and no justification) is **not done** — send it back or finish the checks yourself in the foreground.
+1. **Check each lane's `## Verification` block** against its brief's QA contract **and** its Decisions / Specs pointers: every pointed id must have a `Decisions honored:` line (`d#N: how, file:line`, or `none pointed`). A lane without Verification (or with unmet contract items / missing honored lines and no justification) is **not done** — send it back or finish the checks yourself in the foreground. If a lane reported in chat but did not write `dispatch/verification/<brief>`, copy the block there yourself before running the check — the file is the record.
+
+   ```bash
+   python -m taskman.mow.check_verification docs/plans/<stem> --wave N
+   ```
+
+   Exit 1 → that wave is not done. The close-out gate runs the same check across every wave, so skipping it here only delays the refusal.
 2. **Spawn the wave's reviewers in parallel, in isolated contexts, on the combined wave diff** — union of the INDEX `Review flags` for the wave's lanes (roster per the repo's `docs/agents/protocols.md` P2; default: the stack reviewer for code changes, `llm-sec-review` when prompts/tools/model endpoints changed). **Reviewers run at `model: "fable"`** — the top tier, regardless of the lanes' `Model` cells: a reviewer weaker than the builder it checks turns the gate into a rubber stamp, and the gate is the only thing standing between a parallel wave and unreviewed code. Runtimes without per-subagent model selection run them inherited. Builder lanes never review their own work.
 3. **Triage findings:** Critical → fix now (new lane or foreground) and re-review the fix before the next wave. Warning/Suggestion → file to the tracker (taskman: tasks tagged `review-finding`, severity in title); they queue, they don't block.
 3b. **A reviewer's scope advice is scoped to the diff it saw (L37).** Before applying a finding that *removes* something — "this is dead code", "nothing emits this", "the next lane should add its own" — open the `## Files in scope` and `## Do NOT` of every lane that has not run yet. A reviewer sees one wave's diff, never the run's file-ownership map, so it will confidently tell you to delete something a later lane is forbidden from re-adding. If a pending lane needs it and cannot own that file, keep it and say why in the gate record.
@@ -766,8 +774,9 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
    **Board sync (required when taskman present):** before the registry flip, run:
    ```bash
    python -m taskman plan mark-shipped docs/plans/<stem>/dispatch
+   python -m taskman.mow.check_board_sync docs/plans/<stem>
    ```
-   Skip with n/a only if the repo has no taskman. Moves Tasks linked by brief `source_ref` to `done` per action-report Outcome (or all dispatch `NN-*.md` brief tasks with stderr warning when no report).
+   Skip with n/a only if the repo has no `.taskman.toml`. `mark-shipped` moves Tasks linked by brief `source_ref` to `done` per action-report Outcome (or all dispatch `NN-*.md` brief tasks with stderr warning when no report). `check_board_sync` then reads the board: `n/a` is a lie when this stem has dispatch briefs, and any brief-linked non-decision task still not `done` (unless Outcome deferred it) refuses the `shipped` flip. The close-out gate runs this again — writing the line without running the command will not pass.
 
    **Tracker reconcile (required when a tracker ran) — run the script first:**
 
@@ -869,7 +878,7 @@ Do **not** write to `docs/agents/agent-work-log.md` — plan action reports supe
 - **plan** is read-mostly + writes small files → run it even at high context; it's the cheap insurance against losing decisions. The cost of a thin brief is paid every later chat — refuse stubs.
 - **Operator summary** (what we'll do / what you'll have) is mandatory on **plan** and **ready** (and each active stem in **list**); **go** ends with the past-tense twin. Do not leave the operator with only wave tables.
 - **`/mow list`** = registry + **full** waves/lanes maps for every active stem + parallel-safe matrix. **`/mow ready <stem>`** = same map for one stem **plus grill-with-docs checkpoint**. Never teaser-only previews — the operator picks with eyes on lanes.
-- **Automation hooks** (grill → tdd → parallel-debug → imprint/coverage/adversarial → ship-check) are gates, not suggestions — see the table near the top of this skill. Two of them are **scripts, not prose**: `taskman.mow.preflight` refuses fan-out, `taskman.mow.closeout` refuses the `shipped` flip. Everything between them is still judgement, which is the point — the scripts hold the accounting, not the verdict.
+- **Automation hooks** (grill → tdd → parallel-debug → imprint/coverage/adversarial → ship-check) are gates, not suggestions — see the table near the top of this skill. Two of them are **scripts, not prose**: `taskman.mow.preflight` refuses fan-out, `taskman.mow.closeout` refuses the `shipped` flip (ship-check verdict, action report, tracker, per-lane `dispatch/verification/<brief>`, and board sync). Everything between them is still judgement, which is the point — the scripts hold the accounting, not the verdict.
 - **Grill write-back:** `/mow ready` answers that stay only in chat are a failure mode — plan.md + briefs (+ taskman brief JSON) are what `/mow go` agents read. INDEX needs both `Grill checkpoint: done` and `Grill write-back:` before go.
 - **Refer to work by name, not a bare id.** In prose an operator reads — narration, plan bodies, brief context, action reports — first mention is `"Title" (#id)`, later mentions are the name alone. A wall of `#3074, #3075, #3076` is illegible six weeks later; names read at a glance. The id never disappears, it rides *inside* the first mention. Tables keyed by id (INDEX lanes, Decisions / Specs cells, registry rows) are exempt — that is what those columns are for.
 - **Decisions / Specs:** INDEX + brief headers carry **id pointers** only; materialize with `scripts/mow_hydrate_specs.py` → `dispatch/hydrated-specs.md` for subagents to **Read**. Prefer `d`/`req` over captures; tag only ids that change that lane’s Do/Don’t/Acceptance; never duplicate full decision prose into INDEX. Live taskman mid-lane is optional deepen only — not required.
