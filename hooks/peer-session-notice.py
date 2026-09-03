@@ -92,7 +92,8 @@ def _derive() -> tuple[str | None, str | None]:
     cwd = str(payload.get("cwd") or os.getcwd())
     try:
         top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
+                             capture_output=True, text=True,
+                             encoding="utf-8", timeout=5).stdout.strip()
     except Exception:
         return None, None
     if not top:
@@ -119,7 +120,7 @@ def main() -> int:
 
     mine = {}
     try:
-        mine = json.loads(marker.read_text())
+        mine = json.loads(marker.read_text(encoding="utf-8"))
     except Exception:
         pass
 
@@ -128,7 +129,7 @@ def main() -> int:
         if path == marker:
             continue
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
         if data.get("worktree") != worktree:

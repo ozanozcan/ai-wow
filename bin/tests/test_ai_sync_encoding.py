@@ -70,10 +70,25 @@ def check(label, got, want):
 
 
 # ---------------------------------------------------------------------------
-# layer 1 — AST: no bare text I/O anywhere in bin/ai-sync
+# layer 1 — AST: no locale-dependent text decoding anywhere in the harness
 # ---------------------------------------------------------------------------
 
 TEXT_IO = {"read_text", "write_text"}
+# subprocess in text mode decodes the child's output with the locale encoding
+# too, exactly like a bare read_text. Every one of these call sites runs git
+# and reads back paths, refs and config values.
+TEXT_MODE_KWARGS = {"text", "universal_newlines"}
+
+
+def scanned_files():
+    """The harness's own Python surface: the sync tool and every hook.
+
+    A glob rather than a hardcoded list, because the two trees do not carry
+    the same set of hooks and this file is byte-identical in both.
+    """
+    files = [REPO / "bin" / "ai-sync"]
+    files += sorted((REPO / "hooks").glob("*.py"))
+    return [f for f in files if f.is_file()]
 
 
 def _opens_in_binary(node: ast.Call) -> bool:
@@ -84,38 +99,44 @@ def _opens_in_binary(node: ast.Call) -> bool:
                and "b" in m.value for m in modes)
 
 
-def bare_text_io_sites():
-    """(name, lineno) for every text read/write that does not name an encoding."""
-    tree = ast.parse(AI_SYNC.read_text(encoding="utf-8"))
+def _in_text_mode(node: ast.Call) -> bool:
+    """True for subprocess calls asking for str output via text/universal_newlines."""
+    return any(kw.arg in TEXT_MODE_KWARGS
+               and isinstance(kw.value, ast.Constant) and kw.value.value is True
+               for kw in node.keywords)
+
+
+def _names_encoding(node: ast.Call) -> bool:
+    return any(kw.arg == "encoding" for kw in node.keywords)
+
+
+def _classify(node: ast.Call):
+    """Return a short label if this call decodes text, else None."""
+    fn = node.func
+    name = fn.attr if isinstance(fn, ast.Attribute) else (
+        fn.id if isinstance(fn, ast.Name) else None)
+    if name in TEXT_IO:
+        return name
+    if name == "open" and not _opens_in_binary(node):
+        return "open"
+    # subprocess.run / check_output / Popen(..., text=True)
+    if name in {"run", "check_output", "Popen"} and _in_text_mode(node):
+        return f"subprocess.{name}(text=True)"
+    return None
+
+
+def scan_sites():
+    """(relpath, label, lineno, names_encoding) for every text-decoding call."""
     out = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        fn = node.func
-        if isinstance(fn, ast.Attribute):
-            name = fn.attr
-        elif isinstance(fn, ast.Name):
-            name = fn.id
-        else:
-            continue
-        if name not in TEXT_IO and name != "open":
-            continue
-        if name == "open" and _opens_in_binary(node):
-            continue
-        if not any(kw.arg == "encoding" for kw in node.keywords):
-            out.append((name, node.lineno))
+    for f in scanned_files():
+        rel = f.relative_to(REPO).as_posix()
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            label = _classify(node)
+            if label:
+                out.append((rel, label, node.lineno, _names_encoding(node)))
     return out
-
-
-def total_text_io_sites():
-    """Every text read/write, encoding named or not — the anti-vacuity count."""
-    tree = ast.parse(AI_SYNC.read_text(encoding="utf-8"))
-    n = 0
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
-                and node.func.attr in TEXT_IO:
-            n += 1
-    return n
 
 
 # ---------------------------------------------------------------------------
@@ -178,17 +199,19 @@ def run_under_ascii_locale(tmp: Path):
 def main():
     print("ai-sync encoding")
 
-    print("\n AST — every text read/write names an encoding")
-    total = total_text_io_sites()
-    # Anti-vacuity: if the file stopped using read_text/write_text entirely,
-    # "no bare sites" would pass while guarding nothing.
-    check("there are text I/O sites to get wrong", total > 0, True)
-    bare = bare_text_io_sites()
-    if bare:
-        for name, line in bare:
-            print(f"        bare {name}() at bin/ai-sync:{line}")
-    check("no bare text I/O in bin/ai-sync",
-          [f"{n}:{ln}" for n, ln in bare], [])
+    print("\n AST — every text-decoding call in the harness names an encoding")
+    files = scanned_files()
+    sites = scan_sites()
+    # Two anti-vacuity checks. If the glob stopped matching, or the code
+    # stopped decoding text entirely, "no bare sites" would pass while
+    # guarding nothing at all.
+    check("the scan found files to check", len(files) > 1, True)
+    check("there are text-decoding sites to get wrong", len(sites) > 0, True)
+    bare = [s for s in sites if not s[3]]
+    for rel, label, line, _ in bare:
+        print(f"        bare {label} at {rel}:{line}")
+    check("no locale-dependent text decoding in the harness",
+          [f"{rel}:{line}" for rel, _, line, _ in bare], [])
 
     print("\n behaviour — ai-sync's own readers under a non-UTF-8 locale")
     with tempfile.TemporaryDirectory() as d:

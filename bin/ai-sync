@@ -833,7 +833,7 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     env.setdefault("GIT_COMMITTER_EMAIL", "ai-sync@local")
     return subprocess.run(
         ["git", "-C", str(REPO), *args],
-        capture_output=True, text=True, env=env, check=check,
+        capture_output=True, text=True, encoding="utf-8", env=env, check=check,
     )
 
 

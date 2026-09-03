@@ -70,12 +70,12 @@ def _parse(ts: str | None) -> datetime | None:
 def _heartbeat(marker: Path) -> None:
     """Touch our own marker so peers can tell we are alive."""
     try:
-        data = json.loads(marker.read_text())
+        data = json.loads(marker.read_text(encoding="utf-8"))
         last = _parse(data.get("updated_at"))
         if last and (_now() - last).total_seconds() < HEARTBEAT_SECONDS:
             return
         data["updated_at"] = _now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        marker.write_text(json.dumps(data, indent=2))
+        marker.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:
         pass
 
@@ -87,7 +87,7 @@ def live_peers(marker: Path, worktree: str) -> list[dict]:
         if path == marker:
             continue
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
         if data.get("worktree") != worktree:
@@ -111,7 +111,8 @@ def _derive(payload: dict) -> tuple[str | None, str | None]:
     cwd = str(payload.get("cwd") or os.getcwd())
     try:
         top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
+                             capture_output=True, text=True,
+                             encoding="utf-8", timeout=5).stdout.strip()
     except Exception:
         return None, None
     if not top:
