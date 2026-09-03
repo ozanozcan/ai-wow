@@ -18,6 +18,9 @@ toplevel="$(git rev-parse --show-toplevel)" || {
     exit 1
 }
 cd "$toplevel"
+# git sets GIT_DIR for hooks; suites that spawn git against throwaway
+# repos would otherwise operate on this one and fail.
+unset GIT_DIR GIT_WORK_TREE
 
 echo "pre-push: running harness tests..."
 
