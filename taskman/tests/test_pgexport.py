@@ -9,6 +9,7 @@ layer stays untested by design (lane Z exercises it against reality).
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 
 from taskman import pgexport
@@ -92,6 +93,29 @@ def test_session_transcript_path_relativized(tmp_path):
     stored = store.state(tmp_path)["session"][5]
     assert stored["transcript_path"] == "~/.claude/s.jsonl"
     assert stored["created_at"] == "2026-01-02T11:30:00+00:00"
+
+
+def test_home_absolute_strings_in_notes_and_brief_are_relativized(tmp_path):
+    """A committed board must grep-clean for /Users/ and C:\\ — not only
+    transcript_path. Live briefs name Files-in-scope with machine-absolute
+    paths; those rewrite through the same transform verify uses, so a
+    field-level diff still means real divergence."""
+    home = Path.home().as_posix()
+    abs_file = f"{home}/Desktop/dev/board/events.jsonl"
+    pgexport.export_board(_raw(task=[
+        _task(3, 9, notes=f"see {abs_file}",
+              source_ref=abs_file,
+              brief={"acceptance": f"grep {abs_file}",
+                     "context": [abs_file],
+                     "do_not": ["leave it"]}),
+    ]), tmp_path)
+    stored = store.state(tmp_path)["task"][3]
+    assert "/Users/" not in json.dumps(stored)
+    assert "C:\\\\" not in json.dumps(stored)
+    assert stored["notes"] == "see ~/Desktop/dev/board/events.jsonl"
+    assert stored["source_ref"] == "~/Desktop/dev/board/events.jsonl"
+    assert stored["brief"]["acceptance"] == "grep ~/Desktop/dev/board/events.jsonl"
+    assert stored["brief"]["context"] == ["~/Desktop/dev/board/events.jsonl"]
 
 
 def _cli(monkeypatch, raw, *args):

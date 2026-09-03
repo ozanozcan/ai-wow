@@ -55,6 +55,27 @@ def _iso(value: dt.datetime) -> str:
     return value.astimezone(dt.timezone.utc).isoformat(timespec="seconds")
 
 
+def _home_relative_strings(value):
+    """Rewrite this-machine home prefixes to '~' in any string (portable board).
+
+    Transcript paths already go through `portable_transcript_path`; live task
+    notes/briefs/`source_ref` also embed `/Users/...` from Files-in-scope
+    lists. Same rewrite on export and verify, so a remaining diff is real.
+    """
+    home = Path.home().as_posix()
+    if isinstance(value, str):
+        if value == home:
+            return "~"
+        if home + "/" in value or value.startswith(home + "/"):
+            return value.replace(home, "~")
+        return value
+    if isinstance(value, list):
+        return [_home_relative_strings(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _home_relative_strings(v) for k, v in value.items()}
+    return value
+
+
 def merge_relations(raw: dict) -> dict[str, list[dict]]:
     """Flatten relation tables onto their owning rows (d-p6).
 
@@ -100,6 +121,8 @@ def row_fields(entity: str, row: dict) -> dict:
             value = _iso(value)
         elif entity == "session" and key == "transcript_path":
             value = portable_transcript_path(Path(value))
+        else:
+            value = _home_relative_strings(value)
         fields[key] = value
     return fields
 
