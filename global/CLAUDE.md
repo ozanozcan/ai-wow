@@ -172,3 +172,12 @@ fails, and a stale marker means idle, not absent. When you are sharing:
   on this harness is dirtying — and one run swept six of a live session's uncommitted files, three
   of them brand new, into a `sync:` commit that told none of their story. That one is gated now;
   the next such command will not be. (L41)
+- **A fact stated once in a session is not still true when you reuse it** — a push-status count, an
+  ahead/behind number, a test flag that worked — re-derive it at the point you restate or rely on it
+  again, in the specific clone or context at hand, rather than repeating an earlier reading from memory
+  or a prior message to someone else. Twice in one session an unpushed-commit count for a git clone was
+  reported from a stale local remote-tracking ref never re-fetched before the claim (2 vs. the true 39;
+  "exactly at origin/master" vs. the true 5 behind), caught only after a later fetch contradicted it.
+  Separately, a `--noconftest` flag recommended to a peer session went stale when that peer's own lane
+  converted the target repo's `conftest.py` to no longer need a database — the same flag, reused hours
+  later without re-checking, then broke two new tests by skipping a fixture they needed. (L48)
