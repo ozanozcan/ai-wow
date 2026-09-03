@@ -8,8 +8,8 @@
 ## Goal
 
 The whole taskman CLI runs on the committed event-log store: every entity, every subcommand,
-no Postgres, no SQLAlchemy, no alembic. The two live boards (**project-a** at `~/Desktop/dev`,
-**project-b** at `~/Desktop/project-b`) are migrated onto committed `board/` directories
+no Postgres, no SQLAlchemy, no alembic. The two live boards (`<board-a>` at `<repo-a>`,
+`<board-b>` at `<repo-b>`) are migrated onto committed `board/` directories
 and keep working through the same `taskman ...` commands. The shipped guarantees that say
 "taskman requires Postgres" are amended in the same change that makes them false.
 
@@ -38,10 +38,10 @@ and keep working through the same `taskman ...` commands. The shipped guarantees
 | Area | End state |
 |---|---|
 | The CLI | `taskman board`, `task add/claim/...`, `decision`, `requirement`, `capture`, `plan`, `wrap` — every subcommand works against `board/` with no database process running |
-| The two live boards | project-a and project-b each have a committed `board/` (events.jsonl + counters) with every existing id preserved; `taskman board` from each repo shows the same rows Postgres did |
+| The two live boards | `<board-a>` and `<board-b>` each have a committed `board/` (events.jsonl + counters) with every existing id preserved; `taskman board` from each repo shows the same rows Postgres did |
 | Dependencies | `pyproject.toml` core deps shrink from five to one (`pydantic`); `psycopg` survives only as the exporter's optional extra; the store's stdlib-only AST test still green |
 | Windows | The converted pytest suite runs in the CI matrix on `ubuntu-latest` + `windows-latest`; eventlog plain-script suites keep running there unchanged |
-| The mirror | dotfiles-ai's `taskman/` is byte-identical for match paths, `tree-drift.json` knows the new files, its venv rebuilt, and `taskman board` works from project-a/project-b via the PATH that exists today |
+| The mirror | dotfiles-ai's `taskman/` is byte-identical for match paths, `tree-drift.json` knows the new files, its venv rebuilt, and `taskman board` works from <board-a>/<board-b> via the PATH that exists today |
 | The guarantees | I10 and `README.md` Requirements say what is now true; the work-PC artifact's "prototyped but not landed" sentence updated; grep finds no stale "requires Postgres" claim |
 
 **In one line:** The board taskman serves is a text file in git — on both machines, for both
@@ -117,7 +117,7 @@ Q1–Q5, 2026-09-02/03** (d-p10 added by the grill itself):
     entity/id/field. Counts + spot-checks are demoted to progress output; **zero diffs is the
     cutover gate.** Verify applies the same transforms as export (UTC-second timestamps,
     `~`-relative transcript paths, M2M→array flattening), so a diff means real divergence.
-  - **Quiesced cutover:** no agent sessions working project-a/project-b during lane Z's flip; export is
+  - **Quiesced cutover:** no agent sessions working <board-a>/<board-b> during lane Z's flip; export is
     re-run fresh immediately before the dotfiles-ai venv rebuild, then `--verify` runs
     *after* that final export. Closes the window where a Postgres write after export would
     exist only in the old world.
@@ -135,7 +135,7 @@ No board in this repo, so these live here. Briefs lift them into `## Acceptance 
   WHEN any command replays the board | THEN it exits non-zero naming the line, and no state
   is returned.
 - **Id preservation** — Migration SHALL preserve every existing entity id.
-  *Scenario:* `ids survive` | GIVEN the project-a Postgres board | WHEN the exporter runs and the
+  *Scenario:* `ids survive` | GIVEN the `<board-a>` Postgres board | WHEN the exporter runs and the
   new CLI replays | THEN every task/feature/pbi/requirement/decision/capture id present in
   Postgres exists with the same title, and the next allocated id is max+1.
 - **Migration equivalence** — The migration SHALL prove full field-level parity, not sampled

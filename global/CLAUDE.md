@@ -78,6 +78,7 @@ Each of these cost a real session. One line each, distilled from a lessons ledge
 kept outside this repo — which is why the ids are not contiguous.
 
 - **Read the file before prescribing a fix for it** — no summary of a file is the file: not a directory listing, not a `MEMORY.md` index line, not a recalled description already sitting in your context. Before proposing a file be changed, retired, or deleted, open it in that same turn. (L01, L31)
+- **Running a procedure against the one input where its defect cannot appear is not verification** — ask which input would expose the failure, and rehearse against that rather than the fixture nearest to hand. A documented setup was rehearsed from inside the tool's own directory, which carries its own project marker; every step printed success, and shipped telling readers to configure *their* project while targeting the tool's test project. Sibling instances in the same session: a grep whose pattern could not match its own claim, an exit code read through a pipe, a count that matched a comment, a diff blind to untracked files. One shape — a check exercised where it cannot fail. (L46)
 - **Never document wiring you have not built** — describe what exists, name the gap separately. (L02)
 - **Look at the rendered output before publishing** — static checks pass on defects only the eye catches. (L03)
 - **Verify a third-party capability against its primary docs *before* recommending it**, not after the user accepts. (L04)
@@ -86,23 +87,35 @@ kept outside this repo — which is why the ids are not contiguous.
 - **An unanchored grep is not an existence check** — a name that prefixes its siblings matches all of them. Anchor it, or prove it by import. (L15)
 - **Establish a baseline with the project's canonical command** — your narrowed or extra-flagged variant tests something else. Per-file linting says nothing about a repo-wide gate. (L16)
 - **Test a shell check by its exit status, not its text** — `grep -c` prints `0` *and* exits non-zero, so `$(cmd || echo 0)` yields two lines and every comparison against it is true. (L18)
+- **A pipeline throws away the exit status you care about** — `$?` and `||` see only the *last* command, so `cmd | sed || echo absent` can never print `absent`: `sed` succeeds on empty input. Test the condition itself before any pipe (`if [ -d "$p" ]`), or read `${PIPESTATUS[0]}`. Three times in one session a missing path printed nothing and the silence got read as "inconclusive" rather than "absent", twice reporting a state that had never been established. (L47)
+- **A reading of shared state goes stale the moment you stop looking at it** — re-sample at the point you act, not once per session. Concurrent sessions, hooks and timers rewrite `HEAD`, the index, `tracker.json` and registry rows underneath you, and a reading carried across a long session becomes a confident false claim. (L17)
 - **After a command that mutates repo state** (`stash`/`checkout`/`reset`), **confirm it applied** before drawing any conclusion from the resulting tree. (L23)
 - **Before crediting a fix with resolving a symptom reported elsewhere, reproduce that symptom's conditions** — a shared root-cause hypothesis is not evidence. (L24)
 - **Announce a substituted choice at the moment you make it** — when the documented routing doesn't cover your case and you pick something else, say which was expected, why it didn't apply, and what you chose. Discovered later, it reads as drift. (L26)
 - **In zsh, never name a variable `path`** (it is tied to `PATH`, and assigning it breaks every later command in that shell), **and never rely on an unquoted `$var` word-splitting** — a command held in a variable runs as one literal name. Write the command out, or use an array. When batching, let one real error through before concluding anything from exit codes. (L32)
 - **Before adding to an accumulating artifact** (a log, a registry, a backlog), **check something consumes it** — an artifact that only grows is a liability, and contributing to it feels like diligence. (L27)
 - **A parent-directory VCS check proves nothing about the directory you edited** — nested repos are invisible from above; run `git -C <dir>` there before declaring work unversioned or "nothing to commit". (L30)
+- **A tool's dangerous behaviour is usually gated by how it is invoked** — before warning that something will fire, trace the call site for *that* mode; a flag one frame above the dangerous function can disable it entirely, and the repo's own docs may describe only the other mode. (L35)
 - **A guard is proven by making it fire, not by reading it** — after writing a check, test, or sandbox, break what it protects and confirm it fails, and confirm it fires in the environment it exists for rather than only the one you are standing on. A sweep whose fallback matched *anything anywhere* passed the very case it existed to catch; a `HOME=` sandbox did nothing on Windows, where `Path.home()` reads `USERPROFILE`. (L33)
+- **A delegated agent reporting that it *checked* something is not a guard that it stays true** — a subagent's one-off probe leaves no artifact, so before citing that property as a guarantee in a decision's rationale, a brief, or a handoff, grep for the test that enforces it and write one in the same pass if it is missing. Reading a lane's "purity probe → django-free: True" as a committed AST test put a guarantee that did not exist into a decision's reasoning and into the next lane's brief. (L42)
+- **A key or match pattern must cover every case the surrounding rules permit, not the one you pictured** — and a comment asserting that it does is not a test of it. Ask what the system is allowed to vary, then key on all of it: a tracker port hashed from the repo path alone collided the instant two runs shared a repo, which the same skill's own parallel-run rule expressly allowed; a cleanup `pkill` scoped to a path prefix killed a peer session's live server. (L34)
+- **When the user says a selection, mode, or other in-progress state should persist, every way of leaving the current item is its own behavior** — keys, buttons, clicks, sibling lists — not only the path they just demonstrated. A test and a fix for next/prev is not a persist fix if a thumbnail click still clears it. (L36)
+- **When the user asks for a capability, wire it into the control they described using** — a hidden modifier path satisfies the data model, not the request. After building it, walk their own route to it: the button they named, the key they press, the click they described. Non-adjacent grouping shipped and tested behind ⌘-click while the Group button they actually press still built a contiguous span, so the answer to "can I group 1 with 5" was still no. (L39)
+- **While the operator is running the thing you are refactoring, an intermediate broken state reaches them as a product bug** — say you are rewriting it and name the reload point, or land the change in one write. Treat any bug reported *during* an active refactor as suspect-yours first: a half-written file that referenced both the removed binding and its replacement was reported as a data bug, and cost a hunt through the model before the breakage turned out to be one turn old. (L38)
+- **A single pass of a nondeterministic test is not evidence** — for an intermittent failure, one pass and one failure are the same observation, so a green run tells you it *has not failed yet*. Never let a durable artifact carry a verdict drawn from one run: publish after several consecutive passes, and when a claim has already been withdrawn once, re-run before restoring it. A concurrency spike was written up as "viable, build the port" on a single green Windows run; the next run failed the same test, the verdict had to be withdrawn in public, and it took four consecutive greens to earn back. (L43)
 
 ## Shared checkouts
 
 A git checkout has **one HEAD and one index**. When two sessions share one, a branch switch or a
 staging command in either reaches into the other's work — silently, and noticed only afterwards.
 
-**Nothing warns you.** No peer-session hook ships here, so treat a shared checkout as
-possibly-shared *by default* and look before doing git work — a commit in `git log` you
-did not make, or a modified file you did not touch, is the tell. Then:
+The `peer-session-notice` SessionStart hook warns when another session is live in this
+same checkout, and `peer-session-guard` asks before the destructive git commands below.
+Neither is a substitute for looking: a hook that fails open tells you nothing when it
+fails, and a stale marker means idle, not absent. When you are sharing:
 
+- **A grep answers the pattern you typed, not the question you meant** — never read absence from your own filtered output as absence in reality, and never count a proxy pattern as a count of the thing. A `git status | grep` whose filter omitted the path made a still-dirty file look committed, and a whole causal story got built on it and sent to a peer as fact; a `grep -c` over source text counted tuple-open parens and published the wrong row count. For existence, ask the specific path unfiltered (`git status --porcelain -- <path>`); for counts, ask the authoritative source, not a regex. (L40)
+- **A failed commit in a shared checkout is a staged-state leak, not a retry** — your `git add`ed paths stay in an index the peer also writes, one path-less `git commit` away from riding into their work. Drain it in the same turn, before diagnosing. And never build the commit out of an unverified lookup: `git -c user.name="$(git config user.name)"` expanded to empty on a machine where that key was unset, aborted with `empty ident name`, and left eight paths staged while a peer session was actively committing. Let git use the repo's own identity. (L44)
 - **Offer the user a worktree of your own before doing any git work**, and wait for their answer.
   If they accept, you are authorised to use **`EnterWorktree`** for this case specifically — that
   is what this paragraph exists to permit. Never relocate unasked.
@@ -111,6 +124,24 @@ did not make, or a modified file you did not touch, is the tell. Then:
   unpushed state, a fresh worktree will not have it — say so rather than starting from a base the
   user did not expect.
 - If they decline, prefer **`git commit -- <paths>`** over `git add` + `git commit`: it commits
-  those paths and ignores the index entirely, so it cannot pick up a peer's staged file. Give
+  those paths and ignores the index entirely, so it cannot pick up a peer's staged file.
+  Everything after `--` is a pathspec, so the message flag goes *before* it:
+  `git commit -F <msgfile> -- <paths>`, never `git commit -- <paths> -m "…"`, which fails with
+  `pathspec '-m' did not match any file(s)`. The pathspec matches only *tracked* files, so a file
+  you just created needs `git add <that path>` first — then confirm the index holds only it
+  (`git diff --cached --name-only`) before you commit. Give
   `git add` explicit paths, never switch branches, and never `git stash` / `reset --hard` /
   `clean -fd`.
+- **That same blindness to the index makes `git commit -- <paths>` the wrong tool for untracking** —
+  it reads the working tree, so a staged deletion from `git rm --cached` is discarded and the file is
+  re-committed from disk. A commit whose message said "untrack the activity trails" reported
+  `4 files changed, 166 insertions(+)` and left all three still tracked. Untracking needs a bare
+  `git commit`, which respects the index — and is therefore the form that *can* sweep up a peer's
+  staging, so inspect it first (`git diff --cached --name-status`) and confirm it holds only your
+  paths. The two forms do not compose. (L45)
+- **A repo's own sync, format or codegen command may itself run git** — read what it does to the
+  tree before running it here, and say so *before* you run it, not after. `bin/ai-sync` auto-commits
+  its managed categories (`agents/`, `hooks/`, `skills/`, `global/`) — exactly what a peer working
+  on this harness is dirtying — and one run swept six of a live session's uncommitted files, three
+  of them brand new, into a `sync:` commit that told none of their story. That one is gated now;
+  the next such command will not be. (L41)

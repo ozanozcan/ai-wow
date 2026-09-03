@@ -17,7 +17,7 @@ defect is pinned by a regression test that fails on today's code first.
 - **The defect (measured in the spike):** `taskman/taskman/metrics.py:250` stores
   `"transcript_path": str(transcript)` verbatim into the meta dict that becomes both
   `meta.json` and the session record. On a committed board this is a portability defect
-  before it is a privacy one — `/Users/ozan/...` is wrong on every other machine.
+  before it is a privacy one — `~/...` is wrong on every other machine.
 - **Why home-relative (plan d-p9):** transcripts live under `~/.claude/projects/...`,
   outside any repo, so repo-relative is impossible. `~`-prefixed paths survive a different
   username on the work PC. Contrast: `source_ref` is already repo-relative by locked format

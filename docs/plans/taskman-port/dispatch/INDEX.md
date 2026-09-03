@@ -13,7 +13,7 @@ Source plan: docs/plans/taskman-port/plan.md
 4. Rewire all 42 CLI subcommands and the wrapup gate onto the store; delete `db.py`,
    `models.py`, and the alembic tree; convert the 17-file pytest suite to tmp-board
    fixtures and add it to the CI matrix (lane D).
-5. Cut over: migrate project-a + project-b for real, mirror `taskman/` into dotfiles-ai in lockstep,
+5. Cut over: migrate `<board-a>` + `<board-b>` for real, mirror `taskman/` into dotfiles-ai in lockstep,
    rebuild its venv, amend I10 / README Requirements / the work-PC artifact (lane Z,
    foreground).
 
@@ -22,7 +22,7 @@ Source plan: docs/plans/taskman-port/plan.md
 | Area | End state |
 |---|---|
 | The CLI | Every subcommand works against `board/` with no database process anywhere |
-| Live boards | project-a and project-b each hold a committed `board/`, ids preserved, `taskman board` renders them from each repo |
+| Live boards | `<board-a>` and `<board-b>` each hold a committed `board/`, ids preserved, `taskman board` renders them from each repo |
 | Dependencies | Core deps: pydantic only; psycopg demoted to the `pgexport` optional extra |
 | Windows | Converted pytest suite runs in the CI matrix on both runners; eventlog plain-script suites unchanged |
 | The mirror | dotfiles-ai byte-identical on match paths, drift guards green, venv rebuilt, PATH command live |
@@ -50,7 +50,7 @@ gate should also re-run the eventlog concurrency suite against D's merged tree.
 | B | relativize-transcript-paths | - | `taskman/taskman/metrics.py`, `taskman/tests/test_metrics_paths.py` | code-edit | inherit | code-review | yes | yes | - | 02-relativize-transcript-paths.md |
 | C | pg-exporter | - | `taskman/taskman/pgexport.py`, `taskman/tests/test_pgexport.py` | code-edit | inherit | code-review | yes | yes | - | 03-pg-exporter.md |
 | D | cli-wiring | - | `taskman/taskman/cli.py`, `taskman/taskman/wrapup.py`, `taskman/taskman/config.py`, `taskman/taskman/plan.py`, `taskman/taskman/matching.py`, `taskman/taskman/db.py`, `taskman/taskman/models.py`, `taskman/taskman/alembic.ini`, `taskman/taskman/alembic/`, `taskman/taskman/README.md`, `taskman/conftest.py`, `taskman/tests/**`, `taskman/pyproject.toml`, `.github/workflows/ci.yml` | code-edit | fable | code-review | yes | yes | - | 04-cli-wiring.md |
-| Z | cutover-and-amend | - | `~/Desktop/dev/board/`, `~/Desktop/project-b/board/`, `~/Desktop/dotfiles-ai/taskman/**`, `~/Desktop/dotfiles-ai/bin/tests/tree-drift.json`, `HOW-TO-USE.agent.md`, `README.md`, `artifact:ai-wow-on-the-work-pc`, `docs/plans/taskman-port/` | shell | inherit (foreground) | - | no | no | - | 05-cutover-and-amend.md |
+| Z | cutover-and-amend | - | `<repo-a>/board/`, `<repo-b>/board/`, `~/Desktop/dotfiles-ai/taskman/**`, `~/Desktop/dotfiles-ai/bin/tests/tree-drift.json`, `HOW-TO-USE.agent.md`, `README.md`, `artifact:ai-wow-on-the-work-pc`, `docs/plans/taskman-port/` | shell | inherit (foreground) | - | no | no | - | 05-cutover-and-amend.md |
 
 `Decisions / Specs`: this repo is deliberately board-less (no `.taskman.toml`), so no
 `d#`/`req#` ids exist; the binding decisions are the d-p1…d-p9 entries in `plan.md`

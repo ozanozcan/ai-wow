@@ -38,3 +38,11 @@ taskman/.venv/
 
 # Brainstorm ledger lives in the private dotfiles-ai repo (enterprise context)
 docs/brainstorms/
+
+# Per-run target maps. A dispatch brief that reaches into a private product repo
+# needs that repo's real slug and path to do its job, and the published tree must
+# not carry either — same split as local.config.json. The tracked brief holds
+# placeholders and points here; this file holds the mapping and never leaves the
+# machine. Added 2026-09-03 after the scrub gate caught employer slugs in the
+# taskman-port dispatch package.
+**/dispatch/local-targets.md

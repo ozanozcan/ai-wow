@@ -6,8 +6,13 @@
 in `docs/plans/taskman-port/plan.md` §Decisions locked, restated below.
 
 > Foreground lane. The orchestrator runs this with the operator watching — it writes into
-> two other repos (`~/Desktop/dev`, `~/Desktop/project-b`), a second tree
+> two other repos (`<repo-a>`, `<repo-b>`), a second tree
 > (`~/Desktop/dotfiles-ai`), and a published artifact. Nothing here is backgroundable.
+
+> **Placeholders.** `<board-a>` / `<board-b>` are the two live board slugs and
+> `<repo-a>` / `<repo-b>` their repos. The real values live in
+> `docs/plans/taskman-port/dispatch/local-targets.md`, which is gitignored — this repo
+> is published, and it must not name a product repo. Read that file before starting.
 
 ## Goal
 
@@ -22,8 +27,8 @@ work-PC artifact say what is now true; a CI push proves the whole thing on both 
   `~/Desktop/dotfiles-ai/taskman/.venv/bin`). Until the mirror step lands and that venv is
   rebuilt, users still run the Postgres CLI — which is why migration must be re-run fresh
   here (wave-2 testing wrote no live board), and why this lane is last.
-- **Boards to migrate (plan d-p3, one-way):** slug `project-a` → `~/Desktop/dev/board/`; slug
-  `project-b` → `~/Desktop/project-b/board/`. Credentials come from each repo's own
+- **Boards to migrate (plan d-p3, one-way):** `<board-a>` → `<repo-a>/board/`; `<board-b>`
+  → `<repo-b>/board/` (slugs and paths in `local-targets.md`). Credentials come from each repo's own
   `.env`/`.env.local` (the old dotenv behavior — read the file yourself; the ported CLI no
   longer loads it). Postgres data stays untouched afterwards as archive: no DROP, no
   DELETE, ever.
@@ -54,11 +59,11 @@ work-PC artifact say what is now true; a CI push proves the whole thing on both 
   `requirement list --feature <known>`, `wrap gate` dry paths. Compare `board` output row
   counts with the exporter's printed counts and with pre-migration `psql` counts.
 - **Committing the boards:** each consuming repo commits its own `board/` (explicit paths
-  only). **project-a/project-b repos may have peer sessions or auto-hooks — check
+  only). **<board-a>/<board-b> repos may have peer sessions or auto-hooks — check
   `git status` there first** and follow the shared-checkout rules; the auto-push hazard is
   named in the spike plan (a board that travels with a repo inherits its push behavior).
 - **Quiesced cutover (plan d-p10, grill Q1 — the operator's zero-loss condition):**
-  1. Confirm no agent session is working project-a or project-b (`list_sessions` cwd check + ask the
+  1. Confirm no agent session is working <board-a> or <board-b> (`list_sessions` cwd check + ask the
      operator out loud); the freeze holds until the venv flip lands.
   2. Rehearsal export + `--verify` per board (zero diffs required) → smoke locally against
      ai-wow's tree.
@@ -70,10 +75,31 @@ work-PC artifact say what is now true; a CI push proves the whole thing on both 
      legs, converted suite included) → commit boards in consuming repos → lift the freeze.
 - **Order matters:** the sequence above is the order — verify always runs *after* the export
   it certifies, and the final export happens after the venv rebuild, not before.
+- **Cutover intel gathered during waves 1–2 (2026-09-03):**
+  - `pgexport` deliberately does **not** read `.env` (dotenv died with d-p7): pass `--dsn`
+    or set `TASKMAN_DATABASE_URL`/`DATABASE_URL` from each repo's own `.env` by hand;
+    sqlalchemy `+psycopg` driver suffixes in the URL are stripped automatically.
+  - **Nine wave-2-deleted paths are locked `match` in dotfiles-ai's
+    `bin/tests/tree-drift.json`** (db.py, alembic/script.py.mako, alembic/versions/.gitkeep +
+    0001/0002/0004/0005/0008/0009): dotfiles-ai's pre-push `vanished` check reads ai-wow's
+    **index** (`git ls-files`), with no in-flight mercy for deletions (verified by peer
+    ai-wow-d1 in test_tree_drift.py itself). So an *unstaged* working-tree deletion (the mow
+    merge-back's `git apply`) opens no window at all; the window opens the moment the
+    deletions are staged or committed in ai-wow, and closes when the reclassification lands
+    in dotfiles-ai's **working tree** — no dotfiles-ai commit or push needed to unblock.
+    Wave 2's orchestrator commit therefore uses the path-limited form (no `git rm` staging
+    beforehand), and the reclassification edit is step 0 of this lane, done with the operator
+    immediately after that commit. Reclassify the nine as removed (the mirror deletes them
+    there too) in the same pass that adds the new paths as `match`.
+    ai-wow's own pre-push mentions a "drifted inventory" check — verify it before this lane's
+    ai-wow push as well (peer session ai-wow-d1 hit the dotfiles-ai side of this on b12f21f).
+  - Main-checkout peer session `3061ab69…` holds uncommitted edits to `README.md` (still
+    actively editing it as of 06:39Z) and `HOW-TO-USE.agent.md` — both this lane's files.
+    Coordinate with the operator before amending them; do not clobber the live edits.
 
 ## Files in scope
 
-- `~/Desktop/dev/board/` (new, committed there) · `~/Desktop/project-b/board/` (same)
+- `<repo-a>/board/` (new, committed there) · `<repo-b>/board/` (same)
 - `~/Desktop/dotfiles-ai/taskman/**` (mirror), `~/Desktop/dotfiles-ai/bin/tests/tree-drift.json`
 - `HOW-TO-USE.agent.md` (I10 row), `README.md` (Requirements), any doc/skill hit by the L05 sweep
 - `artifact:ai-wow-on-the-work-pc` — the published "ai-wow on the Work PC" page, updated via its existing URL
@@ -92,7 +118,7 @@ work-PC artifact say what is now true; a CI push proves the whole thing on both 
 - Do not edit dotfiles-ai's `taskman/` files independently — every byte comes from ai-wow's
   tree (that is what lockstep means); divergence goes through ai-wow first.
 - Do not "fix" pre-existing dotfiles-ai drift beyond the taskman mirror — out of scope.
-- Do not delete or rewrite the old `.env` DATABASE_URL lines in project-a/project-b — note them as
+- Do not delete or rewrite the old `.env` DATABASE_URL lines in <board-a>/<board-b> — note them as
   now-unused in the report; removal is the owner's call.
 
 ## Acceptance check
@@ -103,11 +129,11 @@ work-PC artifact say what is now true; a CI push proves the whole thing on both 
   — this replaces counts+spot-checks as the blocking check; counts remain as progress
   output, and the three narrative spot-checks (a claimed task, a task with deps + tags, a
   decision with an owner task) remain as human-readable evidence in the report.
-- The freeze SHALL be real: the report records when the window opened, that no project-a/project-b
+- The freeze SHALL be real: the report records when the window opened, that no <board-a>/<board-b>
   session was live during it (how checked), and that verify's timestamp postdates the final
   export's.
 - The PATH command SHALL work from both repos: GIVEN a fresh shell WHEN `taskman board`
-  runs from `~/Desktop/dev` and from `~/Desktop/project-b` THEN both render
+  runs from `<repo-a>` and from `<repo-b>` THEN both render
   their migrated boards with no database running.
 - The mirror SHALL be provably in lockstep: dotfiles-ai's `test_tree_drift` and
   `python -m taskman.mow.check_drift` both exit 0, with the new files classified.
