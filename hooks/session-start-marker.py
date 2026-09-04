@@ -21,6 +21,9 @@ from pathlib import Path
 
 SCHEMA = 1
 MARKER_DIRNAME = ".session-markers"
+RECEIPT_SUFFIX = ".receipt.json"
+# Both peer hooks treat a marker older than 15m as dead; a day is slack for forensics.
+MARKER_RETENTION_SECONDS = 24 * 60 * 60
 
 
 def _git(cwd: Path, *args: str) -> str | None:
@@ -85,6 +88,31 @@ def _runtime(payload: dict) -> str:
     return "cursor"
 
 
+def _sweep_stale(marker_dir: Path, keep: Path) -> None:
+    """Drop markers past the retention window, with their receipts.
+
+    Nothing pruned this directory, so it grew one file per session forever.
+    Never raises: cleanup must not be able to block session creation.
+    """
+    now = datetime.now(timezone.utc)
+    for path in marker_dir.glob("*.json"):
+        if path == keep or path.name.endswith(RECEIPT_SUFFIX):
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            stamp = str(data.get("updated_at") or data.get("started_at"))
+            seen = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except (OSError, ValueError, TypeError, AttributeError, json.JSONDecodeError):
+            continue  # unreadable or undated — leave it rather than guess
+        if (now - seen).total_seconds() <= MARKER_RETENTION_SECONDS:
+            continue
+        for victim in (path, path.with_name(path.stem + RECEIPT_SUFFIX)):
+            try:
+                victim.unlink()
+            except OSError:
+                pass
+
+
 def write_marker(
     *,
     worktree: Path,
@@ -129,6 +157,7 @@ def write_marker(
         "source": source,
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _sweep_stale(marker_dir, keep=path)
     return path
 
 

@@ -13,6 +13,7 @@ else; `test_board_less_repo_still_writes_a_marker` is the assertion that fails
 if that early return ever comes back.
 """
 
+import datetime
 import json
 import os
 import subprocess
@@ -145,6 +146,56 @@ def test_outside_a_git_repo_nothing_is_written():
     check("non-repo: exits clean", proc.returncode == 0, proc.stderr[:200])
     check("non-repo: no marker directory",
           not os.path.exists(os.path.join(plain, ".session-markers")))
+
+
+def seed(repo, name, age_seconds=None, body=None):
+    """Drop a file into .session-markers/ — a dated marker, or raw `body`."""
+    d = os.path.join(repo, ".session-markers")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, name)
+    if body is None:
+        stamp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=age_seconds)
+        body = json.dumps({
+            "schema": 1, "session_id": name[:-5],
+            "started_at": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "updated_at": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "start_sha": "0" * 40, "branch": "master",
+            "worktree": repo, "runtime": "claude", "source": None,
+        })
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+    return path
+
+
+def test_retention_sweeps_stale_markers_but_spares_the_rest():
+    """The directory grew unbounded: nothing ever pruned it (L27)."""
+    _, repo = make_repo()
+    day = 24 * 60 * 60
+    seed(repo, "old.json", age_seconds=3 * day)
+    seed(repo, "old.receipt.json", body='{"schema": 1}')
+    seed(repo, "fresh.json", age_seconds=60)
+    seed(repo, "fresh.receipt.json", body='{"schema": 1}')
+    seed(repo, "corrupt.json", body="not json at all")
+
+    run_hook(repo)
+    left = markers_in(repo)
+
+    check("retention: stale marker swept", "old.json" not in left, f"left={left}")
+    check("retention: its receipt swept with it", "old.receipt.json" not in left, f"left={left}")
+    check("retention: fresh marker kept", "fresh.json" in left, f"left={left}")
+    check("retention: fresh receipt kept", "fresh.receipt.json" in left, f"left={left}")
+    check("retention: unreadable marker left alone", "corrupt.json" in left, f"left={left}")
+    check("retention: this session's marker written", "s1.json" in left, f"left={left}")
+
+
+def test_retention_never_sweeps_the_marker_it_just_wrote():
+    """A resumed session's own marker may be older than the window."""
+    _, repo = make_repo()
+    seed(repo, "s1.json", age_seconds=5 * 24 * 60 * 60)
+    proc = run_hook(repo, session_id="s1")
+    check("retention: current marker survives its own sweep",
+          "s1.json" in markers_in(repo), f"left={markers_in(repo)}")
+    check("retention: hook still exits clean", proc.returncode == 0, f"rc={proc.returncode}")
 
 
 if __name__ == "__main__":
