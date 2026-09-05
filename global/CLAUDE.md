@@ -145,9 +145,20 @@ fails, and a stale marker means idle, not absent. When you are sharing:
 
 - **A grep answers the pattern you typed, not the question you meant** — never read absence from your own filtered output as absence in reality, and never count a proxy pattern as a count of the thing. A `git status | grep` whose filter omitted the path made a still-dirty file look committed, and a whole causal story got built on it and sent to a peer as fact; a `grep -c` over source text counted tuple-open parens and published the wrong row count. For existence, ask the specific path unfiltered (`git status --porcelain -- <path>`); for counts, ask the authoritative source, not a regex. (L40)
 - **A failed commit in a shared checkout is a staged-state leak, not a retry** — your `git add`ed paths stay in an index the peer also writes, one path-less `git commit` away from riding into their work. Drain it in the same turn, before diagnosing. And never build the commit out of an unverified lookup: `git -c user.name="$(git config user.name)"` expanded to empty on a machine where that key was unset, aborted with `empty ident name`, and left eight paths staged while a peer session was actively committing. Let git use the repo's own identity. (L44)
-- **Offer the user a worktree of your own before doing any git work**, and wait for their answer.
+- **Offer the user a worktree of your own before doing any *code* work**, and wait for their answer.
   If they accept, you are authorised to use **`EnterWorktree`** for this case specifically — that
-  is what this paragraph exists to permit. Never relocate unasked.
+  is what this paragraph exists to permit. Never relocate unasked. Board work is the carve-out in
+  the next bullet: it stays in the shared checkout even when a worktree is already on offer.
+- **A worktree isolates code; it forks the board** — `board/next_ids` and `board/events.jsonl` are
+  tracked files, so a worktree carries a *copy* of the id counters at its base commit. Anything that
+  mints an id in there — `taskman task add` / `capture add`, a plan import, a `/wrap-up` board sync —
+  allocates against that stale counter and hands out ids the real board has already issued. Torn
+  down, that work is lost; merged back it is worse, because the stale `next_ids` overwrites the live
+  one and the next session re-mints ids that already exist. **Worktree for code work only.** Grill,
+  plan import, board sync and every `taskman … add` stay in the shared checkout, and an isolated lane
+  that needs a board row reports it in its `## Verification` instead, for the orchestrator to file
+  from the main checkout after merge-back. Scope any lane isolation to lanes that touch source only.
+  (L49)
 - Check `worktree.baseRef` before assuming what you branched from: `fresh` (the default) branches
   from `origin/<default-branch>`, **not** your current HEAD. If your work depends on uncommitted or
   unpushed state, a fresh worktree will not have it — say so rather than starting from a base the
