@@ -38,6 +38,15 @@ COPILOT = HOME / ".copilot"
 AGENTS_SKILLS = HOME / ".agents" / "skills"
 CLAUDE_JSON = HOME / ".claude.json"
 
+
+def vscode_user_dir() -> Path:
+    """VS Code's per-user config dir. OS-specific, unlike ~/.claude and ~/.cursor."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA") or HOME / "AppData/Roaming") / "Code" / "User"
+    if sys.platform == "darwin":
+        return HOME / "Library" / "Application Support" / "Code" / "User"
+    return HOME / ".config" / "Code" / "User"
+
 # Categories that are file-collections shared via a symlinked directory.
 # (target dir name under each tool) -> (canonical dir under REPO)
 LINK_DIRS = {
@@ -617,6 +626,21 @@ def do_render_mcp() -> None:
             d["mcpServers"] = typed
             write_json(CLAUDE_JSON, d)
             log("  updated ~/.claude.json mcpServers")
+    # VS Code: dedicated file, keyed on `servers` rather than `mcpServers`, in an
+    # OS-specific dir. This repo links nothing into VS Code's config directory,
+    # so _tool_is_foreign has no symlink to resolve and cannot tell whether
+    # another tree is driving it. Gated on `servers` for the reason
+    # ~/.claude.json is: a tree that ships no canonical servers must not render
+    # an empty set over a file some other tree is maintaining. Skipped entirely
+    # where VS Code is not installed, so other machines stay clean.
+    vscode_dir = vscode_user_dir()
+    if servers and vscode_dir.is_dir():
+        vscode_path = vscode_dir / "mcp.json"
+        desired_vscode = {"servers": typed}
+        if load_json(vscode_path, None) != desired_vscode:
+            backup(vscode_path)
+            write_json(vscode_path, desired_vscode)
+            log(f"  rendered {vscode_path.name} for VS Code")
 
 
 def do_render_copilot_workspace() -> None:
