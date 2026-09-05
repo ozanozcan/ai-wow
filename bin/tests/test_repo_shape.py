@@ -71,8 +71,35 @@ GENERIC_LEAK = [r"/Users/[a-z]+"]
 # reports a visible SKIP. It must never look like a pass — a clone has no
 # identifiers to protect, but the owner losing this config silently would be the
 # original failure with extra steps.
-def _private_leak_patterns():
+def _config_path():
+    """`local.config.json`, or the main checkout's copy when we run in a worktree.
+
+    The file is gitignored, so `git worktree add` never checks it out and the
+    private half of the scrub silently degraded to a SKIP — weakest in exactly
+    the place an isolated lane pushes from. `--git-common-dir` points at the
+    main `.git` from inside a worktree, and at our own from a plain clone, so a
+    clone with no config still reports the SKIP it should.
+    """
     cfg = REPO / "local.config.json"
+    if cfg.is_file():
+        return cfg
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return cfg
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return cfg
+    common = Path(proc.stdout.strip())
+    if not common.is_absolute():
+        common = REPO / common
+    return common.resolve().parent / "local.config.json"
+
+
+def _private_leak_patterns():
+    cfg = _config_path()
     if not cfg.is_file():
         return []
     try:

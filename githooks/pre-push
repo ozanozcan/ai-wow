@@ -42,5 +42,6 @@ run_quiet bin/tests/test_ai_sync_commit.py
 run_quiet bin/tests/test_ai_sync_encoding.py
 run_quiet skills/mow/tests/test_board_table.py
 run_quiet skills/mow/tests/test_tracker_port.py
+run_quiet bin/tests/test_repo_shape_config.py
 python3 bin/tests/test_repo_shape.py        # scrub output is worth seeing
 echo "pre-push: clean"
