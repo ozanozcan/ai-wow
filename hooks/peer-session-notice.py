@@ -160,8 +160,11 @@ def main() -> int:
          "\nA git checkout has one HEAD and one index, so branch switches and staging are\n"
          "global. Concurrent work here is not safe, only careful."),
         (0,
-         "\nACTION REQUIRED — before doing any git work, offer the user a worktree of your\n"
-         "own, and wait for their answer. Do not relocate unasked."),
+         "\nACTION REQUIRED — before doing any CODE work, offer the user a worktree of your\n"
+         "own, and wait for their answer. Do not relocate unasked.\n"
+         "Board work is the carve-out: board/next_ids and board/events.jsonl are tracked, so a\n"
+         "worktree mints ids from a stale counter and re-issues ones the real board already gave\n"
+         "out. Grill, plan import, board sync and every `taskman ... add` stay in this checkout."),
         (2,
          "Suggested wording:\n"
          "\n"
