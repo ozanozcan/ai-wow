@@ -37,7 +37,7 @@ python3 ~/ai-wow/bin/ai-sync status
 Everything except the board runs on a bare clone: **no configuration, no API keys,
 no database.**
 
-### One optional extra
+### Two optional extras
 
 `impeccable` — the UI design skill — is referenced throughout the docs but is **not
 bundled**: it is Apache-2.0 and roughly 99 files, better taken from its own source
@@ -48,6 +48,24 @@ npx skills add pbakaus/impeccable
 ```
 
 Nothing else depends on it. See [`THIRD-PARTY.md`](THIRD-PARTY.md).
+
+`serena` — the symbol-aware navigation MCP server — is named by the routing table
+in [`global/CLAUDE.md`](global/CLAUDE.md) but is **not configured here**:
+[`mcp.json`](mcp.json) ships with an empty `mcpServers` on purpose. Wire it up
+yourself if you want that row to do anything:
+
+```json
+{
+  "mcpServers": {
+    "serena": {
+      "command": "serena",
+      "args": ["start-mcp-server", "--context=ide", "--project-from-cwd"]
+    }
+  }
+}
+```
+
+Every other routing row resolves to something in this repo.
 
 ---
 

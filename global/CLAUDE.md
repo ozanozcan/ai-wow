@@ -67,6 +67,7 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 | Non-Python backend diff ready to commit | stack reviewer subagent matching the project |
 | Prompts, tool-calling, agents, RAG, model endpoints | llm-sec-review subagent alongside the stack reviewer |
 | Auth, payments, uploads, secrets, settings | suggest /security-review before commit |
+| Cross-file Python rename/delete, or "who calls this?" on a colliding name | serena `find_referencing_symbols` / `rename_symbol` before editing — grep cannot separate 18 same-named `main`s |
 | Bug fix | regression test first (tdd skill); gnarly/unclear bug → /diagnose |
 | Slow page, new list/query endpoint | complexity-audit skill |
 | New or changed logic with thin tests | test-coverage skill; critical pure logic → adversarial-tester |
