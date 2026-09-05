@@ -65,7 +65,10 @@ yourself if you want that row to do anything:
 }
 ```
 
-Every other routing row resolves to something in this repo.
+The other routing rows point at skills and subagents that ship here, with two
+exceptions that resolve to your Claude Code install rather than to this repo:
+`/security-review` is a built-in, and `/verify` is whatever your project defines
+— `templates/protocols.template.md` treats it as optional, "if one exists".
 
 ---
 
