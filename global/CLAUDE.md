@@ -71,7 +71,7 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 | Bug fix | regression test first (tdd skill); gnarly/unclear bug → /diagnose |
 | Slow page, new list/query endpoint | complexity-audit skill |
 | New or changed logic with thin tests | test-coverage skill; critical pure logic → adversarial-tester |
-| Feature declared done | /ship-check, then /verify |
+| Feature declared done | /ship-check, then the project's own /verify-equivalent post-build protocol if it defines one — this harness ships none |
 
 Toolkit is advisory, never a gate: recommend or invoke, don't block on it.
 </important>
