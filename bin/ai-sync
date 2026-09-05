@@ -566,10 +566,26 @@ def do_render_hooks() -> None:
             log("  rendered ~/.copilot/hooks/ai-wow.json")
 
 
+def _typed(entry: dict) -> dict:
+    """Give a remote entry the explicit transport most tools require.
+
+    Three of the four render targets refuse to infer it: Claude Code skips the
+    server outright (`has a "url" but no "type"`) while still reporting a valid
+    config, and both `copilot mcp add --transport http` and VS Code write
+    type:http themselves. Cursor is the exception -- it infers from `url` and
+    documents no type on remote entries -- so this is applied per target rather
+    than baked into mcp.json, which stays tool-neutral: command+args for stdio,
+    url for remote.
+    """
+    return {**entry, "type": "http"} if "url" in entry else dict(entry)
+
+
 def do_render_mcp() -> None:
     canonical = load_json(REPO / "mcp.json", {"mcpServers": {}})
     servers = canonical.get("mcpServers", {})
-    desired = {"mcpServers": servers}
+    desired = {"mcpServers": servers}                       # Cursor: infers transport
+    typed = {n: _typed(e) for n, e in servers.items()}
+    desired_typed = {"mcpServers": typed}                   # everyone else: explicit
     # Cursor: dedicated file.
     foreign = _tool_is_foreign(CURSOR)
     if foreign:
@@ -586,9 +602,9 @@ def do_render_mcp() -> None:
         _warn_foreign(COPILOT / "agents", foreign)
     else:
         copilot_path = COPILOT / "mcp-config.json"
-        if load_json(copilot_path, None) != desired:
+        if load_json(copilot_path, None) != desired_typed:
             backup(copilot_path)
-            write_json(copilot_path, desired)
+            write_json(copilot_path, desired_typed)
             log("  rendered ~/.copilot/mcp-config.json")
     # Claude: only touch the big live file when we actually have servers.
     foreign = _tool_is_foreign(CLAUDE)
@@ -596,9 +612,9 @@ def do_render_mcp() -> None:
         _warn_foreign(CLAUDE / "agents", foreign)
     elif servers:
         d = load_json(CLAUDE_JSON, {})
-        if d.get("mcpServers") != servers:
+        if d.get("mcpServers") != typed:
             backup(CLAUDE_JSON)
-            d["mcpServers"] = servers
+            d["mcpServers"] = typed
             write_json(CLAUDE_JSON, d)
             log("  updated ~/.claude.json mcpServers")
 
