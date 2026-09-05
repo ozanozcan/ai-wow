@@ -766,6 +766,19 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
    - **(c) one-off** — capture only (`taskman capture add --kind qa` — wave-gate verify records; this CLI has no separate `verify` kind).
    The action report's **Verify** section records each finding → classification ((a)/(b)/(c)).
 
+1b. **Go-time discovery write-back (required — before the action report):** ask *"what did running this teach that the briefs should have carried, and that the next stem's lanes will need?"* **plan** writes briefs before **go** has learned anything, and nothing else in this skill carries knowledge back the other way — so operational facts discovered at go time die with the run unless this step moves them.
+
+   Sort each one by **lifetime**, not by how it feels:
+
+   - **Run-scoped** (this stem's open items, resume state, which lane owns what) → the action report. It is meant to die with the stem.
+   - **Repo-permanent** (how to run the tests, what a lane must do before its first command, a flaky test's id, a measurement every future lane will re-derive) → the **repo's own docs**: the protocols P0/P1 tables so **plan** emits it into future briefs automatically, and the repo's agent-facing guide (`CLAUDE.md` or equivalent) when the fact contradicts something already written there. Better still, mechanize it — a script a brief can cite beats a paragraph an orchestrator must remember to retype.
+
+   **The test:** *would a lane on a different stem need this?* If yes, it does **not** belong in `docs/plans/<stem>/dispatch/`, which is deleted when the stem ships. Writing a permanent fact into a disposable folder is the failure mode this step exists to catch, and it looks exactly like diligence.
+
+   **A fact you hand-carried into more than one lane prompt is, by that repetition alone, repo-permanent.** The second retyping is the signal; do not wait for the fifth.
+
+   Watch for a repo doc that is *wrong for lanes specifically* — onboarding written for the main checkout is injected verbatim into every isolated worktree, where it can instruct a lane to do the thing that fails. (Real case, 2026-09: a project guide's Quick start told lanes to activate a virtualenv and run the test suite; a worktree has no virtualenv of its own, and the gitignored env file carrying the secret key never propagates, so the framework refused to start and **every test errored at import** — while the lane could still report a coverage number. The orchestrator counteracted it by hand in five consecutive lane prompts before anything reached disk. The fix that stuck was a bootstrap script cited from the P1 contract, plus naming the worktree case in the guide itself.)
+
 2. **Write the action report (required — do not skip):** create or update `docs/plans/<stem>/action-report.md` next to the plan. You do **not** need a separate todo for this — Integrate always owns it.
 
    Mirror an existing report shape (e.g. `docs/plans/platform-foundation/action-report.md`):
