@@ -114,8 +114,11 @@ MCP are rendered into Copilot's own schema, same as Cursor's.
 >
 > In **VS Code**, the extension shares the `~/.agents/skills` farm and picks up slash
 > commands as `.github/prompts/*.prompt.md`, but the `~/.copilot/` renders are CLI
-> paths — nothing reads them there. For a VS Code-only setup, the standing-instructions
-> surface is `.github/copilot-instructions.md`; a starting point ships in
+> paths — nothing reads them there. Standing instructions still arrive, by two routes:
+> `global/CLAUDE.md` travels as-is, because `ai-sync` links it to `~/.claude/CLAUDE.md` and
+> VS Code reads that for every workspace once `chat.useClaudeMdFile` is enabled. Per-*project*
+> instructions are the separate surface — `.github/copilot-instructions.md`, which `ai-sync`
+> does not render; a starting point ships in
 > [`templates/copilot-instructions.template.md`](templates/copilot-instructions.template.md).
 
 `ai-sync` runs `import → link → reconcile skills → render → commit`, and is

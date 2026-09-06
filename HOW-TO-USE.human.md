@@ -241,15 +241,27 @@ machine where Copilot means the editor sidebar, you get:
 |---|---|
 | The whole skill farm, via `~/.agents/skills` | Hooks — no lifecycle guarantees |
 | Slash commands, as `.github/prompts/*.prompt.md` in each `managed_repos` entry | Subagents |
+| Global standing instructions, via `~/.claude/CLAUDE.md` | |
 | | MCP servers from `mcp.json` |
 
-Nothing breaks; the unread renders just sit there. The gap worth filling is standing
-instructions — the extension's equivalent of `global/CLAUDE.md` is a per-repo
+Nothing breaks; the unread renders just sit there. Standing instructions arrive by two
+routes, and only one of them needs work from you.
+
+`global/CLAUDE.md` travels as-is. `ai-sync` links it to `~/.claude/CLAUDE.md`, and VS Code
+reads that file for **every** workspace once the `chat.useClaudeMdFile` setting is on — no
+template, no per-repo copy. The link is written whether or not Claude Code is installed.
+
+What that does not carry is *project* instructions, and those are still a per-repo
 `.github/copilot-instructions.md`, which `ai-sync` does **not** render. Copy
 [`templates/copilot-instructions.template.md`](templates/copilot-instructions.template.md)
 into the repo and fill in its placeholders.
 
-VS Code needs nothing extra — see [Appendix A](#appendix-a--vs-code-and-locked-down-machines),
+> [!NOTE]
+> On a machine that forbids symlinks, `~/.claude/CLAUDE.md` is a **copy**, so it goes stale
+> on every `git pull` until the next `ai-sync`. The status line tells you which:
+> `copied (in sync)`, or a stale marker.
+
+The **Claude Code** VS Code extension, by contrast, needs nothing extra — see [Appendix A](#appendix-a--vs-code-and-locked-down-machines),
 which also covers machines that forbid symlinks. Windows needs three extra things:
 [Appendix B](#appendix-b--windows).
 

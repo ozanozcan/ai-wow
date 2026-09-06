@@ -355,10 +355,14 @@ Two consequences to state rather than discover:
 - **`stamp-tracker-spawn` is inert under Copilot even on the CLI.** `SubagentStart`
   delivers Copilot's native camelCase payload with no `tool_input`, so the hook runs,
   exits 0, and stamps nothing. It cannot be fixed by renaming keys.
-- **A VS Code-only user has no hooks, subagents or MCP from this harness.** The
-  standing-instructions surface there is a per-repo `.github/copilot-instructions.md`,
-  which `ai-sync` does not render; `templates/copilot-instructions.template.md` is the
-  starting point. Never tell them a hook is guarding anything.
+- **A VS Code-only user has no hooks, subagents or MCP from this harness** — but they do
+  get standing instructions, so do not tell them `global/CLAUDE.md` is unreachable.
+  `ai-sync` links it to `~/.claude/CLAUDE.md`, which VS Code reads for every workspace once
+  `chat.useClaudeMdFile` is enabled; in copy mode that file is a snapshot and goes stale
+  until the next sync. Per-*project* instructions are the separate surface — a per-repo
+  `.github/copilot-instructions.md`, which `ai-sync` does not render;
+  `templates/copilot-instructions.template.md` is the starting point. Never tell them a
+  hook is guarding anything.
 
 Hook event names render in **PascalCase** for Copilot deliberately — the casing selects
 the Claude-compatible payload contract on both sides. Do not "normalize" it to camelCase.
