@@ -45,6 +45,7 @@ fail a run.
 
 import datetime
 import glob
+import importlib.util
 import hashlib
 import json
 import os
@@ -52,6 +53,8 @@ import sys
 
 LEDGER = ".agent-times.json"
 ACTIVITY = ".activity"
+SWEEP_SENTINEL = ".last-sweep"
+SWEEP_EVERY = 60 * 60       # seconds between marker sweeps — housekeeping, not a hot path
 SAMPLE_EVERY = 30           # seconds between activity samples — cheap, still dense
 
 # The subagent tool is `Agent` here and `Task` in other runtimes/versions. Guarding
@@ -374,12 +377,51 @@ def note_activity(cwd) -> None:
         return
 
 
+def sweep_markers() -> None:
+    """Collect dead session markers mid-session, at most once an hour.
+
+    session-start-marker.py sweeps only when a NEW session opens, so on a machine
+    where sessions run for days the directory sits well past its retention window
+    — seven markers, five of them a day old, with no new session due. This is the
+    same job on the only hook that fires while a session is alive, throttled on a
+    sentinel's mtime exactly as note_activity samples.
+
+    Never raises: retention is housekeeping and must never fail a tool call.
+    """
+    marker = os.environ.get("WRAPUP_SESSION_MARKER")
+    if not marker:
+        return
+    marker_dir = os.path.dirname(marker)
+    sentinel = os.path.join(marker_dir, SWEEP_SENTINEL)
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    try:
+        if now - os.path.getmtime(sentinel) < SWEEP_EVERY:
+            return              # already swept this window — the cheap path
+    except OSError:
+        pass                    # no sentinel yet — first sweep of this session
+    try:
+        with open(sentinel, "w", encoding="utf-8") as fh:
+            fh.write(f"{int(now)}\n")
+    except OSError:
+        return
+    try:
+        import pathlib
+        src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session-start-marker.py")
+        spec = importlib.util.spec_from_file_location("session_start_marker", src)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)   # __main__-guarded: importing writes nothing
+        mod._sweep_stale(pathlib.Path(marker_dir), keep=pathlib.Path(marker))
+    except Exception:
+        return
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except Exception:
         return
     note_activity(payload.get("cwd") or os.getcwd())
+    sweep_markers()
     if payload.get("tool_name") in AGENT_TOOLS:
         on_task(payload, payload.get("hook_event_name") or "PostToolUse")
     else:
