@@ -29,7 +29,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 # The docs a reader of the published repo actually meets. Plan folders and
 # session reports quote historical counts on purpose and are not claims.
-PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-PARTY.md"]
+PUBLISHED = ["README.md", "HOW-TO-USE.human.md", "HOW-TO-USE.agent.md", "THIRD-PARTY.md",
+             "LESSONS.md"]
 
 # Every directory whose contents ship as harness content a reader can run. The
 # scrub used to cover only hooks/ and bin/, which is why an employer-named
