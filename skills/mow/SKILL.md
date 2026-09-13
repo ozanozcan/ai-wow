@@ -400,6 +400,14 @@ Source plan: docs/plans/<stem>/plan.md
 
 Each wave ends with a **review gate** (see go mode) before the next starts.
 
+**Wave membership is read, not decoration.** `mow_preflight` derives it from two
+sources and the overlap gate uses both: these bullets (bare lane letters, `|` or
+`‖` separated — annotations in `(...)`, and anything after a ` — ` prose dash, are
+ignored) and each brief's `**Wave:** <n>` header. The two are cross-checked, and a
+bullet naming no lane, a lane placed in no wave, and a disagreement between the
+sources are each reported. Keep the brief header right even when the bullet reads
+as prose — it is the source that survives a freehand INDEX. (L53)
+
 ## Lanes
 | Lane | Todos (in order) | PBI / Feature | Files owned | Role | Model | Review flags | AFK | Background | Decisions / Specs | Brief |
 |---|---|---|---|---|---|---|---|---|---|---|

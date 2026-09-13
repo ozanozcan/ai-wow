@@ -29,19 +29,109 @@ def test_parse_files_owned_backtick_list():
     ]
 
 
-def test_same_wave_overlap_detects_shared_prefix():
-    index_text = """
-## Waves
-- **Wave 1 (parallel):** A (a) ‖ B (b)
+def _index(waves: str, lanes: str) -> str:
+    return f"## Waves\n{waves}\n\n## Lanes\n| Lane | Files owned | Brief |\n|---|---|---|\n{lanes}\n"
 
-## Lanes
-| Lane | Files owned | Brief |
-|---|---|---|
-| A | `scripts/foo.py` | 01-a.md |
-| B | `scripts/` | 02-b.md |
-"""
-    errs = _mod.check_same_wave_overlap(index_text)
+
+def test_same_wave_overlap_detects_shared_prefix():
+    errs, _ = _mod.check_same_wave_overlap(
+        _index(
+            "- **Wave 1 (parallel):** A (a) ‖ B (b)",
+            "| A | `scripts/foo.py` | 01-a.md |\n| B | `scripts/` | 02-b.md |",
+        )
+    )
     assert any("same-wave" in e.lower() or "overlap" in e.lower() for e in errs)
+
+
+def test_parse_wave_lanes_reads_the_documented_template():
+    """SKILL.md documents bare letters — a pattern needing `(` reads none of it."""
+    waves = _mod.parse_wave_lanes(
+        "## Waves\n"
+        "- **Wave 1 (parallel, AFK):** A | B | C\n"
+        "- **Wave 2 (after wave 1, foreground):** Z\n"
+    )
+    assert waves == {"1": ["A", "B", "C"], "2": ["Z"]}
+
+
+def test_parse_wave_lanes_accepts_the_variants_in_use():
+    waves = _mod.parse_wave_lanes(
+        "## Waves\n"
+        "- **Wave 1 (AFK):** A — schema + admin\n"
+        "- **Wave 2 (parallel, AFK):** B (build_context, AFK) ‖ C (readiness — UI)\n"
+        "- **Wave 3 (AFK):** Lane D — backfill\n"
+    )
+    assert waves == {"1": ["A"], "2": ["B", "C"], "3": ["D"]}
+
+
+def test_parse_wave_lanes_stops_at_prose():
+    """`depends on A's report` is prose about another wave, not a member."""
+    waves = _mod.parse_wave_lanes(
+        "## Waves\n- **Wave 2 (after wave 1):** C (equipment) — depends on A's report\n"
+    )
+    assert waves == {"2": ["C"]}
+
+
+def test_lanes_in_different_waves_are_not_an_overlap():
+    """The mutation guard: a parser that reads nothing collapses every lane
+    into one wave, and this pair of shared paths becomes a false positive."""
+    errs, _ = _mod.check_same_wave_overlap(
+        _index(
+            "- **Wave 1 (AFK):** A\n- **Wave 2 (after wave 1, AFK):** B",
+            "| A | `scripts/foo.py` | 01-a.md |\n| B | `scripts/` | 02-b.md |",
+        )
+    )
+    assert errs == []
+
+
+def test_unparseable_wave_bullet_is_warned_not_dropped():
+    index_text = _index(
+        "- **Wave 1 (foreground):** Task 1 (get the suite green)",
+        "| A | `scripts/foo.py` | 01-a.md |",
+    )
+    _, warns = _mod.check_same_wave_overlap(index_text)
+    assert any("names no lane" in w for w in warns)
+
+
+def test_brief_wave_header_places_a_lane_the_prose_lost():
+    """The builder-ai-generation shape: one bullet parses, the rest do not,
+    so the lanes they name used to go unchecked in silence."""
+    index_text = _index(
+        "- **Wave 1 (AFK):** Task 1 — setup\n- **Wave 2 (parallel, AFK):** B ‖ C",
+        "| A | `workouts/builder.py` | 01-a.md |\n"
+        "| B | `workouts/ctx.py` | 02-b.md |\n"
+        "| C | `workouts/builder.py` | 03-c.md |",
+    )
+    briefs = {
+        "01-a.md": "**Role:** code-edit   **Wave:** 1",
+        "02-b.md": "**Role:** code-edit   **Wave:** 2",
+        "03-c.md": "**Role:** code-edit   **Wave:** 1",
+    }
+    errs, warns = _mod.check_same_wave_overlap(index_text, briefs)
+    assert not any("never overlap-checked" in w for w in warns)
+    assert any("lane A" in e and "lane C" in e for e in errs), errs
+
+
+def test_wave_membership_disagreement_warns_without_blocking():
+    index_text = _index(
+        "- **Wave 1 (AFK):** A ‖ B",
+        "| A | `a.py` | 01-a.md |\n| B | `b.py` | 02-b.md |",
+    )
+    briefs = {
+        "01-a.md": "**Wave:** 1",
+        "02-b.md": "**Wave:** 2",
+    }
+    errs, warns = _mod.check_same_wave_overlap(index_text, briefs)
+    assert errs == []
+    assert any("membership disagrees" in w for w in warns)
+
+
+def test_no_readable_wave_structure_says_so():
+    index_text = _index(
+        "- **Wave 1 (foreground):** Task 1 — do it\n- **Wave 2 (foreground):** Task 2 — then this",
+        "| A | `a.py` | 01-a.md |\n| B | `b.py` | 02-b.md |",
+    )
+    _, warns = _mod.check_same_wave_overlap(index_text)
+    assert any("no wave structure readable" in w for w in warns)
 
 
 def test_brief_index_drift_detects_mismatch():

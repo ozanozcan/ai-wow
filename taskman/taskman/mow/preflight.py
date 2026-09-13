@@ -127,9 +127,40 @@ def _split_lanes_table(index_text: str) -> list[dict[str, str]]:
     return rows
 
 
-def parse_wave_lanes(index_text: str) -> dict[str, list[str]]:
-    """Map wave number -> ordered lane letters from ## Waves bullets."""
+_WAVE_BULLET_RE = re.compile(r"- \*\*Wave\s+([\d.]+)")
+_ANNOTATION_RE = re.compile(r"\([^()]*\)|`[^`]*`")
+_PROSE_DASH_RE = re.compile(r"\s+(?:—|–|--)\s+")
+_LANE_LETTER_RE = re.compile(r"\b(?:Lane\s+)?([A-Z])\b")
+_BRIEF_WAVE_RE = re.compile(r"\*\*Wave:\*\*\s*`?([\d.]+)`?")
+
+
+def _lane_letters(bullet: str) -> list[str]:
+    """Lane letters named by one ## Waves bullet, in order.
+
+    The documented format is ``<lane> | <lane> | <lane(seq: a→b)>`` — bare
+    letters — so a pattern keyed on a trailing ``(`` reads none of it. Drop
+    annotations first, then cut at the first prose dash, so
+    ``C (equipment) — depends on A's report`` names lane C and not lane A.
+    """
+    body = bullet.split(":**", 1)[-1]
+    body = _ANNOTATION_RE.sub(" ", body)
+    body = _PROSE_DASH_RE.split(body, maxsplit=1)[0]
+    lanes: list[str] = []
+    for letter in _LANE_LETTER_RE.findall(body):
+        if letter not in lanes:
+            lanes.append(letter)
+    return lanes
+
+
+def parse_wave_bullets(index_text: str) -> tuple[dict[str, list[str]], list[str]]:
+    """Return (wave -> ordered lanes, bullets that named no lane).
+
+    The second element is the point: a bullet this parser could not read used
+    to be discarded silently, which left its lanes out of the overlap check
+    with nothing to say so.
+    """
     waves: dict[str, list[str]] = {}
+    unparsed: list[str] = []
     in_waves = False
     for line in index_text.splitlines():
         if line.startswith("## Waves"):
@@ -139,28 +170,102 @@ def parse_wave_lanes(index_text: str) -> dict[str, list[str]]:
             break
         if not in_waves or not line.strip().startswith("- **Wave"):
             continue
-        m = re.match(r"- \*\*Wave\s+(\d+)", line)
-        if not m:
-            continue
-        wave_num = m.group(1)
-        lanes = re.findall(r"\b([A-Z])\b\s*\(", line)
-        if lanes:
-            waves[wave_num] = lanes
+        m = _WAVE_BULLET_RE.match(line.strip())
+        lanes = _lane_letters(line) if m else []
+        if m and lanes:
+            waves[m.group(1)] = lanes
+        else:
+            unparsed.append(line.strip())
+    return waves, unparsed
+
+
+def parse_wave_lanes(index_text: str) -> dict[str, list[str]]:
+    """Map wave number -> ordered lane letters from ## Waves bullets."""
+    return parse_wave_bullets(index_text)[0]
+
+
+def wave_lanes_from_briefs(
+    index_text: str,
+    briefs: dict[str, str],
+) -> dict[str, list[str]]:
+    """Map wave -> lanes from each lane's brief ``**Wave:**`` header.
+
+    A second, independent source. The brief carries the wave as a structured
+    field and is what the lane agent actually reads, so it survives prose the
+    INDEX writes freehand.
+    """
+    waves: dict[str, list[str]] = {}
+    for row in _split_lanes_table(index_text):
+        for name in re.split(r"[,\s]+", row["brief"].strip()):
+            text = briefs.get(name.strip("`[]()"))
+            if not text:
+                continue
+            m = _BRIEF_WAVE_RE.search(text)
+            if m:
+                lanes = waves.setdefault(m.group(1), [])
+                if row["lane"] not in lanes:
+                    lanes.append(row["lane"])
+                break
     return waves
 
 
-def check_same_wave_overlap(index_text: str) -> list[str]:
-    """Detect overlapping Files owned within the same wave."""
+def check_same_wave_overlap(
+    index_text: str,
+    briefs: dict[str, str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Detect overlapping Files owned within the same wave.
+
+    Returns (errors, warnings). Wave membership is read from two independent
+    sources — the ## Waves bullets and the briefs' ``**Wave:**`` headers —
+    because either alone can go quiet. Whatever the pair cannot place is
+    named in the warnings rather than dropped: a lane missing from the map is
+    a lane this gate never checked, and that used to look identical to a pass.
+    """
     errors: list[str] = []
-    wave_lanes = parse_wave_lanes(index_text)
+    warns: list[str] = []
+    prose, unparsed = parse_wave_bullets(index_text)
     rows = _split_lanes_table(index_text)
     lane_files = {r["lane"]: parse_files_owned(r["files_owned"]) for r in rows}
+    from_briefs = wave_lanes_from_briefs(index_text, briefs) if briefs else {}
 
-    if not wave_lanes:
-        # Single implicit wave — compare all lanes together
-        wave_lanes = {"1": [r["lane"] for r in rows]}
+    for bullet in unparsed:
+        warns.append(f"## Waves bullet names no lane: {bullet}")
 
-    for wave_num, lanes in wave_lanes.items():
+    for wave in sorted(set(prose) & set(from_briefs)):
+        if set(prose[wave]) != set(from_briefs[wave]):
+            warns.append(
+                f"wave {wave} membership disagrees: ## Waves says "
+                f"{sorted(prose[wave])}, briefs say {sorted(from_briefs[wave])}"
+            )
+
+    # The brief header wins per lane; prose fills in lanes whose brief carries
+    # no wave, so a gap in either source still leaves the lane checked.
+    placed = {lane for lanes in from_briefs.values() for lane in lanes}
+    effective: dict[str, list[str]] = {w: list(ls) for w, ls in from_briefs.items()}
+    for wave, lanes in prose.items():
+        for lane in lanes:
+            if lane in placed:
+                continue
+            bucket = effective.setdefault(wave, [])
+            if lane not in bucket:
+                bucket.append(lane)
+
+    if not effective:
+        if len(rows) > 1:
+            warns.append(
+                "no wave structure readable from ## Waves or brief headers — "
+                f"comparing all {len(rows)} lanes as one wave (over-reports)"
+            )
+        effective = {"?": [r["lane"] for r in rows]}
+
+    unchecked = sorted(
+        {r["lane"] for r in rows}
+        - {lane for lanes in effective.values() for lane in lanes}
+    )
+    if unchecked:
+        warns.append(f"lanes in no wave, so never overlap-checked: {unchecked}")
+
+    for wave_num, lanes in effective.items():
         for i, lane_a in enumerate(lanes):
             files_a = lane_files.get(lane_a, [])
             for lane_b in lanes[i + 1 :]:
@@ -172,7 +277,7 @@ def check_same_wave_overlap(index_text: str) -> list[str]:
                                 f"same-wave overlap wave {wave_num}: lane {lane_a} "
                                 f"({fa}) vs lane {lane_b} ({fb})"
                             )
-    return errors
+    return errors, warns
 
 
 def _section_body(text: str, heading: str) -> str:
@@ -721,7 +826,9 @@ def run_preflight(
         errors.append(f"{index_path}: no NN-*.md briefs in dispatch")
 
     errors.extend(check_brief_index_drift(index_text, briefs))
-    errors.extend(check_same_wave_overlap(index_text))
+    overlap_errors, overlap_warnings = check_same_wave_overlap(index_text, briefs)
+    errors.extend(overlap_errors)
+    warnings.extend(overlap_warnings)
     errors.extend(check_cross_plan_overlap(root, stem_name, index_text))
 
     # Citation gate (after thin-brief) — d#853 / req#430
