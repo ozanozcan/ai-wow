@@ -71,6 +71,17 @@ def test_parse_wave_lanes_stops_at_prose():
     assert waves == {"2": ["C"]}
 
 
+def test_a_dash_labels_its_own_lane_it_does_not_end_the_list():
+    """`A — judge-rules ‖ B — judge-reference-set` is two lanes. Treating the
+    first dash as a prose boundary silently drops every lane after it."""
+    waves = _mod.parse_wave_lanes(
+        "## Waves\n"
+        "- **Wave 1 (parallel, AFK):** A — judge-rules ‖ B — judge-reference-set *(both early)*\n"
+        "- **Wave 3 (parallel, AFK):** C — calibration ‖ G — coach-rating *(G follows C)*\n"
+    )
+    assert waves == {"1": ["A", "B"], "3": ["C", "G"]}
+
+
 def test_lanes_in_different_waves_are_not_an_overlap():
     """The mutation guard: a parser that reads nothing collapses every lane
     into one wave, and this pair of shared paths becomes a false positive."""

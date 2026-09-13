@@ -129,8 +129,8 @@ def _split_lanes_table(index_text: str) -> list[dict[str, str]]:
 
 _WAVE_BULLET_RE = re.compile(r"- \*\*Wave\s+([\d.]+)")
 _ANNOTATION_RE = re.compile(r"\([^()]*\)|`[^`]*`")
-_PROSE_DASH_RE = re.compile(r"\s+(?:—|–|--)\s+")
-_LANE_LETTER_RE = re.compile(r"\b(?:Lane\s+)?([A-Z])\b")
+_LANE_SEPARATOR_RE = re.compile(r"[‖|→]")
+_LANE_HEAD_RE = re.compile(r"^\s*\**\s*(?:Lane\s+)?([A-Z])\b")
 _BRIEF_WAVE_RE = re.compile(r"\*\*Wave:\*\*\s*`?([\d.]+)`?")
 
 
@@ -139,16 +139,18 @@ def _lane_letters(bullet: str) -> list[str]:
 
     The documented format is ``<lane> | <lane> | <lane(seq: a→b)>`` — bare
     letters — so a pattern keyed on a trailing ``(`` reads none of it. Drop
-    annotations first, then cut at the first prose dash, so
-    ``C (equipment) — depends on A's report`` names lane C and not lane A.
+    annotations, split on the lane separators, and take only the letter each
+    segment *starts* with. A dash inside a segment labels that lane
+    (``A — judge-rules ‖ B — judge-reference-set`` is two lanes), while a
+    letter buried in prose is not one: ``C — depends on A's report`` names C.
     """
     body = bullet.split(":**", 1)[-1]
     body = _ANNOTATION_RE.sub(" ", body)
-    body = _PROSE_DASH_RE.split(body, maxsplit=1)[0]
     lanes: list[str] = []
-    for letter in _LANE_LETTER_RE.findall(body):
-        if letter not in lanes:
-            lanes.append(letter)
+    for segment in _LANE_SEPARATOR_RE.split(body):
+        m = _LANE_HEAD_RE.match(segment)
+        if m and m.group(1) not in lanes:
+            lanes.append(m.group(1))
     return lanes
 
 
