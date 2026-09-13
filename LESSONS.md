@@ -57,6 +57,7 @@ from the highest id in this file.
 
 | Date | Id | Rule | Destination |
 |---|---|---|---|
+| 2026-09-13 | L55 | Never 'git commit --amend' in a shared checkout: it rebuilds the commit from your pathspec rather than adding to it, and it amends whatever HEAD is NOW — which may be a peer's commit that landed since yours. Add a follow-up commit instead | `claude-md` |
 | 2026-09-13 | L54 | Mutation coverage is not fixture coverage — a suite whose mutants all die still only tests the shapes you imagined, so when a corpus of real inputs exists on disk, run against it before believing the suite | `claude-md` |
 | 2026-09-13 | L53 | A documented format and the parser that enforces it must be tested against each other, or they drift apart in silence: mow's SKILL.md specified bare lane letters while preflight required a trailing `(`, so 42% of wave bullets parsed as zero lanes and eleven plans had lanes silently exempted from the same-wave overlap gate. The one test guarding it used the only format that parsed, and survived the parser being replaced by a stub. | `skill:mow` |
 | 2026-09-09 | L52 | When two tools disagree about the same fact, neither reading is usable until you establish which is authoritative — do not report the one that happens to fit your current hypothesis. | `claude-md` |

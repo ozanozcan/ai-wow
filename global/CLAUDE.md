@@ -182,6 +182,16 @@ fails, and a stale marker means idle, not absent. When you are sharing:
   `git commit`, which respects the index — and is therefore the form that *can* sweep up a peer's
   staging, so inspect it first (`git diff --cached --name-status`) and confirm it holds only your
   paths. The two forms do not compose. (L45)
+- **`git commit --amend` is the wrong tool in a shared checkout, twice over** — it rebuilds the commit
+  from your pathspec rather than adding to it, so everything else in that commit silently falls back
+  out; and it amends whatever `HEAD` is *now*, which here may be a peer's commit that landed in the
+  seconds since yours. Both fired at once: a ledger row left out of its routing commit was folded in
+  with `git commit --amend -F msg -- <paths>`, and in *both* trees a peer had committed in the gap, so
+  the amend rewrote **their** commit under my message — absorbing 84 lines of their work while dropping
+  my own two files out. Caught only by reading the diffstat (`3 files, 84 insertions` where ~3 were
+  expected). Add a follow-up commit that says why it is separate. To recover a clobbered commit,
+  `git reset --soft <its sha>` from the reflog — it leaves the worktree alone — then re-commit by
+  explicit path and confirm the original sha still reaches `HEAD`. (L55)
 - **A repo's own sync, format or codegen command may itself run git** — read what it does to the
   tree before running it here, and say so *before* you run it, not after. `bin/ai-sync` auto-commits
   its managed categories (`agents/`, `hooks/`, `skills/`, `global/`) — exactly what a peer working
