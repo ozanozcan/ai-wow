@@ -95,6 +95,50 @@ def _label_value(text: str, label: str) -> str | None:
     return " ".join(parts).strip()
 
 
+_WORD = re.compile(r"[A-Za-z0-9_./-]{4,}")
+# Words that carry no evidence either way — they appear in any QA bullet and in
+# any warm sentence, so counting them would let prose match anything.
+_NOISE = frozenset({
+    "with", "then", "that", "this", "from", "into", "your", "each", "every",
+    "when", "what", "before", "after", "they", "have", "been", "also", "must",
+    "contract", "check", "checks", "item", "items", "above", "below", "both",
+})
+_OVERLAP = 0.5      # share of a bullet's distinctive words a record must echo
+_MIN_HITS = 2       # …and never on a single word, however distinctive
+
+
+def _distinctive(text: str) -> list[str]:
+    """The words in a QA bullet that actually identify it."""
+    out: list[str] = []
+    for word in _WORD.findall(text.casefold()):
+        word = word.strip("./-_")
+        if len(word) < 4 or word in _NOISE or word in out:
+            continue
+        out.append(word)
+    return out
+
+
+def _mentions(bullet: str, contract: str) -> bool:
+    """Does this record account for this QA bullet?
+
+    Whole-bullet substring was the original test, and it implemented the
+    opposite of the intent documented at its call site. A record that answers
+    each bullet *in its own words* — the shape a good record actually takes —
+    almost never carries a multi-line bullet verbatim, so two exhaustively
+    itemised wave-1 records were refused while a bare `all met` would have
+    passed. Overlap of distinctive words accepts the paraphrase and still
+    refuses prose that answers nothing.
+    """
+    lowered = contract.casefold()
+    if bullet.casefold() in lowered:
+        return True
+    tokens = _distinctive(bullet)
+    if not tokens:
+        return False
+    hits = sum(token in lowered for token in tokens)
+    return hits >= _MIN_HITS and hits / len(tokens) >= _OVERLAP
+
+
 def _qa_bullets(brief_text: str) -> list[str]:
     return _bullet_lines(_section_body(brief_text, "QA contract"))
 
@@ -136,7 +180,7 @@ def check_record(lane: str, brief_name: str, brief_text: str, pointers: list[tup
                 "is n/a — account for each (met / not-applicable + why)"
             )
         elif "all met" not in contract.lower():
-            missing = [b for b in qa if b.casefold() not in contract.casefold()]
+            missing = [b for b in qa if not _mentions(b, contract)]
             # A short paraphrase still counts if they numbered them; only flag
             # when *nothing* from the contract text appears and they didn't
             # claim the lot.

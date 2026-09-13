@@ -133,6 +133,44 @@ def test_all_met_covers_qa(tmp_path):
     assert _mod.check_stem(stem) == []
 
 
+# A faithful paraphrase is what a *good* record contains — the builder-generation-mount
+# wave-1 lanes itemised every bullet with `-> met` and file:line, which is strictly more
+# informative than the `all met` blanket above, and the checker refused both. The rule
+# asked for a whole multi-line bullet as a verbatim substring, which a paraphrase almost
+# never carries: the opposite of the intent documented beside it.
+_REAL_QA = (
+    "- `bash scripts/lane-setup.sh readiness-csrf` **before the first test run**, then the\n"
+    "  absolute interpreter and the per-lane `DB_NAME` it prints, with `--create-db` on\n"
+    "  every invocation.\n"
+    "- Backend contract: scoped pytest for the touched module · `ruff check` on the new file.\n"
+)
+
+_PARAPHRASE = (
+    "\n  - `bash scripts/lane-setup.sh readiness-csrf` before the first test run -> **met**\n"
+    "  - Absolute interpreter + per-lane `DB_NAME` + `--create-db` on every invocation -> **met**\n"
+    "  - Scoped pytest for the touched module -> **met** (the new file and its neighbours)\n"
+    "  - `ruff check` on the new file -> **met**\n"
+)
+
+
+def test_faithful_paraphrase_covers_qa(tmp_path):
+    """An itemised record that answers each bullet in its own words is accounted for."""
+    stem = _lane_stem(tmp_path, qa=_REAL_QA)
+    _write_all(stem, _record(contract=_PARAPHRASE))
+    assert _mod.check_stem(stem) == []
+
+
+def test_vacuous_contract_still_fails(tmp_path):
+    """The bound on the above: warm words that answer nothing are still refused.
+
+    This one is already green and must STAY green — it is what stops the
+    paraphrase allowance from degrading into "any prose passes".
+    """
+    stem = _lane_stem(tmp_path, qa=_REAL_QA)
+    _write_all(stem, _record(contract="all done, looks good to me"))
+    assert any("QA contract" in e for e in _mod.check_stem(stem))
+
+
 def test_wave_filter_ignores_other_waves(tmp_path):
     stem = _lane_stem(tmp_path)
     (stem / "dispatch" / "verification").mkdir()
