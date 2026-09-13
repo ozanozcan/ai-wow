@@ -30,6 +30,11 @@ local.config.json
 # Only a post-hoc audit run from a fresh clone loses the hook's own record to
 # cross-check those times against.
 **/dispatch/.agent-times.json
+
+# The stamp-tracker's shared sample gate: one mtime per repo, rewritten on every
+# sampled tool call to rate-limit the trails above. Pure runtime state — nothing
+# reads its contents, only how old it is — so it regenerates on the next call.
+/docs/plans/.activity-gate
 .DS_Store
 __pycache__/
 *.pyc

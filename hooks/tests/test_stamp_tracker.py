@@ -88,6 +88,47 @@ def spawn_and_return(tmp, tool_input, tool_name="Agent"):
     return data["waves"][0]["lanes"][0]["agents"][0]
 
 
+ACTIVITY = ".activity"
+
+
+def write_board(tmp, stem, run_status):
+    """A dispatch dir holding a board in `run_status`. Returns the dispatch dir."""
+    dispatch = os.path.join(tmp, "docs", "plans", stem, "dispatch")
+    os.makedirs(dispatch, exist_ok=True)
+    data = board()
+    data["stem"] = stem
+    data["run_status"] = run_status
+    with open(os.path.join(dispatch, "tracker.json"), "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    return dispatch
+
+
+def seed_trail(dispatch, age_seconds=600):
+    """An existing trail, backdated past the sample window."""
+    trail = os.path.join(dispatch, ACTIVITY)
+    with open(trail, "w", encoding="utf-8") as fh:
+        fh.write("1700000000\n")
+    old = datetime.datetime.now(datetime.timezone.utc).timestamp() - age_seconds
+    os.utime(trail, (old, old))
+
+
+def samples(dispatch):
+    trail = os.path.join(dispatch, ACTIVITY)
+    if not os.path.exists(trail):
+        return 0
+    with open(trail, encoding="utf-8") as fh:
+        return len([ln for ln in fh.read().splitlines() if ln.strip()])
+
+
+def age_gate(tmp, seconds):
+    """Backdate the shared sample gate so the next call is past its window."""
+    for name in (".activity-gate",):
+        gate = os.path.join(tmp, "docs", "plans", name)
+        if os.path.exists(gate):
+            old = datetime.datetime.now(datetime.timezone.utc).timestamp() - seconds
+            os.utime(gate, (old, old))
+
+
 def check(name, cond, detail=""):
     print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f" — {detail}" if not cond and detail else ""))
     if not cond:
@@ -163,6 +204,41 @@ def main():
             os.utime(sentinel, (old, old))
         run_hook_with_marker(tmp, mine)
         check("sweep: runs again once the window passes", not os.path.exists(stale2))
+
+    # 6. Activity trail attribution. Two defects of one shape: the key did not
+    #    cover what the surrounding rules permit (L34). mow expressly allows two
+    #    runs live in one repo when their files are disjoint, but
+    #    `max(hits, key=mtime)` gave the whole repo a single winner — so
+    #    concurrent runs stole each other's samples, flip-flopping to whoever
+    #    wrote tracker.json last, and each run's board under-reported active
+    #    time. Separately the run_status check sat only on the missing-trail
+    #    path, so a shipped run whose trail still existed kept accruing samples
+    #    forever.
+    print("activity trail")
+    with tempfile.TemporaryDirectory() as tmp:
+        live_a = write_board(tmp, "alpha", "running")
+        live_b = write_board(tmp, "beta", "running")
+        done = write_board(tmp, "gamma", "shipped")
+        seed_trail(done)
+
+        run_hook(tmp, "PostToolUse", {}, tool_name="Edit")
+        check("both live runs sampled", samples(live_a) == 1 and samples(live_b) == 1,
+              f"alpha={samples(live_a)} beta={samples(live_b)} — one winner is the bug")
+        check("shipped run's trail stops growing", samples(done) == 1,
+              f"gamma={samples(done)} — run_status must gate every append, not just the first")
+
+        run_hook(tmp, "PostToolUse", {}, tool_name="Edit")
+        check("rate-limited inside the window",
+              samples(live_a) == 1 and samples(live_b) == 1,
+              f"alpha={samples(live_a)} beta={samples(live_b)}")
+
+        age_gate(tmp, 600)
+        seed_trail(live_a, 600)
+        seed_trail(live_b, 600)
+        run_hook(tmp, "PostToolUse", {}, tool_name="Edit")
+        check("samples again once the window passes",
+              samples(live_a) == 2 and samples(live_b) == 2,
+              f"alpha={samples(live_a)} beta={samples(live_b)}")
 
     print(f"\n{len(FAILURES)} failure(s)" + (": " + ", ".join(FAILURES) if FAILURES else ""))
     return 1 if FAILURES else 0

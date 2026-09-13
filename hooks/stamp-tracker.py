@@ -53,6 +53,7 @@ import sys
 
 LEDGER = ".agent-times.json"
 ACTIVITY = ".activity"
+ACTIVITY_GATE = ".activity-gate"
 SWEEP_SENTINEL = ".last-sweep"
 SWEEP_EVERY = 60 * 60       # seconds between marker sweeps — housekeeping, not a hot path
 SAMPLE_EVERY = 30           # seconds between activity samples — cheap, still dense
@@ -345,36 +346,58 @@ def on_file_write(payload) -> None:
 # Kept cheap because this now runs on every tool call in every session: a glob, and
 # for 29 seconds out of 30 a single stat that returns immediately.
 
-def _live_dispatch(cwd):
-    """Newest dispatch dir holding a board, or None. Glob only — no reads."""
-    hits = glob.glob(os.path.join(cwd or ".", "docs/plans/*/dispatch/tracker.json"))
+def _plans_root(cwd):
+    """Where this repo's runs live, and where their shared sample gate sits."""
+    base = cwd or "."
+    root = os.path.join(base, "docs", "plans")
+    return root if os.path.isdir(root) else base
+
+
+def _dispatches(root, cwd):
+    """Every dispatch dir holding a board. Glob only — no reads.
+
+    Every one, not the newest: mow allows two runs live in one repo whenever
+    their file sets are disjoint, and picking a single winner by tracker.json
+    mtime made concurrent runs steal each other's samples — the trail
+    flip-flopped to whichever run wrote its board last, and both under-reported
+    active time on a board that looked healthy. Which of them is still `running`
+    is settled per dispatch by the caller, which reads.
+    """
+    hits = glob.glob(os.path.join(root, "*/dispatch/tracker.json"))
     hits += glob.glob(os.path.join(cwd or ".", "dispatch/tracker.json"))
-    if not hits:
-        return None
-    try:
-        return os.path.dirname(max(hits, key=os.path.getmtime))
-    except OSError:
-        return None
+    return [os.path.dirname(h) for h in hits]
 
 
 def note_activity(cwd) -> None:
-    dispatch = _live_dispatch(cwd)
-    if not dispatch:
-        return
-    trail = os.path.join(dispatch, ACTIVITY)
     now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    root = _plans_root(cwd)
+    # One shared gate for the whole repo, so the fast path stays a single stat
+    # however many runs it holds. Gating on each trail instead would mean reading
+    # every finished run's board on every tool call, because a trail we correctly
+    # decline to append to never advances past the window.
+    gate = os.path.join(root, ACTIVITY_GATE)
     try:
-        if now - os.path.getmtime(trail) < SAMPLE_EVERY:
+        if now - os.path.getmtime(gate) < SAMPLE_EVERY:
             return              # already sampled this window — the cheap path
     except OSError:
+        pass                    # no gate yet — first sample of this window
+    dispatches = _dispatches(root, cwd)
+    if not dispatches:
+        return
+    try:
+        with open(gate, "w", encoding="utf-8") as fh:
+            fh.write(f"{int(now)}\n")
+    except OSError:
+        return
+    for dispatch in dispatches:
         board = _read_json(os.path.join(dispatch, "tracker.json"))
         if not _is_board(board) or board.get("run_status") != "running":
-            return              # no trail for a finished run's leftover folder
-    try:
-        with open(trail, "a", encoding="utf-8") as fh:
-            fh.write(f"{int(now)}\n")
-    except Exception:
-        return
+            continue            # a finished run's leftover trail stops growing
+        try:
+            with open(os.path.join(dispatch, ACTIVITY), "a", encoding="utf-8") as fh:
+                fh.write(f"{int(now)}\n")
+        except Exception:
+            continue
 
 
 def sweep_markers() -> None:
