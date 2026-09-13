@@ -57,6 +57,7 @@ from the highest id in this file.
 
 | Date | Id | Rule | Destination |
 |---|---|---|---|
+| 2026-09-13 | L54 | Mutation coverage is not fixture coverage — a suite whose mutants all die still only tests the shapes you imagined, so when a corpus of real inputs exists on disk, run against it before believing the suite | `claude-md` |
 | 2026-09-13 | L53 | A documented format and the parser that enforces it must be tested against each other, or they drift apart in silence: mow's SKILL.md specified bare lane letters while preflight required a trailing `(`, so 42% of wave bullets parsed as zero lanes and eleven plans had lanes silently exempted from the same-wave overlap gate. The one test guarding it used the only format that parsed, and survived the parser being replaced by a stub. | `skill:mow` |
 | 2026-09-09 | L52 | When two tools disagree about the same fact, neither reading is usable until you establish which is authoritative — do not report the one that happens to fit your current hypothesis. | `claude-md` |
 | 2026-09-09 | L51 | Never mutate source on disk in a tree another session or reviewer reads — patch it in memory (pytest -p plugin at pytest_configure) so no window exists where the tree carries a deliberate defect. | `claude-md` |
