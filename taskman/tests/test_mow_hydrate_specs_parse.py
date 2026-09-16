@@ -32,6 +32,33 @@ def test_parse_pointer_cell_dash():
     assert _mod.parse_pointer_cell("`-`") == []
 
 
+def test_parse_pointer_cell_comma_separated_repeat_ids():
+    """Task #3329: a comma between repeated ids dropped every id after the first.
+
+    `d #504 · req #277, #278` fed lane E only #504 and #277 for days, with no
+    error anywhere — hydrated-specs.md is what a blind lane Reads for its locks.
+    """
+    cell = "d `#504` · req `#277`, `#278`"
+    assert _mod.parse_pointer_cell(cell) == [
+        ("d", 504),
+        ("req", 277),
+        ("req", 278),
+    ]
+
+
+def test_parse_pointer_cell_comma_separates_kinds():
+    assert _mod.parse_pointer_cell("d `#667`, req `#3`") == [("d", 667), ("req", 3)]
+
+
+def test_parse_pointer_cell_comma_and_middot_mixed():
+    cell = "d `#667`, `#668` · task `#4855`"
+    assert _mod.parse_pointer_cell(cell) == [
+        ("d", 667),
+        ("d", 668),
+        ("task", 4855),
+    ]
+
+
 def test_resolve_entries_decision_from_board_state():
     state = _state(
         decision=[
@@ -73,6 +100,24 @@ def test_unclaimed_ids_treats_waived_as_claimed():
     pointers = _mod.parse_pointer_cell(cell)
     assert pointers == [("d", 852)]
     assert _mod.unclaimed_ids(cell, pointers) == [100]
+
+
+def test_unclaimed_ids_flags_an_id_no_prefix_owns():
+    """The general guard: any `#id` the grammar did not claim is reported.
+
+    #3329's real damage was silence, not the grammar. A cell whose ids do not
+    all reach the parser must fail loudly rather than hydrate a short lock set.
+    """
+    cell = "d `#504` (supersedes `#377`)"
+    pointers = _mod.parse_pointer_cell(cell)
+    assert pointers == [("d", 504)]
+    assert _mod.unclaimed_ids(cell, pointers) == [377]
+
+
+def test_unclaimed_ids_empty_when_every_id_is_claimed():
+    cell = "d `#667` · d `#668` · req `#3`"
+    pointers = _mod.parse_pointer_cell(cell)
+    assert _mod.unclaimed_ids(cell, pointers) == []
 
 
 def test_waived_reason_does_not_inject_pointers_or_unclaimed_ids():
