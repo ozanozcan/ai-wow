@@ -225,6 +225,12 @@ Get this wrong and the question is silently marked `done` at Integrate, claiming
 | Hand off to a *future* agent mid-epic (mid-session swap) | `/checkpoint` — end-of-chat handoff happens automatically inside `/wrap-up` |
 | Resume after a break | `/pick-up-where-i-left-off` |
 | Missed items from a session that died before `/wrap-up` | open its archived transcript (`docs/chat-history/…`) in a live session and book items with `task add` / `decision add` |
+| Loop stuck / wrong failure-mode path | **`recover`** skill or `/recover` — indexed ramps R-01–R-12; does not re-teach diagnose |
+| Bug with (or chasing) a repro | **`/fix-bug`** — repro first, then `tdd` / `/diagnose` |
+| Structure-only change, behavior frozen | **`/refactor`** — characterization tests if the area is bare |
+| Production degraded | **`/incident`** — human-approved stabilize, then `/fix-bug` + postmortem |
+
+**Ceremony (no lite/strict flag):** small work still gets **independent review** and **`/wrap-up`**. Use **`/mow`** when the work is **multi-todo or cross-file** — not for every one-file bug or doc tweak.
 
 ---
 

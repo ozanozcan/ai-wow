@@ -2,7 +2,7 @@
 doc: how-to-use
 audience: agent
 companion: HOW-TO-USE.human.md
-inventory: 16 skills · 8 subagents · 1 command · 9 hooks · 1 board package
+inventory: 17 skills · 8 subagents · 4 commands · 9 hooks · 1 board package
 ---
 
 # AGENT REFERENCE — this harness
@@ -154,6 +154,7 @@ work in the tree cannot ride along. Anything skipped is logged, not silently dro
 | `grill-with-docs` | pre-build; one question at a time, write back each answer |
 | `ship-check` | end gate |
 | `docs` | documents a human reads — wiki, runbook, README, plan write-up; no clickable TOC, no ship |
+| `recover` | loop broken or wrong ramp; indexes R-01–R-12; points at diagnose/tdd/checkpoint/grill — does not duplicate them |
 | `checkpoint` / `pick-up-where-i-left-off` | continuity; board half needs taskman |
 | `wrap-up` | needs taskman |
 
@@ -414,7 +415,7 @@ Never edit a skill in the mirrored copy.
 flowchart TD
   A{"Developer Mode = 0x1?"} -->|no| A1["STOP — symlinks cannot be created"]
   A -->|yes| B["create ~/.agents/skills (PowerShell)"]
-  B --> C{"16 skills listed?"}
+  B --> C{"17 skills listed?"}
   C -->|no| C1["STOP"]
   C -->|yes| D["ai-sync + status"]
   D --> E{"hooks wanted?"}

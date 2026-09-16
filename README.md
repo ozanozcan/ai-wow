@@ -28,9 +28,9 @@ python3 ~/ai-wow/bin/ai-sync status
 
 | | Count | |
 |---|---|---|
-| **Skills** | 16 | Procedures an agent loads into its own context on demand |
+| **Skills** | 17 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 8 | Specialists with isolated context and restricted tools |
-| **Slash commands** | 1 | `/diagnose` — a discipline for hard bugs |
+| **Slash commands** | 4 | `/diagnose`, `/fix-bug`, `/refactor`, `/incident` |
 | **Hooks** | 9 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
 
@@ -184,9 +184,9 @@ before fan-out, not discovered afterwards.
 
 | Path | What |
 |---|---|
-| `skills/` | 16 skills, each `<name>/SKILL.md` |
+| `skills/` | 17 skills, each `<name>/SKILL.md` |
 | `agents/` | 8 subagent definitions |
-| `commands/` | Slash commands |
+| `commands/` | Slash commands (`diagnose`, `fix-bug`, `refactor`, `incident`) |
 | `hooks/` + `hooks.def.json` | Hook scripts and their neutral registration |
 | `global/CLAUDE.md` | Global instructions symlinked to `~/.claude/CLAUDE.md` |
 | `taskman/` | The board package — CLI, event-log store, 200+ tests |
@@ -268,7 +268,7 @@ uv run --group dev pytest -q
 
 ## License
 
-[MIT](LICENSE) for everything original to this repository — the thirteen original
+[MIT](LICENSE) for everything original to this repository — the fourteen original
 skills, the eight subagents, `taskman`, `ai-sync`, and the docs.
 
 Three bundled skills come from other projects and keep their own licenses:

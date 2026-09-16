@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "stem": "anew-harvest",
+  "title": "Named work-paths \u2014 recover catalog + bug/refactor/incident entry points",
+  "run_status": "shipped",
+  "board_port": 8362,
+  "pulse": true,
+  "started": "2026-09-16T07:53:00Z",
+  "updated": "2026-09-16T07:57:04Z",
+  "waves": [
+    {
+      "wave": 1,
+      "status": "done",
+      "parallelism": "parallel",
+      "gate": {
+        "status": "done",
+        "detail": "llm-sec-review NEEDS WORK \u2014 0 Critical; guard-destructive + context-trust fixes applied in-run"
+      },
+      "lanes": [
+        {
+          "lane": "A",
+          "brief": "01-recover-skill.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "recover-skill",
+              "title": "Write skills/recover/SKILL.md",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "lane": "B",
+          "brief": "02-work-type-commands.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "work-type-commands",
+              "title": "Write work-type commands",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "lane": "C",
+          "brief": "03-mow-recover-hooks.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "mow-recover-hooks",
+              "title": "Mow R-06/R-07 hooks",
+              "status": "done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "status": "done",
+      "parallelism": "sequential",
+      "gate": {
+        "status": "done",
+        "detail": "llm scope only; test_repo_shape green"
+      },
+      "lanes": [
+        {
+          "lane": "Z",
+          "brief": "04-docs-routing-inventory.md",
+          "role": "code-edit",
+          "afk": true,
+          "status": "done",
+          "todos": [
+            {
+              "id": "docs-routing-inventory",
+              "title": "Ceremony and inventory",
+              "status": "done"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

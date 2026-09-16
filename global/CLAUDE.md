@@ -11,6 +11,7 @@ Before implementing:
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
+- Every question, option, or finding you surface to the operator includes **your recommendation and why** — not a bare menu.
 
 ## Simplicity first
 
@@ -69,6 +70,10 @@ Route work to the specialist toolkit proactively — announce what you're invoki
 | Auth, payments, uploads, secrets, settings | suggest /security-review before commit |
 | Cross-file Python rename/delete, or "who calls this?" on a colliding name | serena `find_referencing_symbols` / `rename_symbol` before editing — grep cannot separate 18 same-named `main`s |
 | Bug fix | regression test first (tdd skill); gnarly/unclear bug → /diagnose |
+| Loop stuck / fix-round limit / plan drift mid-go | recover skill (`/recover`, R-06 / R-07) |
+| Bug with a repro path | `/fix-bug` (tdd + diagnose pointers) |
+| Refactor — structure only, no behavior change | `/refactor` |
+| Production incident | `/incident` (human stabilizes first) |
 | Slow page, new list/query endpoint | complexity-audit skill |
 | New or changed logic with thin tests | test-coverage skill; critical pure logic → adversarial-tester |
 | Feature declared done | /ship-check, then the project's own /verify-equivalent post-build protocol if it defines one — this harness ships none |

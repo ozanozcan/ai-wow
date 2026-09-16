@@ -327,7 +327,7 @@ Two invariants make this work: **reviewers never build**, and **`tdd-builder` ne
 commits**. If the thing that writes the code is also the thing that approves it, the
 review gate means nothing.
 
-**Sixteen skills**, in four families:
+**Seventeen skills**, in four families:
 
 ```mermaid
 flowchart TD
@@ -339,7 +339,7 @@ flowchart TD
     U1["impeccable †"]; U2["imprint"]; U3["playwright-cli"]
   end
   subgraph ORCH["orchestration"]
-    O0["bs"]; O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]; O4["docs"]
+    O0["bs"]; O1["mow"]; O2["grill-with-docs"]; O3["ship-check"]; O4["docs"]; O5["recover"]
   end
   subgraph CONT["continuity"]
     C1["checkpoint"]; C2["pick-up-where-i-left-off"]; C3["wrap-up"]
@@ -372,6 +372,10 @@ Reach for the specialist rather than asking the generalist to try harder.
 | New logic with thin tests | `test-coverage`; pure logic → `adversarial-tester` |
 | Two or more *unrelated* test failures | `parallel-debug` |
 | A bug that isn't yielding | `/diagnose` |
+| Loop stuck / wrong work-type path | `recover` or `/recover` |
+| Bug with a repro (or chasing one) | `/fix-bug` |
+| Refactor — no behavior change | `/refactor` |
+| Production down | `/incident` |
 | "I think it's done" | `ship-check` |
 
 Routing is advice, not a gate. Recommend or invoke; don't block on it.
