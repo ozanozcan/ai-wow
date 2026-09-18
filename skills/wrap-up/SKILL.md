@@ -184,6 +184,8 @@ skill. Project engineering guidance → that repo's `docs/` **and it is not a le
 out. Anything mechanizable → a hook or a test, which is strictly better than a rule someone has to
 remember.
 
+**A routed rule that recurs has proved its destination cannot hold it.** `--bump` refuses a ledger id for this reason. Do not note the recurrence in the session report and move on — nothing reads that back, and the prose rule will recur again. Log a new entry whose `--destination` is something that runs (a gate, a hook, a test) and build it in the same pass; if no guard is possible, say why in the entry. L58 (hand-written derived values) recurred three days after landing in `global/CLAUDE.md` and was only noted; it now lives in the action-report gate as a refused bare diffstat. See `docs/brainstorms/lessons-to-guards.md`.
+
 **`staging` is the escape hatch, not the default.** Use it only when you genuinely cannot name a home.
 On `>>> BACKLOG`, the buffer is filling with rules nobody loads: route them with `--route`, or delete
 the ones that were never general enough to act on. On `>>> PRUNE`, summarise old ledger rows; say so in

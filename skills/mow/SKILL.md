@@ -805,6 +805,8 @@ When **all** lanes are **done** and ship-check has passed (or operator deferred 
 
    **These are checked, not just listed.** The close-out gate reads the report back: the four frontmatter fields, all five `##` sections **with bodies**, the `**Board sync:**` and P3 lines in `## Verify`, and the INDEX link above. A heading with nothing under it fails — write `*None — <reason>*` instead, exactly as the `plan.md` register sections do, so an empty section stays a claim somebody made rather than one nobody considered. Check it any time with:
 
+   **Diffstats are derived, not typed.** Any `+N/−M`, `N files changed` or `N insertions(+)` in the report must carry its derivation on the same line — the `git diff --numstat` / `--shortstat` flag, or the `a..b` range it was measured over. The gate refuses a bare one. Paste the command's output; a sha elsewhere on the line does not count (L58 recurred as a `+171/−?` in a row that already cited its lane commit).
+
    ```bash
    python -m taskman.mow.check_action_report docs/plans/<stem>
    ```

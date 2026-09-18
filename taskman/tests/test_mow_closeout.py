@@ -207,6 +207,41 @@ def test_alternate_open_deferred_headings_accepted(tmp_path):
         assert check_action_report.check_stem(stem) == [], variant
 
 
+def _with_wave_line(stem: Path, line: str) -> Path:
+    text = _clean_report(stem).replace("Lane A shipped the thing.", line)
+    (stem / "action-report.md").write_text(text, encoding="utf-8")
+    return stem
+
+
+def test_bare_diffstat_fails(tmp_path):
+    """L58's recurrence, verbatim: a `+171/−?` typed into a lane row that already cited its sha."""
+    stem = _with_wave_line(_stem(tmp_path), "| A | `#1` | `5fe47e9` | `views.py` +171/−? |")
+    errors = check_action_report.check_stem(stem)
+    assert any("diffstat `+171/−?`" in e and ":16:" in e for e in errors), errors
+
+
+def test_files_changed_shape_fails(tmp_path):
+    for i, line in enumerate(("Run diff: 17 files changed, 657 insertions(+).", "**+657 / −52** in four commits.")):
+        stem = _with_wave_line(_stem(tmp_path / str(i)), line)
+        assert any("diffstat" in e for e in check_action_report.check_stem(stem)), line
+
+
+def test_diffstat_with_derivation_on_the_line_passes(tmp_path):
+    for i, line in enumerate((
+        "`views.py` +171/−4 over `5fe47e9^..1ff27c3`",
+        "Run diff: **17 files, +657 / −52** over `b182dda..HEAD`",
+        "`git diff --numstat 2e3554f..HEAD`: `views.py` +171/−4",
+        "`git diff --shortstat`: 17 files changed, 657 insertions(+)",
+    )):
+        stem = _with_wave_line(_stem(tmp_path / str(i)), line)
+        assert check_action_report.check_stem(stem) == [], line
+
+
+def test_sha_alone_is_not_a_derivation(tmp_path):
+    stem = _with_wave_line(_stem(tmp_path), "Lane A (`5fe47e9`): +80/−91 — see commit")
+    assert any("diffstat" in e for e in check_action_report.check_stem(stem))
+
+
 # --- tracker: the gate refuses ---------------------------------------------
 
 

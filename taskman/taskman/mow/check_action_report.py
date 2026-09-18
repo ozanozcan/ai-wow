@@ -15,6 +15,14 @@ An empty section is a failure, but `*None — <reason>*` satisfies it, exactly a
 plan.md register sections work — "None, because …" is a claim someone made, an
 omitted section is indistinguishable from one nobody considered.
 
+A diffstat with nothing on its line saying where it came from is a failure. L58
+(never hand-write a derived value) was routed to prose on 2026-09-14 and recurred
+three days later as a `+171/−?` typed into a report; the prose rule caught it only
+on a re-read. The shape has a source that can print it, so the gate asks for the
+source on the same line — `git diff --numstat` / `--shortstat`, or the `a..b`
+range it was run over. Reports in the tree had already carried two wrong ones
+(workflow-harden-talks row 10, work-pc-readiness-followups row 6) before this.
+
 Usage:
   python -m taskman.mow.check_action_report docs/plans/<stem>
 
@@ -46,6 +54,24 @@ _FRONTMATTER = [
 
 _HEADING = re.compile(r"^(#{2,3})\s+(.*)$", re.M)
 _NONE_MARKER = re.compile(r"^\s*\*?None\s*[—-]\s*\S", re.I | re.M)
+
+# The three shapes a diffstat is written in across existing reports: `+80/−91`,
+# `+657 / −52`, `17 files changed, 657 insertions(+)`. `?` in the count is the
+# recurrence itself (`+171/−?`).
+# debt: diffstat shapes only — extend to test counts / mutant counts when one of
+# those recurs hand-typed; they have no single command that prints them.
+_DIFFSTAT = re.compile(
+    r"\+\s?\d+\s?/\s?[−-]\s?(?:\d+|\?)"
+    r"|\b\d+ files? changed\b"
+    r"|\b\d+ (?:insertions?|deletions?)\(",
+)
+# What counts as a derivation: the git flag that prints the number, or the commit
+# range it was measured over. A bare sha elsewhere on the line is not one — the
+# recurrence sat in a table row that already cited its lane commit.
+_DERIVATION = re.compile(
+    r"--(?:num|short)?stat\b|\bnumstat\b|\bshortstat\b"
+    r"|\b[0-9a-f]{7,40}\^?\.\.(?:[0-9a-f]{7,40}|HEAD)\b"
+)
 
 
 def _sections(text: str) -> dict[str, str]:
@@ -115,6 +141,16 @@ def check_stem(stem_dir: Path) -> list[str]:
             errors.append(
                 f"{report}: `## Verify` has no P3 post-build record — record each step, "
                 "or `n/a` with the reason"
+            )
+
+    for lineno, line in enumerate(text.splitlines(), 1):
+        token = _DIFFSTAT.search(line)
+        if token and not _DERIVATION.search(line):
+            errors.append(
+                f"{report}:{lineno}: diffstat `{token.group(0)}` with no derivation on its "
+                "line — paste it from `git diff --numstat <a>..<b>` and cite the range or "
+                "the flag on the same line (L58: a hand-typed count is wrong at a rate no "
+                "reader can detect)"
             )
 
     if not dispatch_index.is_file():
