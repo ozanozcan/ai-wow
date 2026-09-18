@@ -41,6 +41,10 @@ __pycache__/
 .pytest_cache/
 taskman/.venv/
 
+# skylos's own cache dir. Not part of this workflow — created as a side effect
+# whenever the CLI runs with this directory as cwd, even scanning another repo.
+.skylos/
+
 # Brainstorm ledger lives in the private dotfiles-ai repo (enterprise context)
 docs/brainstorms/
 
