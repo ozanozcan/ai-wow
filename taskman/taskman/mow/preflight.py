@@ -796,8 +796,14 @@ def run_preflight(
     if registry_path.is_file():
         status = registry_status(registry_path.read_text(encoding="utf-8"), stem_name)
 
-    active = status in {"planned", "running", "paused"}
-    if active:
+    # Fail closed: only a `shipped` row skips the grill gate. A stem with no
+    # row (status None) is ungrilled-until-proven-otherwise, not exempt.
+    if status is None:
+        warnings.append(
+            f"no row for {stem_name} in docs/plans/INDEX.md — /mow plan should "
+            "have added one; grill gate applied"
+        )
+    if status != "shipped":
         from taskman.mow import check_grill_writeback as grill_mod
 
         errors.extend(grill_mod.check_stem(stem_dir.resolve()))

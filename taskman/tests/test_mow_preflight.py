@@ -334,6 +334,53 @@ def test_run_preflight_skips_grill_when_shipped(tmp_path: Path):
     assert errors == []
 
 
+def _drop_registry_row(root: Path) -> None:
+    registry = root / "docs" / "plans" / "INDEX.md"
+    registry.write_text(
+        "".join(
+            line
+            for line in registry.read_text(encoding="utf-8").splitlines(keepends=True)
+            if not line.startswith("| test-stem ")
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_run_preflight_grill_gate_fails_closed_without_registry_row(tmp_path: Path):
+    """A stem with no registry row is not `shipped` — the grill gate still applies."""
+    stem = _write_minimal_fixture(tmp_path)
+    index = stem / "dispatch" / "INDEX.md"
+    index.write_text(
+        index.read_text(encoding="utf-8").replace(
+            "**Grill checkpoint:** done 2026-07-29",
+            "**Grill checkpoint:** pending",
+        ),
+        encoding="utf-8",
+    )
+    _drop_registry_row(tmp_path)
+    assert _mod.registry_status(
+        (tmp_path / "docs" / "plans" / "INDEX.md").read_text(encoding="utf-8"),
+        "test-stem",
+    ) is None
+    code, errors = _mod.run_preflight(
+        stem, repo_root=tmp_path, skip_hydrate=True, decisions=[]
+    )
+    assert code == 1
+    assert any("grill" in e.lower() for e in errors)
+
+
+def test_run_preflight_warns_on_missing_registry_row(tmp_path: Path, capsys):
+    stem = _write_minimal_fixture(tmp_path)
+    _drop_registry_row(tmp_path)
+    code, errors = _mod.run_preflight(
+        stem, repo_root=tmp_path, skip_hydrate=True, decisions=[]
+    )
+    assert code == 0
+    assert errors == []
+    err = capsys.readouterr().err
+    assert "test-stem" in err and "docs/plans/INDEX.md" in err
+
+
 def test_cli_json_output(tmp_path: Path):
     stem = _write_minimal_fixture(tmp_path)
     env = {"PYTHONPATH": str(_ROOT)}
