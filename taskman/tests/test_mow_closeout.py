@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from taskman.eventlog import store
 from taskman.mow import check_action_report, check_ship_check, check_tracker, closeout
 
 _TODAY = datetime.date.today().isoformat()
@@ -295,6 +296,41 @@ def test_finding_without_task_id_fails(tmp_path):
     assert any("has no `task` id" in e for e in check_tracker.check_stem(stem))
 
 
+def _file_finding(board: Path, title: str = "N+1 on timer list") -> str:
+    """File the finding's row and cite the id the board returns — never a typed one (L69)."""
+    return f"#{store.add(board, 'task', {'title': title, 'status': 'todo', 'priority': 'med'})}"
+
+
+def _with_finding(task_id: str):
+    def mutate(t):
+        t["waves"][0]["lanes"][0]["status"] = "issues"
+        t["waves"][0]["lanes"][0]["findings"] = [
+            {"task": task_id, "severity": "warning", "title": "N+1 on timer list"}
+        ]
+    return mutate
+
+
+def test_finding_citing_an_unfiled_id_fails(tmp_path):
+    stem = _broken(tmp_path, _with_finding("#3101"))
+    assert any("cites #3101" in e and "no such row" in e for e in check_tracker.check_stem(stem))
+
+
+def test_finding_citing_a_non_numeric_id_fails(tmp_path):
+    stem = _broken(tmp_path, _with_finding("see board"))
+    assert any("cites see board" in e for e in check_tracker.check_stem(stem))
+
+
+def test_finding_citing_a_filed_id_passes(tmp_path, board_dir):
+    stem = _broken(tmp_path, _with_finding(_file_finding(board_dir)))
+    assert check_tracker.check_stem(stem) == []
+
+
+def test_finding_id_is_not_resolved_in_a_repo_with_no_board(tmp_path):
+    (tmp_path / ".taskman.toml").unlink()
+    stem = _broken(tmp_path, _with_finding("#3101"))
+    assert check_tracker.check_stem(stem) == []
+
+
 def test_status_outside_vocabulary_fails(tmp_path):
     stem = _broken(tmp_path, lambda t: t["waves"][0]["lanes"][0].update(status="finished"))
     assert any("outside the schema vocabulary" in e for e in check_tracker.check_stem(stem))
@@ -335,26 +371,17 @@ def test_unreconciled_skills_warn(tmp_path):
 # --- the cross-artifact check nothing else can make ------------------------
 
 
-def test_tracker_findings_without_triage_record_fails(tmp_path):
-    def mutate(t):
-        t["waves"][0]["lanes"][0]["status"] = "issues"
-        t["waves"][0]["lanes"][0]["findings"] = [
-            {"task": "#3101", "severity": "warning", "title": "N+1 on timer list"}
-        ]
-    stem = _broken(tmp_path, mutate)
+def test_tracker_findings_without_triage_record_fails(tmp_path, board_dir):
+    stem = _broken(tmp_path, _with_finding(_file_finding(board_dir)))
     errors, _ = closeout.run_closeout(stem)
     assert any("no finding-triage record" in e for e in errors)
 
 
-def test_triage_section_satisfies_the_cross_check(tmp_path):
-    def mutate(t):
-        t["waves"][0]["lanes"][0]["status"] = "issues"
-        t["waves"][0]["lanes"][0]["findings"] = [
-            {"task": "#3101", "severity": "warning", "title": "N+1 on timer list"}
-        ]
-    stem = _broken(tmp_path, mutate)
+def test_triage_section_satisfies_the_cross_check(tmp_path, board_dir):
+    task_id = _file_finding(board_dir)
+    stem = _broken(tmp_path, _with_finding(task_id))
     text = _clean_report(stem).replace(
-        "## Verify", "## Finding triage\n\n- #3101 → **(c) one-off**, captured.\n\n## Verify"
+        "## Verify", f"## Finding triage\n\n- {task_id} → **(c) one-off**, captured.\n\n## Verify"
     )
     (stem / "action-report.md").write_text(text, encoding="utf-8")
     errors, _ = closeout.run_closeout(stem)
