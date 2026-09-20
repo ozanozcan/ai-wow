@@ -296,6 +296,8 @@ For **product-facing** stems — ui tags, or any end-user-visible surface — of
 
 **Cross-plan guardrail (before write):** read `docs/plans/INDEX.md` (create empty table if missing). For every other `planned`|`running`|`paused` stem, read that dispatch's INDEX `Files owned` column. If any path overlaps a lane in this plan, **do not write** — report conflicts and ask the user to narrow scope or ship/pause the other run first.
 
+**That map is prose beside the gate, not the gate** (2026-09-20). `check_cross_plan_overlap` recomputes overlap from the registry on every run and never reads the table you write here — so a stem registered *after* this plan pass leaves the table stale while preflight stays green, and the operator reading the dispatch INDEX is the one misled. `deploy-ring0`'s map still read `log-import-v2 | planned` five days after it went `running`, and omitted two stems created later. `check_map_stem_drift` now **warns** when the written map omits an active stem or names a stale status: re-sample and rewrite the cell, never trust it. Warning, not error — the hard gate is already right, so a stale cell must not block a go.
+
 **Registry (after write):** add or update the row for `<stem>` in `docs/plans/INDEX.md` → `Status: planned`, bump `Updated`, set `Title` from the plan name, `Feature` from taskman id if known.
 
 Each **brief** must be runnable by a blind agent — no reference to "this chat":

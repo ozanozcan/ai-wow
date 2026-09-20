@@ -765,3 +765,92 @@ def test_load_visible_decisions_missing_tags_is_untagged(board_dir):
     rows = _mod._load_visible_decisions()
     # Must not raise; untagged decisions match nothing.
     assert decisions_touching(rows, paths=["x.py"], tags=["backend"]) == []
+
+
+def test_parse_overlap_map_reads_stem_status_table():
+    """The hand-written cross-plan map parses independently of the lanes table."""
+    index_text = """# Dispatch — target
+
+**Cross-plan (checked 2026-09-18).** Against every non-`shipped` registry row:
+
+| Stem | Status | Overlap |
+|---|---|---|
+| `other-planned` | planned | none — it owns `a/b.py` |
+| `other-paused` | paused | none — `c/` |
+
+## Lanes
+| Lane | Files owned | Brief |
+|---|---|---|
+| A | `scripts/only.py` | 01-only.md |
+"""
+    assert _mod.parse_overlap_map(index_text) == {
+        "other-planned": "planned",
+        "other-paused": "paused",
+    }
+
+
+def test_map_stem_drift_flags_stale_status_and_missing_stem(tmp_path: Path):
+    """The deploy-ring0 case: drafted before two stems existed, one row gone stale.
+
+    The gate itself was always right — it recomputes from the registry. What
+    rots is the prose beside it, which is what the operator reads first.
+    """
+    plans = tmp_path / "docs" / "plans"
+    plans.mkdir(parents=True)
+    (plans / "INDEX.md").write_text(
+        "# MOW runs\n\n"
+        "| Stem | Title | Feature | Created | Updated | Status |\n"
+        "|---|---|---|---|---|---|\n"
+        "| target | T | - | 2026-09-18 | 2026-09-18 | planned |\n"
+        "| listed-stale | L | - | 2026-09-18 | 2026-09-20 | running |\n"
+        "| never-listed | N | - | 2026-09-20 | 2026-09-20 | planned |\n"
+        "| done-stem | D | - | 2026-09-01 | 2026-09-01 | shipped |\n",
+        encoding="utf-8",
+    )
+    index_text = (
+        "| Stem | Status | Overlap |\n"
+        "|---|---|---|\n"
+        "| `listed-stale` | planned | none |\n"
+    )
+    warns = _mod.check_map_stem_drift(tmp_path, "target", index_text)
+    joined = "\n".join(warns)
+    assert "never-listed" in joined, "a stem created after the map must be named"
+    assert "listed-stale" in joined, "a stem whose status moved must be named"
+    assert "running" in joined, "the warning must carry the live status"
+    assert "done-stem" not in joined, "shipped rows are out of scope"
+    assert "target" not in joined, "never compare a stem to itself"
+
+
+def test_map_stem_drift_silent_when_map_matches_registry(tmp_path: Path):
+    """The stand-down half — a correct map must produce no noise."""
+    plans = tmp_path / "docs" / "plans"
+    plans.mkdir(parents=True)
+    (plans / "INDEX.md").write_text(
+        "# MOW runs\n\n"
+        "| Stem | Title | Feature | Created | Updated | Status |\n"
+        "|---|---|---|---|---|---|\n"
+        "| target | T | - | 2026-09-18 | 2026-09-18 | planned |\n"
+        "| other | O | - | 2026-09-18 | 2026-09-20 | running |\n",
+        encoding="utf-8",
+    )
+    index_text = (
+        "| Stem | Status | Overlap |\n"
+        "|---|---|---|\n"
+        "| `other` | running | none |\n"
+    )
+    assert _mod.check_map_stem_drift(tmp_path, "target", index_text) == []
+
+
+def test_map_stem_drift_silent_when_no_map_written(tmp_path: Path):
+    """No cross-plan map at all is a different (pre-existing) shape — not this check's business."""
+    plans = tmp_path / "docs" / "plans"
+    plans.mkdir(parents=True)
+    (plans / "INDEX.md").write_text(
+        "# MOW runs\n\n"
+        "| Stem | Title | Feature | Created | Updated | Status |\n"
+        "|---|---|---|---|---|---|\n"
+        "| target | T | - | 2026-09-18 | 2026-09-18 | planned |\n"
+        "| other | O | - | 2026-09-18 | 2026-09-20 | running |\n",
+        encoding="utf-8",
+    )
+    assert _mod.check_map_stem_drift(tmp_path, "target", "## Lanes\n| Lane |\n") == []

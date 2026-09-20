@@ -41,6 +41,15 @@ PASSTHROUGH = {
 # `grep`, `jq`, `python3`, `diff`, `test` can all return a status the caller
 # legitimately wants, so a pipeline ending in one of those is never flagged.
 
+# `xargs` is the one PASSTHROUGH member whose status is not a constant: it
+# returns 123-127 when the command it runs fails. For the `$?` rule that is
+# still a defect (the status measured is not the upstream command's), but a
+# `| xargs cmd || fallback` CAN reach its fallback, so the `||` rule exempts it.
+# One hit in 23890 corpus commands, hand-checked.
+OR_EXEMPT = {"xargs"}
+
+SUBST = re.compile(r"\$\([^()]*\)")
+
 HEREDOC_OPEN = re.compile(r"<<-?\s*'?\"?([A-Za-z_][A-Za-z0-9_]*)'?\"?")
 SEGMENT_SPLIT = re.compile(r";|&&|\|\||\n")
 # `||` is consumed by SEGMENT_SPLIT before this runs, so a plain split is
@@ -95,6 +104,61 @@ def offending_filter(command: str) -> tuple[str, str] | None:
     return None
 
 
+def strip_substitutions(text: str) -> str:
+    """Blank out `$( )` bodies before scanning for `||`.
+
+    `if [ "$H" = "a$(git rev-parse HEAD | cut -c8-)" ] || cmd` otherwise reads as
+    a pipeline ending in `cut`, and the `||` is the test's own fallback. Scanning
+    inside a substitution is given up deliberately: a dead branch in there is
+    missed, which is the safe direction — a deny that misfires gets switched off.
+    """
+    previous = None
+    while previous != text:
+        previous = text
+        text = SUBST.sub(" ", text)
+    return text
+
+
+def dead_or_branch(command: str) -> tuple[str, str] | None:
+    """Return (pipeline, filter) when a trailing `|| ...` can never run.
+
+    `cmd | sed -n 1p || echo absent` never prints `absent`: sed succeeds on empty
+    input, so the pipeline's status is 0 and the fallback is unreachable. The
+    command then reports absence it never established, and the empty output
+    reads as proof of it.
+
+    This is L47's own worked example, and `offending_filter` cannot see it —
+    there is no `$?` anywhere in the shape. Measured over 23890 real Bash calls
+    from this harness's transcripts: 234 hits, 0.98%, 213 distinct, one false
+    positive (the xargs shape, now exempt).
+    """
+    text = strip_heredocs(command)
+
+    if re.search(r"pipestatus", text, re.IGNORECASE):
+        return None
+    if re.search(r"\bpipefail\b", text):
+        return None
+
+    text = strip_substitutions(text)
+
+    for match in re.finditer(r"\|\|", text):
+        # Bound the pipeline at the nearest separator, including an earlier `||`.
+        segment = re.split(r";|\n|\|\|", text[: match.start()])[-1]
+        # `(A && B) || C` runs C when A fails, so that fallback is reachable.
+        if "&&" in segment:
+            continue
+        parts = PIPE_SPLIT.split(segment.replace("|&", "|"))
+        if len(parts) < 2:
+            continue
+        word = COMMAND_WORD.match(parts[-1].strip())
+        if not word:
+            continue
+        name = word.group(1).split("/")[-1]
+        if name in PASSTHROUGH and name not in OR_EXEMPT:
+            return segment.strip(), name
+    return None
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -105,6 +169,10 @@ def main() -> int:
 
     try:
         found = offending_filter(command)
+        kind = "status"
+        if not found:
+            found = dead_or_branch(command)
+            kind = "dead-branch"
     except Exception:
         print("{}")
         return 0
@@ -117,6 +185,28 @@ def main() -> int:
         return 0
 
     pipeline, name = found
+    if kind == "dead-branch":
+        reason = (
+            f"This `||` can never run: `{name}` succeeds on any input, empty "
+            f"included, so the pipeline's status is always 0.\n"
+            f"  pipeline: {pipeline[:160]}\n"
+            f"Whatever the fallback says — absent, none, not found — is a claim "
+            f"this command cannot establish, and its empty output then reads as "
+            f"proof of it. Test the condition itself before any pipe "
+            f"(`if [ -d \"$p\" ]`, `grep -q`), or read the pipe-status array. "
+            f"MIND THE SHELL: zsh (this harness's default) wants "
+            f"${{pipestatus[1]}} (lowercase, 1-indexed); bash wants "
+            f"${{PIPESTATUS[0]}}. `set -o pipefail` stands this check down."
+        )
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            },
+        }))
+        return 0
+
     reason = (
         f"`$?` here is `{name}`'s status, not the command you are measuring — "
         f"`{name}` succeeds on any input, so this reports success unconditionally.\n"

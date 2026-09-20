@@ -513,6 +513,108 @@ def check_cross_plan_overlap(
     return errors
 
 
+OVERLAP_MAP_HEADER = re.compile(r"^\|\s*Stem\s*\|\s*Status\s*\|", re.IGNORECASE)
+_STATUS_WORDS = ("planned", "running", "paused", "shipped")
+
+
+def _claimed_status(cell: str) -> str:
+    """The status a map cell claims, from prose like `**running** (was `planned`)`.
+
+    The first status word is the claim; any later one is history the author kept
+    deliberately, so position decides rather than a whole-cell match.
+    """
+    low = cell.lower()
+    best: tuple[int, str] | None = None
+    for word in _STATUS_WORDS:
+        at = low.find(word)
+        if at >= 0 and (best is None or at < best[0]):
+            best = (at, word)
+    return best[1] if best else low.strip()
+
+
+def parse_overlap_map(index_text: str) -> dict[str, str]:
+    """Stem -> status as the hand-written cross-plan map claims them.
+
+    Keyed on the `| Stem | Status |` header so the lanes table is never mistaken
+    for this one. Returns {} when a dispatch has no such map, which is not a
+    defect — older stems predate the convention.
+    """
+    claimed: dict[str, str] = {}
+    in_table = False
+    for line in index_text.splitlines():
+        if OVERLAP_MAP_HEADER.match(line):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("|"):
+            break
+        if re.match(r"^\|\s*---", line):
+            continue
+        cols = [c.strip() for c in line.strip("|").split("|")]
+        if len(cols) < 2:
+            continue
+        stem = cols[0].strip().strip("`").strip()
+        if stem:
+            claimed[stem] = _claimed_status(cols[1])
+    return claimed
+
+
+def check_map_stem_drift(
+    repo_root: Path,
+    target_stem: str,
+    target_index_text: str,
+) -> list[str]:
+    """Warn when the written cross-plan map disagrees with the live registry.
+
+    Advisory by design. The hard gate (`check_cross_plan_overlap`) recomputes
+    overlap from the registry on every run and never reads this table, so a stale
+    map cannot let an overlapping run through. What it can do is mislead the
+    operator, who reads the dispatch INDEX before running anything — on
+    2026-09-20 `deploy-ring0`'s map still read `log-import-v2 | planned` five
+    days after that stem went `running`, and omitted two stems created after the
+    map was drafted, while preflight stayed green throughout.
+
+    That is the whole failure mode: a hand-written cache of a derived value, with
+    no invalidation and no machine consumer. This gives it one consumer.
+    """
+    claimed = parse_overlap_map(target_index_text)
+    if not claimed:
+        return []
+
+    registry = repo_root / "docs" / "plans" / "INDEX.md"
+    if not registry.is_file():
+        return []
+
+    live: dict[str, str] = {}
+    for line in registry.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|") or line.startswith("| Stem"):
+            continue
+        if re.match(r"^\|\s*---", line):
+            continue
+        cols = [c.strip() for c in line.strip("|").split("|")]
+        if len(cols) < 6:
+            continue
+        stem, status = cols[0], cols[5].lower()
+        if stem == target_stem or status not in {"planned", "running", "paused"}:
+            continue
+        live[stem] = status
+
+    warns: list[str] = []
+    for stem in sorted(set(live) - set(claimed)):
+        warns.append(
+            f"cross-plan map omits `{stem}` ({live[stem]}) - map names "
+            f"{len(claimed)}, registry has {len(live)} active; re-sample before go"
+        )
+    for stem in sorted(set(live) & set(claimed)):
+        if claimed[stem] != live[stem]:
+            warns.append(
+                f"cross-plan map says `{stem}` is {claimed[stem]}, registry says "
+                f"{live[stem]}; re-sample before go"
+            )
+    return warns
+
+
 def cited_pointers_in_brief(brief_text: str) -> set[tuple[str, int]]:
     """Pointer ids cited in ## Acceptance check or ## Do NOT."""
     body = (
@@ -838,6 +940,7 @@ def run_preflight(
     errors.extend(overlap_errors)
     warnings.extend(overlap_warnings)
     errors.extend(check_cross_plan_overlap(root, stem_name, index_text))
+    warnings.extend(check_map_stem_drift(root, stem_name, index_text))
 
     # Citation gate (after thin-brief) — d#853 / req#430
     # Pointer-prose lint — d#946 (INDEX cell must fully parse as pointer grammar)

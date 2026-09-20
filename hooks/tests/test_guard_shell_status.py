@@ -113,6 +113,62 @@ def test_heredoc_body_is_not_shell():
     check("heredoc with a pipe in the body ignored", decide(piped) == "none", piped)
 
 
+def test_denies_dead_or_branch_after_passthrough():
+    """L47's own example, which the `$?` rule above cannot see.
+
+    `cmd | sed -n 1p || echo absent` never prints `absent` -- sed succeeds on
+    empty input, so the fallback is unreachable and the absence it claims was
+    never established. There is no `$?` anywhere in these, so the original rule
+    misses every one. Measured over 23890 real Bash calls from this harness's
+    transcripts: 234 hits, 0.98%, 213 distinct.
+    """
+    # corpus: every one of these was really run in this harness
+    for cmd in [
+        'grep -rln "full case is in" ~/Desktop/ai-wow --include="*.md" 2>/dev/null | head -3 || echo "claim not present in ai-wow"',
+        'git -C /Users/ozan/dotfiles/ai remote -v | head -2 || echo "(no remote)"',
+        'grep -n "status:" docs/checkpoints/hlc-gate-1.md 2>/dev/null | head -2 || echo "  file gone"',
+        'ls board/ 2>/dev/null | head -5 || echo "(no board dir)"',
+        'ls -d ~/Desktop/FitnessManager 2>/dev/null | sed "s/^/  local Django repo: /" || echo absent',
+        'uv run python -m taskman board --feature 692 2>&1 | head -20 || uv run python -m taskman board 2>&1 | head -30',
+        'pgrep -fl "uvicorn|next dev" 2>/dev/null | head -3 || echo "(nothing running)"',
+        'git diff --cached --name-status | head || echo "(index empty)"',
+    ]:
+        check(f"deny ||: {cmd[:52]}", decide(cmd) == "deny", cmd)
+
+
+def test_stands_down_on_reachable_or_branches():
+    """The half that decides whether the rule survives contact.
+
+    Each of these has a `||` after a pipe that CAN fire, so a deny here would be
+    a false positive -- and a deny that misfires gets switched off.
+    """
+    for label, cmd in [
+        # corpus: `(A && B) || C` runs C when A fails. Splitting on && and
+        # looking only at B is the false positive this excludes.
+        ("|| after an && chain is reachable",
+         'ls -d docs/action-reports 2>/dev/null && ls docs/action-reports | tail -5 || echo "does not exist yet"'),
+        # corpus: the one PASSTHROUGH member whose status is not a constant --
+        # xargs returns 123-127 when its child fails, so this || can really run.
+        ("xargs propagates its child's status",
+         'lsof -ti tcp:8399 | xargs -I{} kill {} 2>/dev/null || echo "nothing to kill"'),
+        ("grep status is meaningful",
+         'grep -q needle file || echo absent'),
+        ("jq status is meaningful",
+         'cat f.json | jq -e .key || echo "key missing"'),
+        ("no pipe at all",
+         'test -f x || echo missing'),
+        # corpus: `if [ "$X" = "a$(... | cut -c8-)" ] || cmd` -- the pipe lives
+        # inside a substitution, and the || is the test's own fallback.
+        ("pipe inside a command substitution",
+         'if [ "$H" = "f378998$(git rev-parse HEAD | cut -c8-)" ] || git log -1 --format=%s | grep -q "^mow"; then echo y; fi'),
+        ("deliberate pipefail",
+         'set -o pipefail; cat f | head -1 || echo absent'),
+        ("corrected with pipestatus",
+         'cat f | head -1; [ "${pipestatus[1]}" -eq 0 ] || echo absent'),
+    ]:
+        check(f"stand down ||: {label}", decide(cmd) == "none", cmd)
+
+
 def test_fails_open():
     for label, payload in [("malformed json", "not json at all"),
                            ("empty payload", "{}"),
