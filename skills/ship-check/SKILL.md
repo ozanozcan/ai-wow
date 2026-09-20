@@ -61,7 +61,6 @@ Check:
 - **Code standards** — naming conventions, file organisation, TypeScript strictness, error handling patterns — do they match what the project established?
 - **Existing patterns** — does this feature introduce a new pattern when an existing one should have been used?
 - **Smell baseline** — Fowler heuristics below; always judgement calls, never hard violations. Documented repo standards override the baseline. Skip anything tooling already enforces.
-- **Dead code left by the change (Python repos)** — run `skylos . --diff <base-ref> --format concise` (`pip install skylos`, or `uvx skylos`; 4.38.0 or later, since earlier grep passes walked ignored dirs such as `.claude/worktrees` and timed out) with the branch's real base (`origin/master` here; `--diff` alone assumes `origin/main`). It reports unused functions, parameters and module constants only on lines the change touched — the leftovers a refactor strands that ruff does not see. Run it before merge, against the branch's merge-base: when the base equals `HEAD` the filter is a no-op and the whole repo is reported. Advisory: list hits in Layer 2, do not gate on them. Skip it, and say so, if the repo's grep-verification pass times out (`SKY-ANALYSIS-INCOMPLETE`); never substitute `--no-grep-verify`, which reports string-referenced Django symbols (context processors, model properties, decorators) as dead.
 
 #### Smell baseline (judgement calls)
 
