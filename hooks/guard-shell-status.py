@@ -121,9 +121,12 @@ def main() -> int:
         f"`$?` here is `{name}`'s status, not the command you are measuring — "
         f"`{name}` succeeds on any input, so this reports success unconditionally.\n"
         f"  pipeline: {pipeline[:160]}\n"
-        f"Use ${{PIPESTATUS[0]}} (zsh: ${{pipestatus[1]}}), or test the command "
-        f"before any pipe. If you deliberately want {name}'s status, add "
-        f"`set -o pipefail` and this check stands down."
+        f"Use your shell's pipe-status array, or test the command before any "
+        f"pipe. MIND THE SHELL: in zsh (this harness's default) PIPESTATUS is "
+        f"unset, so ${{PIPESTATUS[0]}} expands to the EMPTY STRING and reports "
+        f"nothing at all — zsh wants ${{pipestatus[1]}} (lowercase, 1-indexed); "
+        f"bash wants ${{PIPESTATUS[0]}}. If you deliberately want {name}'s "
+        f"status, add `set -o pipefail` and this check stands down."
     )
     print(json.dumps({
         "hookSpecificOutput": {

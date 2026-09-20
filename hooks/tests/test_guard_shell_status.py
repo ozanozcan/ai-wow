@@ -130,6 +130,11 @@ def test_reason_names_the_fix():
     reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
     # The deny is only useful if it says how to escape it.
     check("reason names PIPESTATUS", "PIPESTATUS" in reason, reason)
+    # zsh leaves PIPESTATUS unset, so naming only the bash form would trade a
+    # wrong `0` for a silent empty string. Both forms must appear.
+    check("reason names the zsh form", "pipestatus[1]" in reason, reason)
+    check("reason warns PIPESTATUS is empty in zsh",
+          "EMPTY STRING" in reason and "zsh" in reason, reason)
     check("reason names the filter", "tail" in reason, reason)
     check("reason names the pipefail opt-out", "pipefail" in reason, reason)
 
