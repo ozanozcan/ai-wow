@@ -10,6 +10,14 @@
       "copilot": { "event": "PreToolUse" }
     },
     {
+      "_comment": "denies an exit status read through a pass-through pipe (cmd | tail; echo $?); stands down on PIPESTATUS or pipefail; fails open",
+      "id": "guard-shell-status",
+      "script": "guard-shell-status.sh",
+      "claude": { "event": "PreToolUse", "matcher": "Bash" },
+      "cursor": { "event": "beforeShellExecution", "failClosed": false },
+      "copilot": { "event": "PreToolUse" }
+    },
+    {
       "_comment": "alembic only; no-ops outside an Alembic project and defers to a project-local scripts/guard_migration_apply.sh",
       "id": "guard-migrations",
       "script": "guard-migrations.sh",
