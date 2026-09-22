@@ -105,6 +105,15 @@ Create `CONTEXT.md` and `docs/adr/` lazily — only when there is something to w
 
 **Stress-test with scenarios** — invent edge-case scenarios that force precise boundaries.
 
+**Show the data before asking what it means** — when a question turns on what the user's own rows
+hold (a value's meaning, a field that looks wrong, a suspected import artefact), print the rows first —
+ids, the fields in question, where they came from — say what each field *should* hold, and ask one
+plain question. Never fold a data question into a fix-options menu: the operator cannot pick between
+fixes for a fact they have not seen, and the menu reads as if the fact were settled. (FTM
+`reps-pricing-floor` grill Q3, 2026-09-20: "how should this stem treat the word?" with three options
+drew "lemme see concrete examples" and "im more confused now"; the rows plus a three-column
+should-hold table got the answer on the next turn.)
+
 **Cross-reference code** — if the user states how something works, verify against code.
 
 **Update CONTEXT.md inline** — when a term is resolved, update immediately (glossary only, no implementation detail). Format: [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md) if present.
