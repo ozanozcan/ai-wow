@@ -121,14 +121,18 @@ def test_denies_dead_or_branch_after_passthrough():
     never established. There is no `$?` anywhere in these, so the original rule
     misses every one. Measured over 23890 real Bash calls from this harness's
     transcripts: 234 hits, 0.98%, 213 distinct.
+
+    Paths are neutralised for publication (this tree is the published one and
+    its shape gate rejects personal paths) — the command SHAPES are verbatim
+    from the corpus, only the directory names are swapped.
     """
     # corpus: every one of these was really run in this harness
     for cmd in [
-        'grep -rln "full case is in" ~/Desktop/ai-wow --include="*.md" 2>/dev/null | head -3 || echo "claim not present in ai-wow"',
-        'git -C /Users/ozan/dotfiles/ai remote -v | head -2 || echo "(no remote)"',
-        'grep -n "status:" docs/checkpoints/hlc-gate-1.md 2>/dev/null | head -2 || echo "  file gone"',
+        'grep -rln "full case is in" ~/Desktop/notes --include="*.md" 2>/dev/null | head -3 || echo "claim not present"',
+        'git -C ../sibling-tree remote -v | head -2 || echo "(no remote)"',
+        'grep -n "status:" docs/checkpoints/gate-1.md 2>/dev/null | head -2 || echo "  file gone"',
         'ls board/ 2>/dev/null | head -5 || echo "(no board dir)"',
-        'ls -d ~/Desktop/FitnessManager 2>/dev/null | sed "s/^/  local Django repo: /" || echo absent',
+        'ls -d ~/Desktop/some-project 2>/dev/null | sed "s/^/  local Django repo: /" || echo absent',
         'uv run python -m taskman board --feature 692 2>&1 | head -20 || uv run python -m taskman board 2>&1 | head -30',
         'pgrep -fl "uvicorn|next dev" 2>/dev/null | head -3 || echo "(nothing running)"',
         'git diff --cached --name-status | head || echo "(index empty)"',

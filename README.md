@@ -31,7 +31,7 @@ python3 ~/ai-wow/bin/ai-sync status
 | **Skills** | 17 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 8 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 4 | `/diagnose`, `/fix-bug`, `/refactor`, `/incident` |
-| **Hooks** | 9 | Guarantees that fire on lifecycle events, not on the agent's judgment |
+| **Hooks** | 10 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
 
 Everything except the board runs on a bare clone: **no configuration, no API keys,
