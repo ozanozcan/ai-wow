@@ -265,3 +265,37 @@ def test_skips_kind_decision_tasks(tmp_path: Path, board_dir: Path):
 
     assert _status(board_dir, decision_task) == "todo"
     assert _status(board_dir, build_task) == "done"
+
+
+def test_task_not_named_in_outcome_is_reported_not_silent(tmp_path: Path, board_dir: Path):
+    """FTM #12290: "no tasks moved" hid two tasks declined for not being named.
+
+    With an action report present, a task only moves if Outcome names it. That
+    rule is defensible; applying it silently is not — the operator cannot tell
+    "nothing to do" from "I declined to do it", and the board-sync gate that
+    should have caught the difference was exempting exactly the same tasks.
+    """
+    ref = f"docs/plans/{MARKER}/dispatch/01-a.md"
+    task = _add_task(ref, status="todo")
+    report = f"""# Action report — {MARKER}
+
+## Outcome
+
+| Item | Result |
+|---|---|
+| The hook | **Shipped** — 48283e7 |
+"""
+    dispatch = _write_dispatch(
+        tmp_path,
+        briefs={"01-a.md": _brief_body(ref)},
+        action_report=report,
+    )
+
+    out, err = _run(["plan", "mark-shipped", str(dispatch)])
+    combined = out + err
+
+    # The rule itself is unchanged: an unnamed task is not swept.
+    assert _status(board_dir, task) == "todo"
+    # But it must say so, naming the task and why.
+    assert f"#{task}" in combined, combined
+    assert "outcome" in combined.lower(), combined

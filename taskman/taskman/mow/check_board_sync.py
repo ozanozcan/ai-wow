@@ -13,8 +13,9 @@ the action-report gate already demands `**Board sync:** n/a` with a reason.
 When the repo has a board, this looks at the board:
 
   - `**Board sync:** n/a` is a lie and refuses
-  - every dispatch-brief task (except `kind:decision`) that Outcome called
-    shipped, or that Outcome did not mention, must be `done`
+  - every dispatch-brief task (except `kind:decision`) must be `done` unless
+    Outcome explicitly defers it. Being unmentioned is NOT an exemption: an
+    Outcome written in prose would otherwise switch this check off entirely.
   - a brief whose `source_ref` matches no board row means import never ran
 
 It does not run mark-shipped. It reads. Mutating the board from a gate is how
@@ -72,7 +73,16 @@ def _source_refs(dispatch: Path, repo_root: Path) -> dict[str, str]:
     return refs
 
 
-def _outcome_mentions(report_text: str) -> tuple[set[int], set[str], set[int], set[str]]:
+# `\d{2}-[\w.-]+` matched `34-35` out of a `conftest.py:18, :34-35` line
+# reference and `90-260s` out of "~190-260s suite". A brief id always has a word
+# after the dash, and when the caller knows the real brief names we filter to
+# those instead of trusting the shape at all.
+_TODO_TOKEN = re.compile(r"(\d{2}-[A-Za-z][\w.-]*)")
+
+
+def _outcome_mentions(
+    report_text: str, known_todos: set[str] | None = None
+) -> tuple[set[int], set[str], set[int], set[str]]:
     """Return (shipped_ids, shipped_todos, deferred_ids, deferred_todos).
 
     Outcome tables in the wild are `Item | Result` as often as `Task | Status`.
@@ -93,7 +103,9 @@ def _outcome_mentions(report_text: str) -> tuple[set[int], set[str], set[int], s
     deferred_todos: set[str] = set()
     for line in section.splitlines():
         ids = {int(x) for x in re.findall(r"#(\d+)", line)}
-        todos = set(re.findall(r"(\d{2}-[\w.-]+)", line))
+        todos = set(_TODO_TOKEN.findall(line))
+        if known_todos is not None:
+            todos &= known_todos
         if _DEFERRED.search(line) and not _SHIPPED.search(line):
             deferred_ids |= ids
             deferred_todos |= todos
@@ -151,10 +163,12 @@ def check_stem(stem_dir: Path) -> list[str]:
         if t.get("source_ref")
     }
 
-    shipped_ids, shipped_todos, deferred_ids, deferred_todos = (
-        _outcome_mentions(report.read_text(encoding="utf-8")) if report.is_file() else (set(), set(), set(), set())
+    known_todos = {_todo_id(ref) for ref in refs.values()}
+    _shipped_ids, _shipped_todos, deferred_ids, deferred_todos = (
+        _outcome_mentions(report.read_text(encoding="utf-8"), known_todos)
+        if report.is_file()
+        else (set(), set(), set(), set())
     )
-    outcome_named = bool(shipped_ids or shipped_todos or deferred_ids or deferred_todos)
 
     unmatched = [name for name, ref in refs.items() if ref not in by_ref]
     if unmatched:
@@ -175,8 +189,11 @@ def check_stem(stem_dir: Path) -> list[str]:
         todo = _todo_id(ref)
         if tid in deferred_ids or todo in deferred_todos:
             continue
-        should_be_done = (not outcome_named) or tid in shipped_ids or todo in shipped_todos
-        if should_be_done and task.get("status") != "done":
+        # Deferral is the ONLY exemption. The old rule also exempted any task
+        # Outcome simply never named, which meant an Outcome written in prose --
+        # what the mow skill's own template invites -- silently disabled this
+        # gate for every dispatch task. FTM #12290.
+        if task.get("status") != "done":
             still_open.append(f"#{tid} ({name}, status={task.get('status')})")
 
     if still_open:

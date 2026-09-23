@@ -148,3 +148,76 @@ def test_closeout_refuses_open_board_task(tmp_path, board_dir):
     _add_task(board, status="in_progress", ref="docs/plans/demo/dispatch/01-a.md")
     errors, _ = closeout.run_closeout(stem)
     assert any("still not `done`" in e for e in errors)
+
+
+# --- the Outcome-escape regression (FTM #12290) -----------------------------
+#
+# The cases above all use a fixture Outcome of `| The thing | **Shipped** |`,
+# which names nothing id-shaped. `outcome_named` is therefore False and the
+# must-be-done check runs. That is the one input where this defect cannot
+# appear (L46): the moment Outcome mentions ANY id- or todo-shaped token, the
+# old `(not outcome_named) or ...` exempted every task Outcome did not name,
+# and the gate written to catch mark-shipped's misses passed on exactly them.
+#
+# Observed on FTM's `reuse-db-seed-pollution`: both lane tasks sat in backlog,
+# `plan mark-shipped` printed "no tasks moved", and this gate exited 0. The
+# module docstring already promised the right rule -- "or that Outcome did not
+# mention, must be `done`" -- so the code, not the spec, was wrong.
+
+
+def _ran_report(stem: Path, extra_outcome_row: str = "") -> None:
+    report = (stem / "action-report.md").read_text(encoding="utf-8")
+    report = report.replace("**Board sync:** `n/a` — no taskman in this repo.", "**Board sync:** ran")
+    if extra_outcome_row:
+        report = report.replace("| The thing | **Shipped** |", f"{extra_outcome_row}\n| The thing | **Shipped** |")
+    (stem / "action-report.md").write_text(report, encoding="utf-8")
+
+
+def test_open_task_refused_when_outcome_names_an_unrelated_id(tmp_path, board_dir):
+    """A decision id in Outcome must not exempt a dispatch task it never names."""
+    stem, board = _with_board(tmp_path, board_dir)
+    _ran_report(stem, "| Decision d#1279 | **Shipped** |")
+    _add_task(board, status="todo", ref="docs/plans/demo/dispatch/01-a.md")
+    errs = _mod.check_stem(stem)
+    assert any("still not `done`" in e for e in errs), errs
+
+
+def test_open_task_refused_when_outcome_carries_a_line_reference(tmp_path, board_dir):
+    """`conftest.py:18, :34-35` must not read as the todo id `34-35`."""
+    stem, board = _with_board(tmp_path, board_dir)
+    _ran_report(stem, "| Guarded lines | **Shipped** — `conftest.py:18`, `:34-35` |")
+    _add_task(board, status="todo", ref="docs/plans/demo/dispatch/01-a.md")
+    errs = _mod.check_stem(stem)
+    assert any("still not `done`" in e for e in errs), errs
+
+
+def test_open_task_refused_when_outcome_carries_a_duration(tmp_path, board_dir):
+    """`~190-260s suite` must not read as the todo id `90-260s`."""
+    stem, board = _with_board(tmp_path, board_dir)
+    _ran_report(stem, "| Cost | **Shipped** — ~190-260s suite |")
+    _add_task(board, status="todo", ref="docs/plans/demo/dispatch/01-a.md")
+    errs = _mod.check_stem(stem)
+    assert any("still not `done`" in e for e in errs), errs
+
+
+def test_deferral_is_still_the_one_exemption(tmp_path, board_dir):
+    """Tightening the rule must not break the deferral escape hatch."""
+    stem, board = _with_board(tmp_path, board_dir)
+    _ran_report(stem, "| 01-a | **Deferred** — follow-up stem |\n| Decision d#1279 | **Shipped** |")
+    _add_task(board, status="todo", ref="docs/plans/demo/dispatch/01-a.md")
+    assert _mod.check_stem(stem) == []
+
+
+def test_outcome_mentions_ignores_line_refs_and_durations(tmp_path):
+    """The todo regex matched any NN-word text, including `34-35` and `90-260s`."""
+    report = (
+        "## Outcome\n\n"
+        "| Item | Result |\n|---|---|\n"
+        "| Guarded lines | **Shipped** — `conftest.py:18`, `:34-35` |\n"
+        "| Cost | **Shipped** — ~190-260s suite |\n"
+        "| Real brief | **Shipped** — 01-a |\n"
+    )
+    _s_ids, s_todos, _d_ids, _d_todos = _mod._outcome_mentions(report)
+    assert "34-35" not in s_todos
+    assert "90-260s" not in s_todos
+    assert "01-a" in s_todos

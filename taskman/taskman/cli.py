@@ -1882,6 +1882,7 @@ def cmd_plan_mark_shipped(args) -> None:
 
     force = bool(getattr(args, "force", False))
     moved = 0
+    unnamed: list[int] = []
 
     _slug, board_dir = _board()
     tasks = sorted(
@@ -1905,6 +1906,15 @@ def cmd_plan_mark_shipped(args) -> None:
             if task["id"] not in shipped_task_ids and (
                 not todo_id or todo_id not in shipped_todos
             ):
+                # Declining is the rule; declining silently is the bug. A bare
+                # "no tasks moved" reads as "nothing to do" (FTM #12290).
+                unnamed.append(int(task["id"]))
+                print(
+                    f"taskman plan mark-shipped: skipping #{task['id']} "
+                    f"({todo_id or task.get('source_ref')}) — the action report's "
+                    "Outcome never names it as shipped",
+                    file=sys.stderr,
+                )
                 continue
         if task.get("status") == "blocked" and not force:
             print(
@@ -1923,6 +1933,14 @@ def cmd_plan_mark_shipped(args) -> None:
         print(f"taskman plan mark-shipped: moved {moved} task(s) to done")
     else:
         print("taskman plan mark-shipped: no tasks moved")
+    if unnamed:
+        ids = ", ".join(f"#{i}" for i in unnamed)
+        print(
+            f"taskman plan mark-shipped: {len(unnamed)} task(s) left open because the "
+            f"action report's Outcome does not name them: {ids} — name them in Outcome, "
+            "or defer them there with a reason",
+            file=sys.stderr,
+        )
 
 
 # --- Recommend next (rule-based) ---
