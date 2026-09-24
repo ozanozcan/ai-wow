@@ -38,6 +38,7 @@ run_quiet hooks/tests/test_session_start_marker.py
 run_quiet hooks/tests/test_redact_private.py
 run_quiet hooks/tests/test_peer_session_notice.py
 run_quiet hooks/tests/test_guard_shell_status.py
+run_quiet hooks/tests/test_git_ops.py
 run_quiet bin/tests/test_ai_sync_status.py
 run_quiet bin/tests/test_ai_sync_commit.py
 run_quiet bin/tests/test_ai_sync_encoding.py

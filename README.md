@@ -31,7 +31,7 @@ python3 ~/ai-wow/bin/ai-sync status
 | **Skills** | 17 | Procedures an agent loads into its own context on demand |
 | **Subagents** | 8 | Specialists with isolated context and restricted tools |
 | **Slash commands** | 4 | `/diagnose`, `/fix-bug`, `/refactor`, `/incident` |
-| **Hooks** | 10 | Guarantees that fire on lifecycle events, not on the agent's judgment |
+| **Hooks** | 12 | Guarantees that fire on lifecycle events, not on the agent's judgment |
 | **Board** | 1 package | `taskman` — Feature → PBI → Task, living spec, decision log |
 
 Everything except the board runs on a bare clone: **no configuration, no API keys,
@@ -193,6 +193,7 @@ before fan-out, not discovered afterwards.
 | `docs/workflow/` | Work-loop, dispatch bridge, compact template |
 | `templates/` | Bootstrap checklist for adopting the harness in a new repo, plus per-repo starting points (protocols, `ui-designer`, Copilot instructions) |
 | `bin/ai-sync` | The sync tool |
+| `bin/git-timeline` | Backfills and renders the agent git-operation log (`hooks/git-ops.py`) as a local timeline page |
 | `local.config.example.json` | Copy to `local.config.json` (gitignored) for machine paths |
 
 Machine-specific configuration lives only in `local.config.json`, which is

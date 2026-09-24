@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git Timeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Farro:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --line: #e4e4e0; --text: #1d1d1b; --muted: #6b6b66;
+  --read: #8a94a6; --write: #2f6fde; --remote: #8b4fd6; --destructive: #d23f31; --fail: #d23f31;
+  --ok: #2e8b57; --accent: #1d1d1b; --chip: #efefeb;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "Farro", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --surface: #1d1d1b; --line: #33332f; --text: #ecece8; --muted: #9a9a93;
+    --read: #7d8697; --write: #5b93f0; --remote: #a77ae8; --destructive: #ef6a5c; --fail: #ef6a5c;
+    --ok: #5fbf88; --accent: #ecece8; --chip: #2a2a27;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141413; --surface: #1d1d1b; --line: #33332f; --text: #ecece8; --muted: #9a9a93;
+  --read: #7d8697; --write: #5b93f0; --remote: #a77ae8; --destructive: #ef6a5c; --fail: #ef6a5c;
+  --ok: #5fbf88; --accent: #ecece8; --chip: #2a2a27;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 var(--sans); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+.sub { color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.repos { display: flex; gap: 6px; overflow-x: auto; padding: 14px 0 6px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+button { font: inherit; color: inherit; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+  padding: 5px 11px; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.chip[aria-pressed="true"] .n { color: inherit; opacity: .7; }
+.chip.cat[aria-pressed="false"] { opacity: .45; }
+.sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 14px 0; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; }
+.controls { margin: 4px 0 14px; }
+input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); background: var(--surface);
+  color: var(--text); border-radius: 8px; padding: 7px 10px; font: inherit; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+.card h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.chart { display: flex; align-items: flex-end; gap: 2px; height: 110px; }
+.bar { flex: 1 1 0; min-width: 3px; max-width: 36px; display: flex; flex-direction: column-reverse;
+  height: 100%; justify-content: flex-start; border-radius: 2px; }
+.bar.click { cursor: pointer; }
+.bar.click:hover, .bar.sel { background: var(--chip); }
+.bar i { display: block; width: 100%; }
+.xlabels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.daysel { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 18px; }
+.daysel button { border: 0; background: none; text-decoration: underline; cursor: pointer; padding: 0; color: var(--text); }
+.day { margin-bottom: 18px; }
+.top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 14px; align-items: start; }
+.top > .card { margin-bottom: 14px; }
+.dayhead { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin: 0 0 8px; }
+.dayhead h3 { margin: 0; font-size: 15px; }
+.dayhead h2 { margin: 0; }
+.lanes { display: grid; grid-template-columns: 150px 1fr; row-gap: 4px; column-gap: 10px; align-items: center; }
+.axis { position: relative; height: 16px; color: var(--muted); font-size: 11px; }
+.axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.lab { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip { position: relative; height: 18px; border-radius: 4px; background:
+  repeating-linear-gradient(90deg, transparent 0 calc(var(--tick) - 1px), var(--line) calc(var(--tick) - 1px) var(--tick)), var(--chip); }
+.dot { position: absolute; top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+  border: 0; padding: 0; cursor: pointer; }
+.dot.failed { background: transparent !important; box-shadow: inset 0 0 0 2.5px var(--fail); }
+.dot:hover, .dot:focus-visible { transform: scale(1.6); z-index: 2; outline: none; }
+.ops { margin-top: 10px; border-top: 1px solid var(--line); }
+.op { display: grid; grid-template-columns: 64px 78px 96px minmax(0, 1fr) 120px 60px; gap: 10px; padding: 5px 2px;
+  border-bottom: 1px solid var(--line); align-items: baseline; font-size: 13px; }
+.op.flash { animation: flash 1.4s ease-out; }
+@keyframes flash { from { background: var(--chip); } to { background: transparent; } }
+.op time, .op .ses, .op .br { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.op .br { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op.head { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; padding: 7px 2px; }
+.badge { font-size: 12px; font-weight: 500; padding: 1px 7px; border-radius: 5px; color: #fff; justify-self: start; }
+.argv { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.argv small { display: block; color: var(--muted); font-family: var(--sans); }
+.st { font-size: 12px; white-space: nowrap; text-align: right; }
+.st.bad { color: var(--fail); font-weight: 600; }
+.more { margin-top: 8px; }
+.linkbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.empty { color: var(--muted); padding: 30px 0; text-align: center; }
+@media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+@media (max-width: 720px) {
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .lanes { grid-template-columns: 1fr; row-gap: 2px; }
+  .lanes .lab { margin-top: 4px; }
+  .lanes .axis-lab { display: none; }
+  .op { grid-template-columns: 52px 1fr auto; }
+  .op .ses, .op .br, .op.head { display: none; }
+  .op .argv { grid-column: 1 / -1; order: 5; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Git timeline</h1>
+  <div class="sub" id="meta"></div>
+  <div class="repos" id="repos" role="toolbar" aria-label="Repository"></div>
+  <div class="stats" id="stats"></div>
+  <div class="row controls">
+    <div class="row" id="cats"></div>
+    <button class="chip" id="failed" aria-pressed="false">Failed only</button>
+    <input type="search" id="q" placeholder="Filter: push, main, a commit message…" aria-label="Filter operations">
+  </div>
+  <div class="top">
+    <div class="card">
+      <h2 id="charttitle">Git ops per day</h2>
+      <div class="chart" id="chart"></div>
+      <div class="xlabels" id="xl"></div>
+      <div class="daysel" id="daysel"></div>
+    </div>
+    <div class="card" id="lanecard"></div>
+  </div>
+  <div id="days"></div>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+const CATS = [["read", "Read"], ["write", "Local write"], ["remote", "Remote"], ["destructive", "Destructive"]];
+const CAT_VAR = c => `var(--${c})`;
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const pad = n => String(n).padStart(2, "0");
+const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const hm = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const hms = t => { const d = new Date(t); return `${hm(t)}:${pad(d.getSeconds())}`; };
+const fmtDay = k => new Date(k + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+const shortSes = s => (s || "unknown").slice(0, 8);
+
+const ROWS = (DATA && DATA.rows || []).map((r, i) => Object.assign(r, { _i: i, _t: Date.parse(r.ts), _d: dayKey(Date.parse(r.ts)),
+  _hay: [r.sub, r.argv, r.cmd, r.branch, r.worktree, r.error, r.session].filter(Boolean).join(" ").toLowerCase() }));
+const REPOS = Object.entries(ROWS.reduce((m, r) => (m[r.repo] = (m[r.repo] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
+
+function load(k, d) { try { const v = localStorage.getItem("gt:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem("gt:" + k, JSON.stringify(v)); } catch (e) {} }
+
+const repoFromHash = () => { const h = decodeURIComponent((location.hash.match(/repo=([^&]+)/) || [])[1] || ""); return REPOS.some(([r]) => r === h) ? h : null; };
+const S = {
+  repo: repoFromHash() || (DATA && DATA.defaultRepo) || (REPOS[0] || [])[0],
+  cats: new Set(load("cats", CATS.map(c => c[0]))), failed: false, q: "", day: null, shown: 5,
+};
+
+function base() { return ROWS.filter(r => r.repo === S.repo && S.cats.has(r.cat) && (!S.failed || r.ok === false)
+  && (!S.q || r._hay.includes(S.q))); }
+
+function renderRepos() {
+  const box = $("repos"); box.replaceChildren();
+  for (const [name, n] of REPOS) {
+    const b = el("button", "chip"); b.setAttribute("aria-pressed", String(name === S.repo));
+    b.append(el("span", null, name), el("span", "n", n.toLocaleString()));
+    b.onclick = () => { S.repo = name; S.day = null; S.shown = 5; history.replaceState(null, "", "#repo=" + encodeURIComponent(name)); render(); };
+    box.append(b);
+  }
+}
+
+function renderCats() {
+  const box = $("cats"); box.replaceChildren();
+  const all = ROWS.filter(r => r.repo === S.repo);
+  for (const [c, label] of CATS) {
+    const b = el("button", "chip cat"); b.setAttribute("aria-pressed", String(S.cats.has(c)));
+    const sw = el("span", "sw"); sw.style.background = CAT_VAR(c);
+    b.append(sw, el("span", null, label), el("span", "n", all.filter(r => r.cat === c).length.toLocaleString()));
+    b.onclick = () => { S.cats.has(c) ? S.cats.delete(c) : S.cats.add(c); save("cats", [...S.cats]); render(); };
+    box.append(b);
+  }
+  $("failed").setAttribute("aria-pressed", String(S.failed));
+}
+
+function renderStats(rows) {
+  const box = $("stats"); box.replaceChildren();
+  const sessions = new Set(rows.map(r => r.session)).size;
+  const tiles = [["Git ops", rows.length], ["Sessions", sessions], ["Commits", rows.filter(r => r.sub === "commit").length],
+    ["Pushes", rows.filter(r => r.sub === "push").length], ["Failed", rows.filter(r => r.ok === false).length],
+    ["Destructive", rows.filter(r => r.cat === "destructive").length]];
+  for (const [label, n] of tiles) { const t = el("div", "stat"); t.append(el("b", null, n.toLocaleString()), el("span", null, label)); box.append(t); }
+}
+
+function renderChart(rows) {
+  const box = $("chart"), xl = $("xl"), ds = $("daysel"); box.replaceChildren(); xl.replaceChildren(); ds.replaceChildren();
+  if (!rows.length) return;
+  // A day-per-bar chart of one or two days is a single slab; bucket by hour until there is a span to show.
+  const H = 3600e3, span = rows[rows.length - 1]._t - rows[0]._t, hourly = span < 2 * 24 * H;
+  $("charttitle").textContent = hourly ? "Git ops per hour" : "Git ops per day";
+  const keyOf = hourly ? r => Math.floor(r._t / H) : r => r._d;
+  const keys = [];
+  if (hourly) { for (let h = keyOf(rows[0]); h <= keyOf(rows[rows.length - 1]); h++) keys.push(h); }
+  else {
+    const first = new Date(rows[0]._d + "T12:00:00"), last = new Date(rows[rows.length - 1]._d + "T12:00:00");
+    for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) keys.push(dayKey(d));
+  }
+  const by = {}; for (const r of rows) (by[keyOf(r)] ||= []).push(r);
+  const max = Math.max(...keys.map(k => (by[k] || []).length), 1);
+  const label = k => hourly ? `${fmtDay(dayKey(k * H))} ${hm(k * H)}` : fmtDay(k);
+  for (const k of keys) {
+    const list = by[k] || [], bar = el("div", "bar" + (hourly ? "" : " click") + (S.day === k ? " sel" : ""));
+    bar.title = `${label(k)} — ${list.length} op(s)`;
+    for (const [c] of CATS) {
+      const n = list.filter(r => r.cat === c).length; if (!n) continue;
+      const seg = el("i"); seg.style.height = (n / max * 100) + "%"; seg.style.background = CAT_VAR(c); bar.append(seg);
+    }
+    if (!hourly) bar.onclick = () => { S.day = S.day === k ? null : k; S.shown = 5; render(); };
+    box.append(bar);
+  }
+  const short = k => hourly ? hm(k * H) : new Date(k + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  xl.append(el("span", null, short(keys[0])));
+  if (keys.length > 2) xl.append(el("span", null, short(keys[Math.floor(keys.length / 2)])));
+  if (keys.length > 1) xl.append(el("span", null, short(keys[keys.length - 1])));
+  if (S.day) { ds.append(`Showing ${fmtDay(S.day)} · `); const b = el("button", null, "show all days"); b.onclick = () => { S.day = null; render(); }; ds.append(b); }
+  else if (!hourly) ds.textContent = "Click a day to focus on it.";
+}
+
+function opRow(r) {
+  const row = el("div", "op"); row.id = "op-" + r._i;
+  const badge = el("span", "badge", r.sub); badge.style.background = CAT_VAR(r.cat);
+  const argv = el("div", "argv", r.argv);
+  const ctx = [r.worktree && "worktree " + r.worktree, r.agent && "subagent " + r.agent.slice(0, 8)].filter(Boolean).join(" · ");
+  if (ctx) argv.append(el("small", null, ctx));
+  if (r.error) argv.append(el("small", null, r.error.split("\n").slice(0, 2).join(" — ")));
+  const st = r.ok === false ? el("span", "st bad", "✗ failed") : r.ok ? el("span", "st", "✓") : el("span", "st", "?");
+  if (r.ok == null) st.title = "exit status not recorded";
+  const br = el("span", "br", r.branch || "—"); if (r.branch) br.title = r.branch;
+  row.append(el("time", null, hms(r._t)), el("span", "ses", shortSes(r.session)), badge, argv, br, st);
+  if (r.cmd) row.title = r.cmd;
+  return row;
+}
+
+function opHead() {
+  const h = el("div", "op head");
+  for (const t of ["Time", "Session", "Op", "Command", "Branch", "Status"]) h.append(el("span", null, t));
+  h.lastChild.style.textAlign = "right";
+  return h;
+}
+
+// `laneBox`: where the swimlanes go. The focused day's lanes sit beside the chart; older days keep theirs inline.
+function renderDay(k, list, laneBox) {
+  const sec = el("section", "day card"), head = el("div", "dayhead");
+  const sessions = [...new Set(list.map(r => r.session))];
+  head.append(el("h3", null, fmtDay(k)), el("span", "sub", `${list.length} op(s) · ${sessions.length} session(s)`));
+  if (!laneBox) sec.append(head);
+  let t0 = list[0]._t, t1 = list[list.length - 1]._t;
+  const MIN = 30 * 60e3; if (t1 - t0 < MIN) { const m = (t0 + t1) / 2; t0 = m - MIN / 2; t1 = m + MIN / 2; }
+  const padT = (t1 - t0) * 0.02; t0 -= padT; t1 += padT;
+  const x = t => ((t - t0) / (t1 - t0) * 100);
+  const lanes = el("div", "lanes");
+  const axis = el("div", "axis"), H = 3600e3;
+  const step = (t1 - t0) > 8 * H ? 2 * H : (t1 - t0) > 3 * H ? H : (t1 - t0) > H ? 30 * 60e3 : 10 * 60e3;
+  for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) { const s = el("span", null, hm(t)); s.style.left = x(t) + "%"; axis.append(s); }
+  lanes.append(el("div", "lab axis-lab", ""), axis);
+  const tick = (step / (t1 - t0) * 100) + "%";
+  const ops = el("div", "ops"), LIMIT = 40;
+  for (const s of sessions) {
+    const mine = list.filter(r => r.session === s);
+    const subs = new Set(mine.filter(r => r.agent).map(r => r.agent)).size;
+    const lab = el("div", "lab", `${shortSes(s)} · ${mine.length}${subs ? ` · ${subs} sub` : ""}`);
+    lab.title = `session ${s}` + (mine[0].worktree ? ` — worktree ${mine[0].worktree}` : "");
+    const strip = el("div", "strip"); strip.style.setProperty("--tick", tick);
+    for (const r of mine) {
+      const d = el("button", "dot" + (r.ok === false ? " failed" : ""));
+      d.style.left = x(r._t) + "%"; d.style.background = CAT_VAR(r.cat);
+      d.setAttribute("aria-label", `${hm(r._t)} ${r.argv}`); d.title = `${hms(r._t)}  ${r.argv}${r.ok === false ? "  ✗ failed" : ""}`;
+      d.onclick = () => { if (!document.getElementById("op-" + r._i)) { ops.replaceChildren(opHead(), ...[...list].reverse().map(opRow)); }
+        const row = document.getElementById("op-" + r._i); row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
+        row.scrollIntoView({ block: "center", behavior: "smooth" }); };
+      strip.append(d);
+    }
+    lanes.append(lab, strip);
+  }
+  if (laneBox) {
+    const h = el("div", "dayhead"); h.append(el("h2", null, "Session timeline"), el("span", "sub", fmtDay(k)));
+    laneBox.append(h, lanes);
+    head.lastChild.textContent += " — timeline above";
+    sec.append(head);
+  } else sec.append(lanes);
+  const newest = [...list].reverse();
+  ops.append(opHead(), ...newest.slice(0, LIMIT).map(opRow));
+  sec.append(ops);
+  if (newest.length > LIMIT) {
+    const more = el("div", "more"), b = el("button", "linkbtn", `Show all ${newest.length} ops`);
+    b.onclick = () => { ops.replaceChildren(opHead(), ...newest.map(opRow)); more.remove(); };
+    more.append(b); sec.append(more);
+  }
+  return sec;
+}
+
+function renderDays(rows) {
+  const box = $("days"); box.replaceChildren();
+  const laneCard = $("lanecard"); laneCard.replaceChildren();
+  const by = {}; for (const r of rows) (by[r._d] ||= []).push(r);
+  let keys = Object.keys(by).sort().reverse();
+  if (S.day) keys = keys.filter(k => k === S.day);
+  if (!keys.length) { laneCard.append(el("div", "empty", "No sessions to show.")); box.append(el("div", "empty", ROWS.length ? "No git ops match these filters." : "No git ops logged yet — run `git-timeline backfill`.")); return; }
+  keys.slice(0, S.shown).forEach((k, i) => box.append(renderDay(k, by[k], i === 0 ? laneCard : null)));
+  if (keys.length > S.shown) {
+    const b = el("button", "linkbtn", `Show older days (${keys.length - S.shown} more)`);
+    b.onclick = () => { S.shown += 7; renderDays(rows); };
+    box.append(b);
+  }
+}
+
+function render() {
+  renderRepos(); renderCats();
+  const rows = base();
+  renderStats(S.day ? rows.filter(r => r._d === S.day) : rows);
+  renderChart(rows); renderDays(rows);
+  const all = ROWS.filter(r => r.repo === S.repo);
+  $("meta").textContent = `${ROWS.length.toLocaleString()} git ops across ${REPOS.length} repos` +
+    (all.length ? ` · ${S.repo}: ${fmtDay(all[0]._d)} → ${fmtDay(all[all.length - 1]._d)}` : "") +
+    (DATA && DATA.generated ? ` · built ${new Date(DATA.generated).toLocaleString()}` : "");
+}
+
+window.addEventListener("hashchange", () => { const r = repoFromHash(); if (r && r !== S.repo) { S.repo = r; S.day = null; S.shown = 5; render(); } });
+$("failed").onclick = () => { S.failed = !S.failed; render(); };
+let qt; $("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim().toLowerCase(); render(); }, 150); };
+render();
+</script>
+</body>
+</html>

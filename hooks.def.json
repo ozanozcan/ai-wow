@@ -68,6 +68,18 @@
       "copilot": { "event": "Stop" }
     },
     {
+      "_comment": "appends one row per git invocation to ~/.claude/git-ops.jsonl; bin/git-timeline backfills and renders it. Two entries because a non-zero Bash exit fires PostToolUseFailure, not PostToolUse. Never blocks, never prints",
+      "id": "git-ops",
+      "script": "git-ops.sh",
+      "claude": { "event": "PostToolUse", "matcher": "Bash" }
+    },
+    {
+      "_comment": "same script, failure half: the failed push is the op most worth seeing",
+      "id": "git-ops-failure",
+      "script": "git-ops.sh",
+      "claude": { "event": "PostToolUseFailure", "matcher": "Bash" }
+    },
+    {
       "_comment": "asks before checkout-wide git ops, but only while another session is live in this worktree; fails open",
       "id": "peer-session-guard",
       "script": "peer-session-guard.sh",

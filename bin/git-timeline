@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""git-timeline — backfill and render the agent git-operation log.
+
+The live half is hooks/git-ops.py, which appends one row per git invocation to
+~/.claude/git-ops.jsonl as agents work. This is the other half:
+
+  git-timeline backfill        # import git calls from past Claude transcripts (idempotent)
+  git-timeline html [--open]   # render a self-contained timeline page
+        [--repo NAME]          #   repo the page opens on (default: the repo you run it from)
+        [--out PATH]           #   default ~/.claude/git-timeline.html
+
+Backfill reads ~/.claude/projects/**.jsonl — main sessions and subagents — and
+pairs each Bash tool_use with its tool_result for the exit status. Rows are
+keyed by tool_use_id, so a call the hook already logged is never logged twice
+and re-running backfill adds nothing. Transcripts are pruned after
+`cleanupPeriodDays`; the log is not, so backfill early.
+
+The page is local only and never published: the log holds commit messages and
+paths. It embeds its data, so it opens from disk with no server.
+"""
+
+import argparse
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from collections import Counter
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+_spec = importlib.util.spec_from_file_location("git_ops", os.path.join(HERE, "..", "hooks", "git-ops.py"))
+git_ops = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(git_ops)
+
+CLAUDE = os.path.join(os.path.expanduser("~"), ".claude")
+
+
+def read_log(path):
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue            # a torn line from a killed writer
+                if isinstance(r, dict) and r.get("id"):
+                    rows.append(r)
+    except FileNotFoundError:
+        pass
+    return rows
+
+
+def _text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return ""
+
+
+def transcripts(root):
+    for d, _, files in os.walk(root):
+        for f in files:
+            if f.endswith(".jsonl"):
+                yield os.path.join(d, f)
+
+
+def scan(path):
+    """(entry, tool_use block, result-or-None) for each Bash call with git in it."""
+    calls, results = [], {}
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    with fh:
+        for line in fh:
+            if '"tool_' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            msg = e.get("message")
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if not isinstance(content, list):
+                continue
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use" and b.get("name") == "Bash":
+                    if "git" in ((b.get("input") or {}).get("command") or ""):
+                        calls.append((e, b))
+                elif b.get("type") == "tool_result":
+                    results[b.get("tool_use_id")] = b
+    return [(e, b, results.get(b.get("id"))) for e, b in calls]
+
+
+def backfill(args):
+    seen = {r["id"] for r in read_log(args.log)}
+    new = []
+    for path in transcripts(args.projects):
+        sub = os.sep + "subagents" + os.sep in path
+        for e, b, res in scan(path):
+            ok = None if res is None else not res.get("is_error", False)
+            err = _text(res.get("content")).strip() if res is not None and not ok else None
+            agent = e.get("agentId") or (os.path.basename(path)[:-6].replace("agent-", "") if sub else None)
+            rows = git_ops.rows_for(b["input"]["command"], e.get("cwd") or "/", rid=b.get("id"),
+                                    ts=e.get("timestamp"), session=e.get("sessionId"), agent=agent,
+                                    ok=ok, error=err, src="backfill", branch_hint=e.get("gitBranch"))
+            for r in rows:
+                if r["id"] not in seen:
+                    seen.add(r["id"])
+                    new.append(r)
+    new.sort(key=lambda r: r["ts"] or "")
+    git_ops.append(new, args.log)
+    by_repo = Counter(r["repo"] for r in new)
+    print(f"backfill: {len(new)} new git op(s) -> {args.log}")
+    for repo, n in by_repo.most_common():
+        print(f"  {n:6d}  {repo}")
+
+
+def _here_repo():
+    try:
+        p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, encoding="utf-8", timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    common = p.stdout.strip()
+    if p.returncode or not common:
+        return None
+    return os.path.basename(os.path.dirname(common) if os.path.basename(common) == ".git" else common)
+
+
+KEEP = ("ts", "session", "agent", "repo", "worktree", "branch", "sub", "cat", "argv", "ok", "error")
+
+
+def html(args):
+    rows, ids = [], set()
+    for r in read_log(args.log):
+        if r["id"] in ids or not r.get("ts"):
+            continue
+        ids.add(r["id"])
+        slim = {k: r.get(k) for k in KEEP if r.get(k) is not None}
+        cmd = r.get("command") or ""
+        if cmd and cmd.strip() != (r.get("argv") or ""):
+            slim["cmd"] = cmd[:600]
+        rows.append(slim)
+    rows.sort(key=lambda r: r["ts"])
+    repos = Counter(r["repo"] for r in rows)
+    default = args.repo or _here_repo()
+    if default not in repos:
+        default = repos.most_common(1)[0][0] if repos else None
+    data = json.dumps({"rows": rows, "defaultRepo": default, "generated": git_ops.now()},
+                      ensure_ascii=False, separators=(",", ":"))
+    # `</` inside a <script> block ends it, whatever JSON thinks; commit messages carry it.
+    data = data.replace("<", "\\u003c")
+    with open(os.path.join(HERE, "git-timeline.html"), encoding="utf-8") as fh:
+        page = fh.read().replace("/*__DATA__*/null", data)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as fh:
+        fh.write(page)
+    print(f"html: {len(rows)} op(s) across {len(repos)} repo(s), opens on {default} -> {args.out}")
+    if args.open:
+        subprocess.run(["open", args.out], check=False)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="git-timeline", description=__doc__.split("\n\n")[0])
+    ap.add_argument("cmd", choices=["backfill", "html"])
+    ap.add_argument("--log", default=git_ops.log_path())
+    ap.add_argument("--projects", default=os.path.join(CLAUDE, "projects"))
+    ap.add_argument("--out", default=os.path.join(CLAUDE, "git-timeline.html"))
+    ap.add_argument("--repo")
+    ap.add_argument("--open", action="store_true")
+    args = ap.parse_args()
+    {"backfill": backfill, "html": html}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
