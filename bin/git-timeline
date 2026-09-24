@@ -8,6 +8,7 @@ The live half is hooks/git-ops.py, which appends one row per git invocation to
   git-timeline html [--open]   # render a self-contained timeline page
         [--repo NAME]          #   repo the page opens on (default: the repo you run it from)
         [--out PATH]           #   default ~/.claude/git-timeline.html
+        [--no-prs]             #   skip asking GitHub (via `gh`) for pull requests
 
 Backfill reads ~/.claude/projects/**.jsonl — main sessions and subagents — and
 pairs each Bash tool_use with its tool_result for the exit status. Rows are
@@ -23,6 +24,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -132,6 +134,56 @@ def _here_repo():
     return os.path.basename(os.path.dirname(common) if os.path.basename(common) == ".git" else common)
 
 
+def _git(root, *args):
+    try:
+        p = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return p.stdout if p.returncode == 0 else ""
+
+
+def pull_requests(root):
+    """Every PR of the repo's GitHub origin, via `gh`; [] when there is no GitHub remote or no gh."""
+    m = re.search(r"github\.com[:/](.+?)(?:\.git)?/?$", _git(root, "remote", "get-url", "origin").strip())
+    if not m:
+        return []
+    try:
+        p = subprocess.run(["gh", "pr", "list", "-R", m.group(1), "--state", "all", "--limit", "1000", "--json",
+                            "number,title,headRefName,baseRefName,state,createdAt,mergedAt,closedAt,mergeCommit"],
+                           capture_output=True, text=True, encoding="utf-8", timeout=60)
+        prs = json.loads(p.stdout) if p.returncode == 0 else []
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    return [{"n": pr["number"], "title": pr["title"][:140], "head": pr["headRefName"], "base": pr["baseRefName"],
+             "state": pr["state"].lower(), "created": pr["createdAt"], "merged": pr.get("mergedAt"),
+             "closed": pr.get("closedAt"), "mergeOid": ((pr.get("mergeCommit") or {}).get("oid") or "")[:12] or None}
+            for pr in prs]
+
+
+def repo_graph(root, prs=True):
+    """The commit DAG the journey view draws: [sha, parents, unix time, refs, subject] per commit.
+
+    Branches, remote branches and tags, not `--all`: that would drag every stash
+    in as a branch. Worktree branches are ordinary branches, so they come along.
+    """
+    out = _git(root, "log", "--branches", "--remotes", "--tags", "HEAD", "--date-order",
+               "--format=%H%x1f%P%x1f%ct%x1f%D%x1f%s%x1e")
+    commits = []
+    for rec in out.split("\x1e"):
+        f = rec.strip("\n").split("\x1f")
+        if len(f) < 5:
+            continue
+        refs = [r.replace("HEAD -> ", "") for r in f[3].split(", ")
+                if r and r != "HEAD" and not r.endswith("/HEAD")]
+        commits.append([f[0][:12], [x[:12] for x in f[1].split()], int(f[2]), refs, f[4][:140]])
+    names = {r for c in commits for r in c[3]}
+    default = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").strip().split("/", 1)[-1]
+    if default not in names and "origin/" + default not in names:
+        default = next((b for b in ("main", "master", "trunk") if b in names or "origin/" + b in names), None)
+    return {"commits": commits, "default": default, "prs": pull_requests(root) if prs and commits else []}
+
+
 KEEP = ("ts", "session", "agent", "repo", "worktree", "branch", "sub", "cat", "argv", "ok", "error")
 
 
@@ -148,10 +200,19 @@ def html(args):
         rows.append(slim)
     rows.sort(key=lambda r: r["ts"])
     repos = Counter(r["repo"] for r in rows)
+    roots = {}
+    for r in read_log(args.log):
+        if r.get("root"):
+            roots.setdefault(r["repo"], Counter())[r["root"]] += 1
+    graphs = {}
+    for repo, seen in roots.items():
+        root = next((p for p, _ in seen.most_common() if os.path.isdir(p)), None)
+        if root:
+            graphs[repo] = repo_graph(root, prs=not args.no_prs)
     default = args.repo or _here_repo()
     if default not in repos:
         default = repos.most_common(1)[0][0] if repos else None
-    data = json.dumps({"rows": rows, "defaultRepo": default, "generated": git_ops.now()},
+    data = json.dumps({"rows": rows, "graphs": graphs, "defaultRepo": default, "generated": git_ops.now()},
                       ensure_ascii=False, separators=(",", ":"))
     # `</` inside a <script> block ends it, whatever JSON thinks; commit messages carry it.
     data = data.replace("<", "\\u003c")
@@ -160,7 +221,8 @@ def html(args):
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
-    print(f"html: {len(rows)} op(s) across {len(repos)} repo(s), opens on {default} -> {args.out}")
+    print(f"html: {len(rows)} op(s) across {len(repos)} repo(s), {len(graphs)} commit graph(s), "
+          f"{sum(len(g['prs']) for g in graphs.values())} PR(s), opens on {default} -> {args.out}")
     if args.open:
         subprocess.run(["open", args.out], check=False)
 
@@ -173,6 +235,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(CLAUDE, "git-timeline.html"))
     ap.add_argument("--repo")
     ap.add_argument("--open", action="store_true")
+    ap.add_argument("--no-prs", action="store_true")
     args = ap.parse_args()
     {"backfill": backfill, "html": html}[args.cmd](args)
 

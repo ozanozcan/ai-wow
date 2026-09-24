@@ -201,6 +201,93 @@ html = open(out).read()
 check("embedded data cannot close the script tag", "</script><img" not in html)
 check("default repo is baked in", '"proj"' in html)
 
+# --- journey: commit graph + lane layout -------------------------------------
+
+print("journey")
+from importlib.machinery import SourceFileLoader
+timeline = SourceFileLoader("git_timeline", TIMELINE).load_module()
+jr = os.path.join(tmp, "journey")
+os.makedirs(jr)
+T = [1_790_000_000 + 3600 * k for k in range(10)]
+
+
+def jgit(*a, t=None):
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    if t:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = f"@{t} +0000"
+    return subprocess.run(["git", *a], cwd=jr, env=env, capture_output=True, text=True, check=True).stdout.strip()
+
+
+jgit("init", "-q", "-b", "main")
+jgit("commit", "-q", "--allow-empty", "-m", "root", t=T[0])
+jgit("switch", "-q", "-c", "feat")
+jgit("commit", "-q", "--allow-empty", "-m", "feat 1", t=T[1])
+jgit("commit", "-q", "--allow-empty", "-m", "feat 2", t=T[2])
+jgit("switch", "-q", "main")
+jgit("commit", "-q", "--allow-empty", "-m", "main 2", t=T[3])
+jgit("merge", "-q", "--no-ff", "feat", "-m", "Merge branch 'feat'", t=T[4])
+jgit("branch", "-q", "-D", "feat")                           # merged and gone: only the merge remembers it
+jgit("switch", "-q", "-c", "wip")
+jgit("commit", "-q", "--allow-empty", "-m", "wip 1", t=T[5])
+jgit("switch", "-q", "main")
+jgit("stash", "list")
+graph = timeline.repo_graph(jr, prs=False)
+subjects = [c[4] for c in graph["commits"]]
+check("graph has every commit, newest first", subjects[0] in ("wip 1",) and set(subjects) ==
+      {"root", "feat 1", "feat 2", "main 2", "Merge branch 'feat'", "wip 1"}, str(subjects))
+merge = next(c for c in graph["commits"] if c[4].startswith("Merge"))
+check("merge commit keeps both parents", len(merge[1]) == 2)
+check("default branch detected without a remote", graph["default"] == "main", str(graph["default"]))
+check("refs carry branch names", any("wip" in c[3] for c in graph["commits"]))
+check("no gh call when prs=False", graph["prs"] == [])
+
+node = subprocess.run(["which", "node"], capture_output=True, text=True).stdout.strip()
+if not node:
+    print("  SKIP  lane layout (no node on PATH)")
+else:
+    page = open(os.path.join(os.path.dirname(TIMELINE), "git-timeline.html"), encoding="utf-8").read()
+    layout = page[page.index("// <journey-layout>"):page.index("// </journey-layout>")]
+    iso = lambda t: __import__("datetime").datetime.fromtimestamp(t, __import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    squash = {"n": 7, "title": "squashed", "head": "gone-branch", "base": "main", "state": "merged",
+              "created": iso(T[6]), "merged": iso(T[8]), "closed": None, "mergeOid": None}
+    fixture = dict(graph, prs=[squash])
+    wts = [{"name": "lane-a", "t0": T[6] * 1000, "t1": T[7] * 1000, "n": 3, "branch": "worktree-lane-a"}]
+    marks = [{"t": T[4] * 1000, "kind": "push", "branch": "main"}, {"t": T[5] * 1000, "kind": "destructive", "branch": "wip"}]
+    js = layout + f"""
+const J = chainsOf({json.dumps(fixture)}, {json.dumps(wts)}, {json.dumps(marks)}, {T[9] * 1000});
+const {{ vis, lanes }} = packLanes(J.chains, {T[0] * 1000 - 1}, {T[9] * 1000});
+console.log(JSON.stringify({{ lanes, chains: J.chains.map(c => ({{ name: c.name, kind: c.kind, n: c.commits.length,
+  lane: c.lane, fork: c.fork && c.fork.s, merge: c.merge && c.merge.s, prs: c.prs.map(p => p.n),
+  wts: c.wts.map(w => w.name), marks: c.marks.map(m => m.kind) }})) }}));"""
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
+    res = json.loads(out.stdout) if out.returncode == 0 else {"chains": [], "lanes": 0}
+    by = {c["name"]: c for c in res["chains"]}
+    check("layout runs", out.returncode == 0, out.stderr[-300:])
+    check("main is the first-parent line, lane 0", by.get("main", {}).get("kind") == "main" and by["main"]["lane"] == 0
+          and by["main"]["n"] == 3, str(by.get("main")))
+    f = by.get("feat", {})
+    check("deleted branch is recovered from its merge subject", f.get("kind") == "merged" and f.get("n") == 2
+          and f.get("fork") == "root" and f.get("merge") == "Merge branch 'feat'", str(f))
+    check("open branch forks from the merge and has no merge", by.get("wip", {}).get("fork") == "Merge branch 'feat'"
+          and by["wip"]["merge"] is None, str(by.get("wip")))
+    check("squash-merged PR gets its own dashed lane", by.get("gone-branch", {}).get("kind") == "pr"
+          and by["gone-branch"]["prs"] == [7], str(by.get("gone-branch")))
+    check("unmatched worktree gets a lane named for its branch", by.get("worktree-lane-a", {}).get("wts") == ["lane-a"],
+          str(by.get("worktree-lane-a")))
+    check("op marks land on their branch's lane", by["main"]["marks"] == ["push"] and by["wip"]["marks"] == ["destructive"],
+          str((by["main"]["marks"], by.get("wip", {}).get("marks"))))
+    non_main = [c.get("lane") for c in res["chains"] if c["kind"] != "main"]
+    check("every non-main chain in view gets a lane >= 1", non_main and all(isinstance(l, int) and l >= 1 for l in non_main),
+          str(non_main))
+    js2 = layout + """
+const mk = (name, kind, t0, t1, ts) => ({ name, kind, t0, t1, commits: ts.map(t => ({ t })) });
+const cs = [mk("main", "main", 0, 100, [0]), mk("idle-pr", "pr", 0, 100, []), mk("active", "branch", 40, 60, [45, 55])];
+packLanes(cs, 0, 100); console.log(JSON.stringify(cs.map(c => c.lane)));"""
+    out2 = subprocess.run([node, "-e", js2], capture_output=True, text=True, timeout=30)
+    check("overlapping: the chain with commits in view sits nearer main than the idle one",
+          out2.stdout.strip() == "[0,2,1]", out2.stdout + out2.stderr[-200:])
+    check("lanes are reused once a branch has merged", res["lanes"] < len(res["chains"]) + 1, str(res["lanes"]))
+
 os.chmod(os.path.join(tmp, "ro"), 0o700)
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)
