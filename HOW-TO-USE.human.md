@@ -186,9 +186,14 @@ flowchart LR
 ```bash
 git clone <this-repo> ~/ai-wow
 mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills
+npx skills add pbakaus/impeccable -g
 python3 ~/ai-wow/bin/ai-sync
 python3 ~/ai-wow/bin/ai-sync status
 ```
+
+The `npx` line installs `impeccable`, the UI design skill. It is the one skill not
+bundled (see `THIRD-PARTY.md`), and the UI workflow depends on it, so it is part of
+the install, not an extra.
 
 `status` is the thing to trust — it reports what is actually linked rather than what
 should be:
@@ -208,7 +213,7 @@ repo: /path/to/ai-wow
   cursor/hooks.json:          present
   copilot/hooks/ai-wow.json:  present
   copilot/mcp-config.json:    present
-  shared skills (~/.agents):  16  (Copilot reads this path directly — no extra render needed)
+  shared skills (~/.agents):  18  (Copilot reads this path directly — no extra render needed)
   duplicate hook registrations: none
   managed-doc drift: none
 ```
@@ -870,7 +875,7 @@ cooperate, delete the `hooks` key from `settings.json` and run `ai-sync` by hand
 | Symptom | Cause | Fix |
 |---|---|---|
 | No skills at all, no error | `~/.agents/skills` missing | Create it — `ai-sync` won't |
-| Skills missing, subagents present | Skill farm not reconciled | Re-run `ai-sync`; `status` should show 16 |
+| Skills missing, subagents present | Skill farm not reconciled | Re-run `ai-sync`; `status` should show 18 |
 | Symlink creation denied (corporate policy) | Developer Mode locked off | `ai-sync --copy` — Appendix A |
 | Skill edit in the editor vanished | Copy mode: the editor holds a copy | Edit in the repo, re-run `ai-sync` |
 | "privilege not held" on Windows | Developer Mode off | Enable it, re-run |
