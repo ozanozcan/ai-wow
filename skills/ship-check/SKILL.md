@@ -25,7 +25,7 @@ Before reviewing anything, establish the benchmark.
 
 Read in this order:
 
-- The implementation plan from `/architect` if one exists
+- The implementation plan (`docs/plans/<stem>/plan.md`, written by `/mow plan`) if one exists
 - The feature description or task that was given
 - Any relevant context files — architecture boundaries, code standards, design rules
 
