@@ -104,7 +104,7 @@ Slash commands and workspace hooks are repo-scoped in Copilot, so they render in
 | Symptom | Root cause | Action |
 |---|---|---|
 | 0 skills, no error emitted | `~/.agents/skills` absent — `reconcile_skills()` returns early | Create the symlink, re-run `ai-sync` |
-| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 16 |
+| skills absent, subagents present | farm not reconciled | `ai-sync`, then `status` must show 18 |
 | both absent | link step never ran | `ai-sync` |
 | `OSError` / privilege error on link | Windows Developer Mode off | Enable it (§9); if policy forbids, §8a copy mode |
 | hooks registered but never fire | `bash` or `python3` unresolvable | §9 — verify from Git Bash |
@@ -162,7 +162,7 @@ work in the tree cannot ride along. Anything skipped is logged, not silently dro
 board-sync half of the continuity skills.
 
 **† `impeccable` is not bundled** (Apache-2.0, ~99 files — see `THIRD-PARTY.md`).
-Install with `npx skills add pbakaus/impeccable`. If it is absent, do not fabricate
+It is installed by step 3 of §5 (`npx skills add pbakaus/impeccable -g`). If it is absent, do not fabricate
 its behaviour: say so and fall back to the project's own `ui-designer` agent
 (bootstrapped from `templates/ui-designer.template.md`, which carries the anti-slop
 ban list for exactly this case) — or the global `ui-designer` on Next.js stacks.
@@ -204,19 +204,20 @@ anything else. Never ask for, echo, or store the token value.
 | # | Step | VERIFY |
 |---|---|---|
 | 1 | `git clone <repo> ~/ai-wow` | `bin/ai-sync` exists |
-| 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **16** entries — **FAIL → STOP** |
-| 3 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
-| 4 | `python3 bin/ai-sync status` | every category `linked`, `CLAUDE.md linked`, all four render lines `present`, `shared skills (~/.agents):  16` |
-| 5 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
-| 6 | if step 3 reported symlink denial | switch to §8a copy mode — do not abandon the install |
+| 2 | `mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills` | directory lists **17** entries — **FAIL → STOP** |
+| 3 | `npx skills add pbakaus/impeccable -g` | `~/.agents/skills/impeccable/SKILL.md` exists; `git status` in `~/ai-wow` stays clean (gitignored) |
+| 4 | `python3 bin/ai-sync` | exit 0; `linked` lines emitted |
+| 5 | `python3 bin/ai-sync status` | every category `linked`, `CLAUDE.md linked`, all four render lines `present`, `shared skills (~/.agents):  18` |
+| 6 | optional: `cp local.config.example.json local.config.json` and edit | `managed_repos()` returns your paths |
+| 7 | if step 4 reported symlink denial | switch to §8a copy mode — do not abandon the install |
 
 Step 2 is the one that fails silently. Never report a successful install without the
-count from step 4.
+count from step 5.
 
 `ai-sync status` exits 1 when managed-doc drift exists. **That exit code is not an
 install failure** — judge on the four VERIFY lines.
 
-**If this fork will be pushed anywhere public** (I11): step 5 is no longer optional.
+**If this fork will be pushed anywhere public** (I11): step 6 is no longer optional.
 Set `scrub_patterns` in `local.config.json` to the operator's own employer/product
 identifiers *before* the first push — `githooks/pre-push` will otherwise let them
 through, since the generic check only catches `/Users/<name>`. If one already reached
@@ -439,7 +440,7 @@ If Developer Mode cannot be enabled, do not stop: fall back to §8a copy mode.
 
 ## 10. REPORTING RULES
 
-- Report VERIFY outcomes with the actual observed value ("`shared skills: 16`"), not
+- Report VERIFY outcomes with the actual observed value ("`shared skills: 18`"), not
   "verified".
 - If a step was skipped, say which and why.
 - If a check could not run, say so — do not infer a pass from an adjacent success.

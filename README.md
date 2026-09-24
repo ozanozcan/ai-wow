@@ -15,9 +15,15 @@ working, made portable and enforced.
 ```bash
 git clone <this-repo> ~/ai-wow
 mkdir -p ~/.agents && ln -s ~/ai-wow/skills ~/.agents/skills
+npx skills add pbakaus/impeccable -g
 python3 ~/ai-wow/bin/ai-sync
 python3 ~/ai-wow/bin/ai-sync status
 ```
+
+`impeccable` — the UI design skill — is the one skill not bundled: it is Apache-2.0
+and roughly 99 files, better taken from its own source than vendored here. The UI
+workflow depends on it, so install it with the rest. `skills/impeccable/` is
+gitignored, so it never rides into a commit. See [`THIRD-PARTY.md`](THIRD-PARTY.md).
 
 > **Start here:** [`HOW-TO-USE.human.md`](HOW-TO-USE.human.md) if you're a person ·
 > [`HOW-TO-USE.agent.md`](HOW-TO-USE.agent.md) if you're an agent.
@@ -37,17 +43,7 @@ python3 ~/ai-wow/bin/ai-sync status
 Everything except the board runs on a bare clone: **no configuration, no API keys,
 no database.**
 
-### Two optional extras
-
-`impeccable` — the UI design skill — is referenced throughout the docs but is **not
-bundled**: it is Apache-2.0 and roughly 99 files, better taken from its own source
-than vendored here.
-
-```bash
-npx skills add pbakaus/impeccable
-```
-
-Nothing else depends on it. See [`THIRD-PARTY.md`](THIRD-PARTY.md).
+### One optional extra
 
 `serena` — the symbol-aware navigation MCP server — is named by the routing table
 in [`global/CLAUDE.md`](global/CLAUDE.md) but is **not configured here**:
