@@ -240,8 +240,15 @@ def main():
     print("published repo shape")
 
     # --- disk truth -------------------------------------------------------
-    skill_dirs = sorted(p.name for p in (REPO / "skills").iterdir() if p.is_dir())
-    missing = [n for n in skill_dirs if not (REPO / "skills" / n / "SKILL.md").is_file()]
+    # Skills as of HEAD, like _headed_py: the documented install drops the gitignored
+    # skills/impeccable/ in through the ~/.agents/skills symlink, and an on-disk walk
+    # counted it — every correct install blocked the push on 17-vs-18.
+    headed_skills = subprocess.run(
+        ["git", "-C", str(REPO), "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "skills"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split("\0")
+    skill_dirs = sorted({rel.split("/")[1] for rel in headed_skills if rel.count("/") >= 2})
+    missing = [n for n in skill_dirs if f"skills/{n}/SKILL.md" not in headed_skills]
     check("every skills/ entry has a SKILL.md", missing, [])
     agents = sorted(p.stem for p in (REPO / "agents").glob("*.md"))
 
@@ -320,7 +327,7 @@ def main():
 
     # --- referenced-not-bundled claim holds -------------------------------
     check("impeccable is referenced but not bundled",
-          (REPO / "skills" / "impeccable").exists(), False)
+          "impeccable" in skill_dirs, False)
     check("impeccable's install line is still documented",
           "npx skills add pbakaus/impeccable" in (REPO / "THIRD-PARTY.md").read_text(encoding="utf-8"), True)
 
