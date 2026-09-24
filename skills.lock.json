@@ -16,9 +16,9 @@
       "sourceType": "github",
       "sourceUrl": "https://github.com/pbakaus/impeccable.git",
       "skillPath": ".agents/skills/impeccable/SKILL.md",
-      "skillFolderHash": "ee0fbf2481ea1466953819325b66b85f7c79ed8d",
+      "skillFolderHash": "de1582a945304f9d2823f08986a01dd0cc2d2042",
       "installedAt": "2026-06-21T23:23:08.172Z",
-      "updatedAt": "2026-06-21T23:23:08.172Z"
+      "updatedAt": "2026-09-24T23:41:50.669Z"
     },
     "playwright-cli": {
       "source": "microsoft/playwright-cli",
