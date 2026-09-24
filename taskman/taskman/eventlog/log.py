@@ -102,11 +102,20 @@ def _next_id_locked(board_dir: Path, entity: str) -> int:
         counts = json.loads(counter.read_text(encoding="utf-8"))
     except FileNotFoundError:
         counts = {}
+    # The log, not the counter file, is the authority on what has been issued. A
+    # *present* counter can still be stale: a `git reset --hard` onto a commit that
+    # predates a board commit rolls the working-tree counter back while leaving the
+    # log's later events in place, and the old code trusted any value that was merely
+    # there. On 2026-09-22 that reissued 23 live ids from a counter rolled back from
+    # task 12303 to 12283. Re-deriving covers the lost-counter case as before *and*
+    # the rolled-back one, and it heals rather than refuses: the next allocation
+    # simply jumps past the log.
+    # debt: full replay per allocation (~2.9k events today), index it above ~50k
+    # events or if `task add` latency becomes noticeable.
+    highest_issued = max(replay(board_dir)[entity], default=0)
     allocated = counts.get(entity)
-    if allocated is None:
-        # Lost counter (or first use of this entity), surviving log:
-        # re-derive from replay so an id is never reissued.
-        allocated = max(replay(board_dir)[entity], default=0) + 1
+    if allocated is None or allocated <= highest_issued:
+        allocated = highest_issued + 1
     counts[entity] = allocated + 1
     tmp = counter.with_name(counter.name + ".tmp")
     tmp.write_text(json.dumps(counts, sort_keys=True), encoding="utf-8")

@@ -402,6 +402,40 @@ def test_lost_counter_never_reissues():
               fid == 2, f"got {fid}")
 
 
+def test_rolled_back_counter_never_reissues():
+    """The sibling of the lost-counter case: a counter that is *present* but stale.
+
+    `git reset --hard` onto a commit predating a board commit rolls the working-tree
+    counter back while the log keeps its later events. The old code trusted any value
+    that was merely there, so on 2026-09-22 it reissued 23 live ids from a counter
+    rolled back from task 12303 to 12283.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        board = Path(tmp)
+        store.add(board, "task", {"title": "one"})
+        store.add(board, "task", {"title": "two"})
+        store.add(board, "task", {"title": "three"})
+        counter = board / log.COUNTER_NAME
+
+        counts = json.loads(counter.read_text(encoding="utf-8"))
+        counts["task"] = 2  # the rollback: would reissue id 2, already held by "two"
+        counter.write_text(json.dumps(counts, sort_keys=True), encoding="utf-8")
+
+        tid = store.add(board, "task", {"title": "four"})
+        check("a rolled-back counter re-derives past the log's max", tid == 4, f"got {tid}")
+        check("the id it would have reissued is still the original holder's",
+              store.state(board)["task"][2]["title"] == "two")
+        check("the counter is healed on disk, not just for this call",
+              json.loads(counter.read_text(encoding="utf-8"))["task"] == 5)
+
+        # Equal-to-max is the off-by-one that matters: `next_ids` holds the NEXT id,
+        # so task == 4 after issuing 4 means 4 is taken and 5 is next.
+        counts = json.loads(counter.read_text(encoding="utf-8"))
+        counts["task"] = 4
+        counter.write_text(json.dumps(counts, sort_keys=True), encoding="utf-8")
+        check("a counter equal to the log's max still advances", store.add(board, "task", {"title": "five"}) == 5)
+
+
 def test_locking_failure_modes():
     with tempfile.TemporaryDirectory() as tmp:
         lock = Path(tmp) / "board.lock"
@@ -501,6 +535,7 @@ def main():
     test_claim_release()
     test_replay_cas_first_claim_wins()
     test_lost_counter_never_reissues()
+    test_rolled_back_counter_never_reissues()
     test_locking_failure_modes()
     test_stale_debris_swept_by_writes()
     test_stdlib_only_by_ast()
