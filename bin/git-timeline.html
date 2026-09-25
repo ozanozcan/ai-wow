@@ -12,7 +12,7 @@
   --bg: #f7f7f5; --surface: #ffffff; --line: #e4e4e0; --text: #1d1d1b; --muted: #6b6b66;
   --read: #8a94a6; --write: #2a78d6; --remote: #1baf7a; --destructive: #d03b3b; --fail: #d03b3b;
   --ok: #2e8b57; --accent: #1d1d1b; --chip: #efefeb;
-  --label: #9c5a2c;   /* calm orange for label text: 4.66:1 on --chip, 5.37:1 on --surface */
+  --label: #1d1d1b;   /* label text: the text ink — white in dark mode, dark ink in light */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: "Farro", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -21,14 +21,14 @@
     --bg: #141413; --surface: #1d1d1b; --line: #33332f; --text: #ecece8; --muted: #9a9a93;
     --read: #7d8697; --write: #3987e5; --remote: #199e70; --destructive: #d03b3b; --fail: #ef6a5c;
     --ok: #5fbf88; --accent: #ecece8; --chip: #2a2a27;
-    --label: #d9a06b;
+    --label: #ecece8;
   }
 }
 :root[data-theme="dark"] {
   --bg: #141413; --surface: #1d1d1b; --line: #33332f; --text: #ecece8; --muted: #9a9a93;
   --read: #7d8697; --write: #3987e5; --remote: #199e70; --destructive: #d03b3b; --fail: #ef6a5c;
   --ok: #5fbf88; --accent: #ecece8; --chip: #2a2a27;
-  --label: #d9a06b;
+  --label: #ecece8;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
