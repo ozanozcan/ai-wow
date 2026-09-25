@@ -21,6 +21,7 @@ paths. It embeds its data, so it opens from disk with no server.
 """
 
 import argparse
+import datetime
 import importlib.util
 import json
 import os
@@ -184,6 +185,95 @@ def repo_graph(root, prs=True):
     return {"commits": commits, "default": default, "prs": pull_requests(root) if prs and commits else []}
 
 
+def sync_events(root, default=None, keep=40):
+    """Every push and every fetch/pull the remote-tracking refs remember, with the commits each carried.
+
+    Git's own record, not a parse of command output: each update to
+    refs/remotes/* lands in that ref's reflog with a time and a reason
+    ("update by push", "fetch: fast-forward", "pull: ..."), so old..new is
+    exactly what moved. A force push is logged as a plain "update by push";
+    it shows up as commits the old tip had and the new one lacks.
+    Reflogs expire (90 days by default), so this reaches back that far.
+    """
+    refs = [r for r in _git(root, "for-each-ref", "--format=%(refname)", "refs/remotes").split()
+            if not r.endswith("/HEAD")]
+    logs = {}
+    for ref in refs:
+        entries = []
+        for line in _git(root, "reflog", "show", "--date=unix", "--format=%H%x1f%gd%x1f%gs", ref).splitlines():
+            f = line.split("\x1f")
+            m = re.search(r"@\{(\d+)\}$", f[1]) if len(f) == 3 else None
+            if m:
+                entries.append((f[0], int(m.group(1)), f[2]))
+        logs[ref] = entries[::-1]                   # oldest first
+    base_ref = f"refs/remotes/origin/{default}" if default else None
+
+    def base_at(t):
+        """The default branch's remote tip as of `t`: what a brand-new branch is measured against."""
+        val = None
+        for h, ts, _ in logs.get(base_ref, []):
+            if ts <= t:
+                val = h
+        return val
+
+    events = []
+    for ref, entries in logs.items():
+        prev = None
+        for h, t, msg in entries:
+            how = ("push" if msg.startswith("update by push") else "pull" if msg.startswith("pull")
+                   else "fetch" if msg.startswith("fetch") else None)
+            old, prev = prev, h
+            if how is None or h == old:
+                continue                            # clone, rename, or a no-op update
+            # A branch carries only what main did not already have: a rebase onto main, or a new
+            # branch, would otherwise count every main commit it was rebased over or cut from.
+            b = base_at(t) if ref != base_ref else None
+            not_base = [f"^{b}"] if b and b != h else []
+            rng = ([f"{old}..{h}"] if old else [h]) + not_base
+            commits = [c.split("\x1f") for c in _git(root, "log", "--format=%h%x1f%s%x1f%ct", *rng, "--").splitlines()]
+            commits = [c for c in commits if len(c) == 3]
+            dropped = int(_git(root, "rev-list", "--count", f"{h}..{old}", *not_base).strip() or 0) if old else 0
+            if not commits and not dropped:
+                continue
+            events.append({"t": t, "ref": ref[len("refs/remotes/"):], "how": how, "old": old[:12] if old else None,
+                           "new": h[:12], "n": len(commits), "forced": dropped > 0, "dropped": dropped,
+                           "commits": [[c[0], c[1][:120], int(c[2])] for c in commits[:keep]]})
+    events.sort(key=lambda e: e["t"], reverse=True)
+    return events
+
+
+def _epoch(ts):
+    try:
+        return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (AttributeError, ValueError):
+        return None
+
+
+def attribute(events, rows, window=180):
+    """Name the session behind each event, and add the pushes that failed (the reflog never sees those).
+
+    An event is matched to the nearest git op of the same kind in the same repo
+    within `window` seconds. No match means it ran outside any logged agent
+    session: you in a terminal, an IDE, or a sync tool.
+    """
+    ops = [(_epoch(r["ts"]), r) for r in rows if r.get("sub") in ("push", "fetch", "pull")]
+    ops = [(t, r) for t, r in ops if t is not None]
+    for ev in events:
+        kinds = ("push",) if ev["how"] == "push" else ("fetch", "pull")
+        near = [(abs(t - ev["t"]), r) for t, r in ops if r["sub"] in kinds and r.get("ok") is not False
+                and abs(t - ev["t"]) <= window]
+        if near:
+            r = min(near, key=lambda x: x[0])[1]
+            ev.update(session=r.get("session"), agent=r.get("agent"), argv=r.get("argv"))
+    for t, r in ops:
+        if r["sub"] == "push" and r.get("ok") is False:
+            events.append({"t": int(t), "ref": r.get("branch") or "?", "how": "push", "failed": True, "n": 0,
+                           "forced": False, "dropped": 0, "commits": [], "session": r.get("session"),
+                           "agent": r.get("agent"), "argv": r.get("argv"), "error": (r.get("error") or "")[:200]})
+    events.sort(key=lambda e: e["t"], reverse=True)
+    return events
+
+
 KEEP = ("ts", "session", "agent", "repo", "worktree", "branch", "sub", "cat", "argv", "ok", "error")
 
 
@@ -209,6 +299,8 @@ def html(args):
         root = next((p for p, _ in seen.most_common() if os.path.isdir(p)), None)
         if root:
             graphs[repo] = repo_graph(root, prs=not args.no_prs)
+            graphs[repo]["sync"] = attribute(sync_events(root, graphs[repo]["default"]),
+                                             [r for r in rows if r["repo"] == repo])
     default = args.repo or _here_repo()
     if default not in repos:
         default = repos.most_common(1)[0][0] if repos else None
@@ -222,7 +314,8 @@ def html(args):
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
     print(f"html: {len(rows)} op(s) across {len(repos)} repo(s), {len(graphs)} commit graph(s), "
-          f"{sum(len(g['prs']) for g in graphs.values())} PR(s), opens on {default} -> {args.out}")
+          f"{sum(len(g['prs']) for g in graphs.values())} PR(s), "
+          f"{sum(len(g['sync']) for g in graphs.values())} push/pull event(s), opens on {default} -> {args.out}")
     if args.open:
         subprocess.run(["open", args.out], check=False)
 

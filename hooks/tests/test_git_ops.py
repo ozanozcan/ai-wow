@@ -288,6 +288,71 @@ packLanes(cs, 0, 100); console.log(JSON.stringify(cs.map(c => c.lane)));"""
           out2.stdout.strip() == "[0,2,1]", out2.stdout + out2.stderr[-200:])
     check("lanes are reused once a branch has merged", res["lanes"] < len(res["chains"]) + 1, str(res["lanes"]))
 
+# --- push & pull report -----------------------------------------------------
+
+print("push & pull")
+bare, a_dir, b_dir = (os.path.join(tmp, n) for n in ("remote.git", "clone-a", "clone-b"))
+sg = lambda cwd, *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
+                                    capture_output=True, text=True, check=True).stdout.strip()
+subprocess.run(["git", "init", "-q", "--bare", "-b", "main", bare], check=True)
+sg(tmp, "clone", "-q", bare, a_dir)
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "base")
+sg(a_dir, "push", "-q", "origin", "main")
+sg(tmp, "clone", "-q", bare, b_dir)
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "a1")
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "a2")
+sg(a_dir, "push", "-q", "origin", "main")                      # push carrying a1, a2
+sg(b_dir, "commit", "-q", "--allow-empty", "-m", "b-only")
+sg(b_dir, "push", "-q", "origin", "main:side")                 # another clone opens a branch
+sg(a_dir, "fetch", "-q")                                        # a pulls side in
+sg(a_dir, "reset", "-q", "--hard", "HEAD~1")
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "a2-rewritten")
+sg(a_dir, "push", "-q", "--force", "origin", "main")           # force push: drops a2
+sg(a_dir, "switch", "-q", "-c", "feat")
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "feat work")
+sg(a_dir, "push", "-q", "origin", "feat")
+sg(a_dir, "switch", "-q", "main")
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "main m1")
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "main m2")
+sg(a_dir, "push", "-q", "origin", "main")
+sg(a_dir, "switch", "-q", "feat")
+sg(a_dir, "rebase", "-q", "main")
+sg(a_dir, "push", "-q", "--force", "origin", "feat")      # rebased onto main: carries main's commits too
+sg(a_dir, "switch", "-q", "main")
+ev = timeline.sync_events(a_dir, "main")
+rebased = [e for e in ev if e["ref"] == "origin/feat" and e["forced"]]
+check("a rebased branch push counts only its own commits, not main's",
+      rebased and [c[1] for c in rebased[0]["commits"]] == ["feat work"] and rebased[0]["dropped"] == 1,
+      str(rebased))
+ev = [e for e in ev if e["ref"] != "origin/feat" and e["commits"] and e["commits"][0][1] not in ("main m2",)]
+pushes = [e for e in ev if e["how"] == "push"]
+subj = lambda e: [c[1] for c in e["commits"]]
+check("every push in the reflog becomes an event", len(pushes) == 3, str([(e["ref"], e["n"]) for e in ev]))
+two = next((e for e in pushes if e["n"] == 2), None)
+check("a push lists exactly the commits it carried", two and sorted(subj(two)) == ["a1", "a2"], str(two))
+forced = next((e for e in pushes if e["forced"]), None)
+check("a force push records what it dropped", forced and forced["dropped"] == 1 and subj(forced) == ["a2-rewritten"],
+      str(forced))
+side = next((e for e in ev if e["ref"] == "origin/side"), None)
+check("a fetched new branch counts only its own commits", side and side["how"] == "fetch" and subj(side) == ["b-only"],
+      str(side))
+check("events are newest first", [e["t"] for e in ev] == sorted((e["t"] for e in ev), reverse=True))
+check("no remote, no events", timeline.sync_events(jr, "main") == [])
+iso = lambda t: __import__("datetime").datetime.fromtimestamp(t, __import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+evs = [{"t": 1_000_000, "how": "push", "ref": "origin/main", "n": 2, "commits": []},
+       {"t": 2_000_000, "how": "fetch", "ref": "origin/main", "n": 1, "commits": []}]
+ops = [{"ts": iso(1_000_060), "sub": "push", "session": "near", "ok": True, "argv": "git push"},
+       {"ts": iso(1_000_900), "sub": "push", "session": "far", "ok": True, "argv": "git push"},
+       {"ts": iso(2_000_010), "sub": "push", "session": "wrong-kind", "ok": True, "argv": "git push"},
+       {"ts": iso(3_000_000), "sub": "push", "session": "failer", "ok": False, "branch": "main", "argv": "git push",
+        "error": "Exit code 1\n! [rejected]"}]
+out = timeline.attribute(evs, ops)
+by_t = {e["t"]: e for e in out}
+check("a push is credited to the nearest push op within the window", by_t[1_000_000].get("session") == "near", str(by_t[1_000_000]))
+check("a fetch is never credited to a push op", "session" not in by_t[2_000_000], str(by_t[2_000_000]))
+check("a failed push becomes its own event", by_t.get(3_000_000, {}).get("failed") is True
+      and by_t[3_000_000]["session"] == "failer", str(by_t.get(3_000_000)))
+
 os.chmod(os.path.join(tmp, "ro"), 0o700)
 print(f"\n{len(FAILURES)} failure(s)")
 sys.exit(1 if FAILURES else 0)

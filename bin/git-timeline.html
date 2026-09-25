@@ -72,6 +72,24 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
 .mk.destructive { fill: var(--destructive); }
 .jlab { fill: var(--muted); font-size: 10.5px; }
 .jlab.main { fill: var(--text); font-weight: 500; }
+.sy-bar.push, .sy-bar.pull { fill: var(--remote); }
+.sy-bar.pull { opacity: .6; }
+.sy-bar { cursor: pointer; }
+.sy-base { stroke: var(--muted); stroke-width: 1; }
+.sy-fail { stroke: var(--destructive); stroke-width: 2; stroke-linecap: round; }
+.ev { border-bottom: 1px solid var(--line); }
+.evday { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em;
+  padding: 12px 2px 4px; border-bottom: 1px solid var(--line); }
+.ev > summary { display: grid; grid-template-columns: 64px 74px minmax(0, 1fr) 150px 110px; gap: 10px; padding: 6px 2px;
+  cursor: pointer; list-style: none; align-items: baseline; font-size: 13px; }
+.ev > summary::-webkit-details-marker { display: none; }
+.ev > summary .m { color: var(--muted); font-size: 12px; }
+.ev.flash > summary { animation: flash 1.4s ease-out; }
+.ev .dir { font-weight: 500; }
+.ev .bad { color: var(--fail); }
+.ev ol { margin: 0 0 8px; padding: 0 0 0 150px; list-style: none; font-size: 12.5px; }
+.ev li { padding: 2px 0; display: flex; gap: 10px; }
+.ev li .sha { color: var(--muted); min-width: 64px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .day { margin-bottom: 18px; }
@@ -117,6 +135,9 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   .lanes .axis-lab { display: none; }
   .op { grid-template-columns: 52px 1fr auto; }
   .op .ses, .op .br, .op.head { display: none; }
+  .ev > summary { grid-template-columns: 52px 1fr auto; }
+  .ev > summary .ref, .ev > summary .by { display: none; }
+  .ev ol { padding-left: 8px; }
   .op .argv { grid-column: 1 / -1; order: 5; }
 }
 </style>
@@ -139,6 +160,11 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
       <div class="legend" id="jlegend"></div>
     </div>
     <div class="card" id="lanecard"></div>
+  </div>
+  <div class="card" id="synccard">
+    <div class="dayhead"><h2>Push &amp; pull</h2><span class="sub" id="syncsum"></span></div>
+    <div id="syncchart"></div>
+    <div id="synclist"></div>
   </div>
   <div id="days"></div>
 </div>
@@ -334,7 +360,7 @@ function renderZoom() {
   const box = $("zoom"); box.replaceChildren();
   for (const [k] of SPANS) {
     const b = el("button", "chip sm", k); b.setAttribute("aria-pressed", String(S.zoom === k));
-    b.onclick = () => { S.zoom = k; save("zoom", k); renderZoom(); renderJourney(); };
+    b.onclick = () => { S.zoom = k; save("zoom", k); renderZoom(); renderJourney(); renderSync(); };
     box.append(b);
   }
 }
@@ -353,9 +379,25 @@ function renderLegend() {
   item("destructive op", g => sv("path", { d: "M11 1L16 6L11 11L6 6Z", class: "mk destructive" }, g));
 }
 
+// Gridlines and labels for [t0, t1]; the journey and the push & pull chart share it so their ticks line up.
+function timeAxis(svg, x, t0, t1, W, top, bottom) {
+  const H1 = 36e5, D1 = 864e5, steps = [H1, 3 * H1, 6 * H1, 12 * H1, D1, 2 * D1, 7 * D1, 14 * D1, 30 * D1];
+  const step = steps.find(s => s >= (t1 - t0) / Math.max(3, W / 110)) || 30 * D1;
+  const ticks = [];
+  if (step < D1) for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) ticks.push(t);
+  else { const d = new Date(t0); d.setHours(24, 0, 0, 0); for (; d.getTime() < t1; d.setDate(d.getDate() + step / D1)) ticks.push(d.getTime()); }
+  const short = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  for (const t of ticks) {
+    sv("line", { x1: x(t), x2: x(t), y1: top - 4, y2: bottom, class: "jgrid" }, svg);
+    const lab = step < D1 && new Date(t).getHours() !== 0 ? hm(t) : short(t);
+    sv("text", { x: x(t), y: 12, "text-anchor": "middle", class: "jaxis" }, svg).textContent = lab;
+  }
+}
+
 function renderJourney() {
   const host = $("journey"); host.replaceChildren();
   const g = GRAPHS[S.repo];
+  S.win = null;
   if (!g || !g.commits.length) { host.append(el("div", "empty", "No commit history for this repo — its folder has moved, or it is not a git repo.")); return; }
   const J = journeyFor(S.repo);
   const tStart = Math.min(...J.chains.map(c => c.t0)), tEnd = Math.max(...J.chains.map(c => c.t1));
@@ -363,6 +405,7 @@ function renderJourney() {
   let t0 = Math.max(tStart, tEnd - span), t1 = tEnd;
   if (t1 - t0 < 36e5) { t0 = t1 - 36e5; }
   const padT = (t1 - t0) * 0.03; t0 -= padT; t1 += padT;
+  S.win = [t0, t1];
   const { vis, lanes } = packLanes(J.chains, t0, t1);
   const nVis = vis.reduce((n, c) => n + c.commits.filter(k => k.t >= t0 && k.t <= t1).length, 0);
   const LH = 28, TOP = 22, padL = 10, padR = 14;
@@ -372,18 +415,7 @@ function renderJourney() {
     "aria-label": `Branch journey of ${S.repo}: ${vis.length} branches, ${nVis} commits in view` });
   const clip = sv("clipPath", { id: "jclip" }, sv("defs", {}, svg));
   sv("rect", { x: padL - 8, y: 0, width: W - padL - padR + 16, height: H }, clip);
-  // time axis
-  const H1 = 36e5, D1 = 864e5, steps = [H1, 3 * H1, 6 * H1, 12 * H1, D1, 2 * D1, 7 * D1, 14 * D1, 30 * D1];
-  const step = steps.find(s => s >= (t1 - t0) / Math.max(3, W / 110)) || 30 * D1;
-  const ticks = [];
-  if (step < D1) for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) ticks.push(t);
-  else { const d = new Date(t0); d.setHours(24, 0, 0, 0); for (; d.getTime() < t1; d.setDate(d.getDate() + step / D1)) ticks.push(d.getTime()); }
-  const short = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  for (const t of ticks) {
-    sv("line", { x1: x(t), x2: x(t), y1: TOP - 4, y2: H, class: "jgrid" }, svg);
-    const lab = step < D1 && new Date(t).getHours() !== 0 ? hm(t) : short(t);
-    sv("text", { x: x(t), y: 12, "text-anchor": "middle", class: "jaxis" }, svg).textContent = lab;
-  }
+  timeAxis(svg, x, t0, t1, W, TOP, H);
   const plot = sv("g", { "clip-path": "url(#jclip)" }, svg);
   const gBand = sv("g", {}, plot), gLine = sv("g", {}, plot), gDot = sv("g", {}, plot), gLab = sv("g", {}, plot);
   const curve = (xa, ya, xb, yb) => { const dx = Math.max(6, Math.min(26, (xb - xa) / 2));
@@ -426,6 +458,80 @@ function renderJourney() {
     }
   }
   host.append(svg);
+}
+
+
+const who = e => e.session ? `session ${shortSes(e.session)}${e.agent ? " (subagent)" : ""}` : "outside agents";
+function syncLabel(e) {
+  return e.failed ? "↑ push" : e.how === "push" ? "↑ push" : `↓ ${e.how}`;
+}
+
+function renderSync() {
+  const chart = $("syncchart"), list = $("synclist"), sum = $("syncsum");
+  chart.replaceChildren(); list.replaceChildren(); sum.textContent = "";
+  const g = GRAPHS[S.repo];
+  if (!g || !S.win) { list.append(el("div", "empty", "No remote history for this repo.")); return; }
+  const [t0, t1] = S.win;
+  const evs = (g.sync || []).filter(e => e.t * 1000 >= t0 && e.t * 1000 <= t1);
+  const push = evs.filter(e => e.how === "push" && !e.failed), pull = evs.filter(e => e.how !== "push");
+  const n = a => a.reduce((k, e) => k + e.n, 0), failed = evs.filter(e => e.failed).length;
+  sum.textContent = `↑ ${push.length} push(es), ${n(push)} commit(s) · ↓ ${pull.length} fetch/pull(s), ${n(pull)} commit(s)` +
+    (failed ? ` · ${failed} failed` : "") + " · in view";
+  if (!evs.length) { list.append(el("div", "empty", "No pushes or pulls in this time span.")); return; }
+  // Mirror chart: pushed commits rise above the line, pulled ones hang below. One axis, one unit.
+  const W = chart.clientWidth || 600, TOP = 22, HALF = 46, H = TOP + HALF * 2 + 6, mid = TOP + HALF + 2;
+  const padL = 10, padR = 14, x = t => padL + (t - t0) / (t1 - t0) * (W - padL - padR);
+  const max = Math.max(1, ...evs.map(e => e.n)), h = k => Math.max(3, Math.sqrt(k / max) * (HALF - 4));
+  const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, class: "jsvg", role: "img",
+    "aria-label": `Pushes and pulls: ${n(push)} commits pushed, ${n(pull)} pulled` });
+  timeAxis(svg, x, t0, t1, W, TOP, H);
+  sv("line", { x1: padL, x2: W - padR, y1: mid, y2: mid, class: "sy-base" }, svg);
+  sv("text", { x: padL, y: TOP + 10, class: "jaxis" }, svg).textContent = "↑ pushed";
+  sv("text", { x: padL, y: H - 4, class: "jaxis" }, svg).textContent = "↓ pulled";
+  evs.forEach((e, i) => {
+    const X = x(e.t * 1000), tipText = `${when(e.t * 1000)}  ${syncLabel(e)} ${e.ref}\n` +
+      (e.failed ? `failed: ${e.argv || ""}` : `${e.n} commit(s)${e.forced ? `, force — dropped ${e.dropped}` : ""} · ${who(e)}`);
+    let mark;
+    if (e.failed) {
+      mark = sv("g", { class: "sy-bar" }, svg);
+      sv("path", { d: `M${X - 4},${mid - 14}L${X + 4},${mid - 6}M${X + 4},${mid - 14}L${X - 4},${mid - 6}`, class: "sy-fail" }, mark);
+      sv("rect", { x: X - 6, y: mid - 16, width: 12, height: 12, fill: "transparent" }, mark);
+    } else {
+      const hh = h(e.n), up = e.how === "push";
+      mark = sv("rect", { x: X - 2.5, y: up ? mid - hh : mid, width: 5, height: hh, rx: 2, class: "sy-bar " + (up ? "push" : "pull") }, svg);
+      if (e.forced) sv("path", { d: `M${X},${mid - hh - 11}L${X + 4.5},${mid - hh - 6.5}L${X},${mid - hh - 2}L${X - 4.5},${mid - hh - 6.5}Z`, class: "mk destructive" }, svg);
+    }
+    tip(mark, tipText + "\n(click: show its commits)");
+    mark.addEventListener("click", () => { const d = document.getElementById("ev-" + i); if (!d) return;
+      d.open = true; d.classList.remove("flash"); void d.offsetWidth; d.classList.add("flash"); d.scrollIntoView({ block: "center", behavior: "smooth" }); });
+  });
+  chart.append(svg);
+  const LIMIT = 30, rows = evs.map((e, i) => {
+    const d = el("details", "ev"); d.id = "ev-" + i;
+    const sm = el("summary");
+    const count = e.failed ? el("span", "bad", "✗ failed") :
+      el("span", null, `${e.n} commit${e.n === 1 ? "" : "s"}${e.forced ? ` · force, dropped ${e.dropped}` : ""}`);
+    sm.append(el("span", "m", hm(e.t * 1000)), el("span", "dir", syncLabel(e)), el("span", "ref", e.ref), count, el("span", "m by", who(e)));
+    d.append(sm);
+    const ol = el("ol");
+    if (e.failed) ol.append(el("li", null, e.error || e.argv || "push failed"));
+    for (const [sha, subj] of e.commits) { const li = el("li"); li.append(el("span", "sha", sha), el("span", null, subj)); ol.append(li); }
+    if (e.n > e.commits.length) ol.append(el("li", "m", `… and ${e.n - e.commits.length} more`));
+    if (e.old) { const li = el("li", "m"); li.append(el("span", "sha", "range"), el("span", null, `${e.old.slice(0, 8)}..${e.new.slice(0, 8)}`)); ol.append(li); }
+    d.append(ol);
+    return d;
+  });
+  const days = {}; rows.forEach((r, i) => { (days[dayKey(evs[i].t * 1000)] ||= []).push(r); });
+  let shown = 0;
+  for (const [k, rs] of Object.entries(days)) {
+    list.append(el("div", "evday", fmtDay(k)));
+    for (const r of rs) { if (shown++ >= LIMIT) r.hidden = true; list.append(r); }
+  }
+  if (shown > LIMIT) {
+    const b = el("button", "linkbtn more", `Show all ${shown} events`);
+    b.onclick = () => { list.querySelectorAll("details[hidden]").forEach(d => d.hidden = false); b.remove(); };
+    list.append(b);
+  }
 }
 
 function opRow(r) {
@@ -525,14 +631,14 @@ function render() {
   renderRepos(); renderCats();
   const rows = base();
   renderStats(S.day ? rows.filter(r => r._d === S.day) : rows);
-  renderJourney(); renderDays(rows);
+  renderJourney(); renderSync(); renderDays(rows);
   const all = ROWS.filter(r => r.repo === S.repo);
   $("meta").textContent = `${ROWS.length.toLocaleString()} git ops across ${REPOS.length} repos` +
     (all.length ? ` · ${S.repo}: ${fmtDay(all[0]._d)} → ${fmtDay(all[all.length - 1]._d)}` : "") +
     (DATA && DATA.generated ? ` · built ${new Date(DATA.generated).toLocaleString()}` : "");
 }
 
-let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(renderJourney, 150); });
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { renderJourney(); renderSync(); }, 150); });
 window.addEventListener("hashchange", () => { const r = repoFromHash(); if (r && r !== S.repo) { S.repo = r; S.day = null; S.shown = 5; render(); } });
 $("failed").onclick = () => { S.failed = !S.failed; render(); };
 let qt; $("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim().toLowerCase(); render(); }, 150); };
