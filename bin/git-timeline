@@ -26,6 +26,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import Counter
@@ -39,7 +40,12 @@ CLAUDE = os.path.join(os.path.expanduser("~"), ".claude")
 
 
 def read_log(path):
-    rows = []
+    """Rows of the log, with `{"id", "patch"}` lines merged into the row they name.
+
+    The log is append-only; a patch is how a later backfill adds a field (the
+    commits a call made) to a row written before that field existed.
+    """
+    rows, patches = [], []
     try:
         with open(path, encoding="utf-8") as fh:
             for line in fh:
@@ -48,9 +54,13 @@ def read_log(path):
                 except ValueError:
                     continue            # a torn line from a killed writer
                 if isinstance(r, dict) and r.get("id"):
-                    rows.append(r)
+                    (patches if "patch" in r else rows).append(r)
     except FileNotFoundError:
         pass
+    by_id = {r["id"]: r for r in rows}
+    for p in patches:
+        if p["id"] in by_id and isinstance(p["patch"], dict):
+            by_id[p["id"]].update(p["patch"])
     return rows
 
 
@@ -100,23 +110,31 @@ def scan(path):
 
 
 def backfill(args):
-    seen = {r["id"] for r in read_log(args.log)}
-    new = []
+    seen = {r["id"]: r for r in read_log(args.log)}
+    new, patches = [], []
     for path in transcripts(args.projects):
         sub = os.sep + "subagents" + os.sep in path
         for e, b, res in scan(path):
             ok = None if res is None else not res.get("is_error", False)
             err = _text(res.get("content")).strip() if res is not None and not ok else None
             agent = e.get("agentId") or (os.path.basename(path)[:-6].replace("agent-", "") if sub else None)
+            made = git_ops.made_commits(_text(res.get("content"))) if ok else []
             rows = git_ops.rows_for(b["input"]["command"], e.get("cwd") or "/", rid=b.get("id"),
                                     ts=e.get("timestamp"), session=e.get("sessionId"), agent=agent,
-                                    ok=ok, error=err, src="backfill", branch_hint=e.get("gitBranch"))
+                                    ok=ok, error=err, src="backfill", branch_hint=e.get("gitBranch"),
+                                    made=made or None)
             for r in rows:
-                if r["id"] not in seen:
-                    seen.add(r["id"])
+                old = seen.get(r["id"])
+                if old is None:
+                    seen[r["id"]] = r
                     new.append(r)
+                elif r.get("made") and not old.get("made"):
+                    old["made"] = r["made"]
+                    patches.append({"id": r["id"], "patch": {"made": r["made"]}})
     new.sort(key=lambda r: r["ts"] or "")
-    git_ops.append(new, args.log)
+    git_ops.append(new + patches, args.log)
+    if patches:
+        print(f"backfill: {len(patches)} earlier row(s) now name the commit they made")
     by_repo = Counter(r["repo"] for r in new)
     print(f"backfill: {len(new)} new git op(s) -> {args.log}")
     for repo, n in by_repo.most_common():
@@ -163,21 +181,22 @@ def pull_requests(root):
 
 
 def repo_graph(root, prs=True):
-    """The commit DAG the journey view draws: [sha, parents, unix time, refs, subject] per commit.
+    """The commit DAG the journey view draws: [sha, parents, unix time, refs, subject, by_github].
 
     Branches, remote branches and tags, not `--all`: that would drag every stash
     in as a branch. Worktree branches are ordinary branches, so they come along.
     """
     out = _git(root, "log", "--branches", "--remotes", "--tags", "HEAD", "--date-order",
-               "--format=%H%x1f%P%x1f%ct%x1f%D%x1f%s%x1e")
+               "--format=%H%x1f%P%x1f%ct%x1f%D%x1f%s%x1f%ce%x1e")
     commits = []
     for rec in out.split("\x1e"):
         f = rec.strip("\n").split("\x1f")
-        if len(f) < 5:
+        if len(f) < 6:
             continue
         refs = [r.replace("HEAD -> ", "") for r in f[3].split(", ")
                 if r and r != "HEAD" and not r.endswith("/HEAD")]
-        commits.append([f[0][:12], [x[:12] for x in f[1].split()], int(f[2]), refs, f[4][:140]])
+        commits.append([f[0][:12], [x[:12] for x in f[1].split()], int(f[2]), refs, f[4][:140],
+                        1 if f[5].endswith("noreply@github.com") else 0])
     names = {r for c in commits for r in c[3]}
     default = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").strip().split("/", 1)[-1]
     if default not in names and "origin/" + default not in names:
@@ -185,7 +204,7 @@ def repo_graph(root, prs=True):
     return {"commits": commits, "default": default, "prs": pull_requests(root) if prs and commits else []}
 
 
-def sync_events(root, default=None, keep=40):
+def sync_events(root, default=None, keep=200):
     """Every push and every fetch/pull the remote-tracking refs remember, with the commits each carried.
 
     Git's own record, not a parse of command output: each update to
@@ -230,16 +249,96 @@ def sync_events(root, default=None, keep=40):
             b = base_at(t) if ref != base_ref else None
             not_base = [f"^{b}"] if b and b != h else []
             rng = ([f"{old}..{h}"] if old else [h]) + not_base
-            commits = [c.split("\x1f") for c in _git(root, "log", "--format=%h%x1f%s%x1f%ct", *rng, "--").splitlines()]
+            commits = [c.split("\x1f") for c in _git(root, "log", "--format=%H%x1f%s%x1f%ct", *rng, "--").splitlines()]
             commits = [c for c in commits if len(c) == 3]
             dropped = int(_git(root, "rev-list", "--count", f"{h}..{old}", *not_base).strip() or 0) if old else 0
             if not commits and not dropped:
                 continue
             events.append({"t": t, "ref": ref[len("refs/remotes/"):], "how": how, "old": old[:12] if old else None,
                            "new": h[:12], "n": len(commits), "forced": dropped > 0, "dropped": dropped,
-                           "commits": [[c[0], c[1][:120], int(c[2])] for c in commits[:keep]]})
+                           "commits": [[c[0][:12], c[1][:120], int(c[2])] for c in commits[:keep]]})
     events.sort(key=lambda e: e["t"], reverse=True)
     return events
+
+
+def _msg_of(argv):
+    """The `-m` message of a commit command line, if it has one."""
+    try:
+        toks = shlex.split(argv or "")
+    except ValueError:
+        return None
+    for i, t in enumerate(toks):
+        if t.startswith("--message="):
+            return t.split("=", 1)[1]
+        if (t == "--message" or re.fullmatch(r"-[a-zA-Z]*m", t)) and i + 1 < len(toks):
+            return toks[i + 1]
+        if re.fullmatch(r"-m.+", t):
+            return t[2:]
+    return None
+
+
+def commit_authors(graph, rows, window=300):
+    """Which chat made each commit: {sha: {s: session, a: subagent, how, alt}}.
+
+    Strongest evidence first. `exact` — the op's own output or the worktree's
+    HEAD named the sha. `message` — a `-m` whose first line is the subject.
+    `time` — the only chat that ran a commit-creating op within `window`
+    seconds. `ambiguous` — several did; the nearest is named and `alt` says how
+    many others were in the running. Commits GitHub made (PR merges on the site)
+    are skipped, and no op in range means no entry: made outside any logged chat.
+    """
+    ops = [(_epoch(r.get("ts")), r) for r in rows
+           if r.get("sub") in git_ops.CREATORS and r.get("ok") is not False]
+    ops = [(t, r) for t, r in ops if t is not None]
+    exact = {sha[:7]: r for _, r in ops for sha in r.get("made") or []}
+    out = {}
+    for c in graph["commits"]:
+        sha, ct, subj, by_github = c[0], c[2], c[4], len(c) > 5 and c[5]
+        if by_github:
+            continue
+        r = exact.get(sha[:7])
+        if r:
+            out[sha] = {"s": r.get("session"), "a": r.get("agent"), "how": "exact"}
+            continue
+        near = [(abs(t - ct), r) for t, r in ops if abs(t - ct) <= window]
+        if not near:
+            continue
+        said = [(d, r) for d, r in near
+                if (m := _msg_of(r.get("argv"))) and m.strip().splitlines()[0][:140].strip() == subj.strip()]
+        if said:
+            r = min(said, key=lambda x: x[0])[1]
+            out[sha] = {"s": r.get("session"), "a": r.get("agent"), "how": "message"}
+            continue
+        d, r = min(near, key=lambda x: x[0])
+        others = {x.get("session") for _, x in near} - {r.get("session")}
+        out[sha] = {"s": r.get("session"), "a": r.get("agent"), "how": "ambiguous" if others else "time",
+                    "alt": len(others)}
+    return out
+
+
+def session_titles(projects):
+    """{session id: chat title}: the latest custom title, else the AI title, else the last prompt."""
+    found = {}
+    for path in transcripts(projects):
+        if os.sep + "subagents" + os.sep in path:
+            continue
+        try:
+            fh = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                if '"custom-title"' not in line and '"ai-title"' not in line and '"last-prompt"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                val = d.get("customTitle") or d.get("aiTitle") or d.get("lastPrompt")
+                if d.get("sessionId") and val:
+                    found.setdefault(d["sessionId"], {})[d.get("type")] = val     # later lines win
+    return {sid: (b.get("custom-title") or b.get("ai-title") or b.get("last-prompt")).strip()[:90]
+            for sid, b in found.items()}
 
 
 def _epoch(ts):
@@ -290,8 +389,9 @@ def html(args):
         rows.append(slim)
     rows.sort(key=lambda r: r["ts"])
     repos = Counter(r["repo"] for r in rows)
+    full = read_log(args.log)
     roots = {}
-    for r in read_log(args.log):
+    for r in full:
         if r.get("root"):
             roots.setdefault(r["repo"], Counter())[r["root"]] += 1
     graphs = {}
@@ -301,10 +401,14 @@ def html(args):
             graphs[repo] = repo_graph(root, prs=not args.no_prs)
             graphs[repo]["sync"] = attribute(sync_events(root, graphs[repo]["default"]),
                                              [r for r in rows if r["repo"] == repo])
+            graphs[repo]["authors"] = commit_authors(graphs[repo], [r for r in full if r.get("repo") == repo])
+    sessions = {r.get("session") for r in rows}
+    titles = {k: v for k, v in session_titles(args.projects).items() if k in sessions}
     default = args.repo or _here_repo()
     if default not in repos:
         default = repos.most_common(1)[0][0] if repos else None
-    data = json.dumps({"rows": rows, "graphs": graphs, "defaultRepo": default, "generated": git_ops.now()},
+    data = json.dumps({"rows": rows, "graphs": graphs, "titles": titles, "defaultRepo": default,
+                       "generated": git_ops.now()},
                       ensure_ascii=False, separators=(",", ":"))
     # `</` inside a <script> block ends it, whatever JSON thinks; commit messages carry it.
     data = data.replace("<", "\\u003c")

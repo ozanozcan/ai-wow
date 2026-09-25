@@ -80,16 +80,23 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
 .ev { border-bottom: 1px solid var(--line); }
 .evday { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em;
   padding: 12px 2px 4px; border-bottom: 1px solid var(--line); }
-.ev > summary { display: grid; grid-template-columns: 64px 74px minmax(0, 1fr) 150px 110px; gap: 10px; padding: 6px 2px;
+.ev > summary { display: grid; grid-template-columns: 64px 74px minmax(0, 1fr) 150px 220px; gap: 10px; padding: 6px 2px;
   cursor: pointer; list-style: none; align-items: baseline; font-size: 13px; }
 .ev > summary::-webkit-details-marker { display: none; }
 .ev > summary .m { color: var(--muted); font-size: 12px; }
+.ev > summary .by, .chat > summary .c2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev.flash > summary { animation: flash 1.4s ease-out; }
 .ev .dir { font-weight: 500; }
 .ev .bad { color: var(--fail); }
 .ev ol { margin: 0 0 8px; padding: 0 0 0 150px; list-style: none; font-size: 12.5px; }
 .ev li { padding: 2px 0; display: flex; gap: 10px; }
 .ev li .sha { color: var(--muted); min-width: 64px; }
+.chat > summary { grid-template-columns: minmax(0, 1fr) 90px 120px 150px 64px; }
+.chat > summary .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat li .how { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.chat li .pushed { margin-left: auto; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.chat li .pushed.no { color: var(--text); }
+.ev li .subj { min-width: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .day { margin-bottom: 18px; }
@@ -138,6 +145,9 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   .ev > summary { grid-template-columns: 52px 1fr auto; }
   .ev > summary .ref, .ev > summary .by { display: none; }
   .ev ol { padding-left: 8px; }
+  .chat > summary { grid-template-columns: 1fr auto; }
+  .chat > summary .m, .chat > summary .c2 { display: none; }
+  .ev li { flex-wrap: wrap; }
   .op .argv { grid-column: 1 / -1; order: 5; }
 }
 </style>
@@ -166,6 +176,10 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
     <div id="syncchart"></div>
     <div id="synclist"></div>
   </div>
+  <div class="card" id="chatcard">
+    <div class="dayhead"><h2>Chats</h2><span class="sub" id="chatsum"></span></div>
+    <div id="chatlist"></div>
+  </div>
   <div id="days"></div>
 </div>
 <script>
@@ -180,6 +194,8 @@ const hm = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.ge
 const hms = t => { const d = new Date(t); return `${hm(t)}:${pad(d.getSeconds())}`; };
 const fmtDay = k => new Date(k + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const shortSes = s => (s || "unknown").slice(0, 8);
+const TITLES = (DATA && DATA.titles) || {};
+const chatName = s => (s && TITLES[s]) || shortSes(s);
 
 const ROWS = (DATA && DATA.rows || []).map((r, i) => Object.assign(r, { _i: i, _t: Date.parse(r.ts), _d: dayKey(Date.parse(r.ts)),
   _hay: [r.sub, r.argv, r.cmd, r.branch, r.worktree, r.error, r.session].filter(Boolean).join(" ").toLowerCase() }));
@@ -360,7 +376,7 @@ function renderZoom() {
   const box = $("zoom"); box.replaceChildren();
   for (const [k] of SPANS) {
     const b = el("button", "chip sm", k); b.setAttribute("aria-pressed", String(S.zoom === k));
-    b.onclick = () => { S.zoom = k; save("zoom", k); renderZoom(); renderJourney(); renderSync(); };
+    b.onclick = () => { S.zoom = k; save("zoom", k); renderZoom(); renderJourney(); renderSync(); renderChats(); };
     box.append(b);
   }
 }
@@ -442,7 +458,8 @@ function renderJourney() {
     for (const c of ch.commits) {
       if (c.t < t0 - 864e5 || c.t > t1 + 864e5) continue;
       const dot = tip(sv("circle", { cx: x(c.t), cy: Y, r: 4, class: "jc" + (c.parents.length > 1 ? " merge" : "") }, gDot),
-        `${c.sha.slice(0, 8)}  ${c.s}\n${when(c.t)}${c.refs.length ? "\n" + c.refs.join(", ") : ""}\n(click: show that day's sessions)`);
+        `${c.sha.slice(0, 8)}  ${c.s}\n${when(c.t)}${c.refs.length ? "\n" + c.refs.join(", ") : ""}\n` +
+        `${madeBy((g.authors || {})[c.sha])}\n${pushedBy(S.repo, c.sha)}\n(click: show that day's sessions)`);
       dot.addEventListener("click", () => { S.day = dayKey(c.t); S.shown = 5; render(); });
     }
     for (const m of ch.marks) {
@@ -461,7 +478,21 @@ function renderJourney() {
 }
 
 
-const who = e => e.session ? `session ${shortSes(e.session)}${e.agent ? " (subagent)" : ""}` : "outside agents";
+const who = e => e.session ? `${chatName(e.session)}${e.agent ? " (subagent)" : ""}` : "outside agents";
+const HOW = { exact: "", message: "matched by message", time: "matched by time", ambiguous: "ambiguous" };
+const madeBy = a => !a ? "made outside agents" : `made by ${chatName(a.s)}${a.a ? " (subagent)" : ""}` +
+  (a.how === "exact" ? "" : a.how === "ambiguous" ? ` — ambiguous, ${a.alt} other chat${a.alt === 1 ? "" : "s"} committed then` : ` — ${HOW[a.how]}`);
+// First push that carried each commit: {sha: event}. The sync list is newest first, so walk it backwards.
+const PUSHED = {};
+function pushedMap(repo) {
+  if (PUSHED[repo]) return PUSHED[repo];
+  const m = {}, evs = (GRAPHS[repo] && GRAPHS[repo].sync) || [];
+  for (let i = evs.length - 1; i >= 0; i--) { const e = evs[i];
+    if (e.how === "push" && !e.failed) for (const [sha] of e.commits) if (!m[sha]) m[sha] = e; }
+  return (PUSHED[repo] = m);
+}
+const pushedBy = (repo, sha) => { const e = pushedMap(repo)[sha];
+  return e ? `pushed by ${who(e)} · ${when(e.t * 1000)}` : "not pushed (or pushed over 90 days ago)"; };
 function syncLabel(e) {
   return e.failed ? "↑ push" : e.how === "push" ? "↑ push" : `↓ ${e.how}`;
 }
@@ -511,11 +542,13 @@ function renderSync() {
     const sm = el("summary");
     const count = e.failed ? el("span", "bad", "✗ failed") :
       el("span", null, `${e.n} commit${e.n === 1 ? "" : "s"}${e.forced ? ` · force, dropped ${e.dropped}` : ""}`);
-    sm.append(el("span", "m", hm(e.t * 1000)), el("span", "dir", syncLabel(e)), el("span", "ref", e.ref), count, el("span", "m by", who(e)));
+    const by = el("span", "m by", who(e)); by.title = who(e);
+    sm.append(el("span", "m", hm(e.t * 1000)), el("span", "dir", syncLabel(e)), el("span", "ref", e.ref), count, by);
     d.append(sm);
     const ol = el("ol");
     if (e.failed) ol.append(el("li", null, e.error || e.argv || "push failed"));
-    for (const [sha, subj] of e.commits) { const li = el("li"); li.append(el("span", "sha", sha), el("span", null, subj)); ol.append(li); }
+    for (const [sha, subj] of e.commits) { const li = el("li"), a = (g.authors || {})[sha];
+      li.append(el("span", "sha", sha.slice(0, 8)), el("span", "subj", subj), el("span", "how", madeBy(a))); ol.append(li); }
     if (e.n > e.commits.length) ol.append(el("li", "m", `… and ${e.n - e.commits.length} more`));
     if (e.old) { const li = el("li", "m"); li.append(el("span", "sha", "range"), el("span", null, `${e.old.slice(0, 8)}..${e.new.slice(0, 8)}`)); ol.append(li); }
     d.append(ol);
@@ -534,6 +567,48 @@ function renderSync() {
   }
 }
 
+
+// Every chat that made or pushed a commit in view: what it made, and who pushed each of those.
+function renderChats() {
+  const list = $("chatlist"), sum = $("chatsum"); list.replaceChildren(); sum.textContent = "";
+  const g = GRAPHS[S.repo];
+  if (!g || !S.win) { list.append(el("div", "empty", "No commit history for this repo.")); return; }
+  const [t0, t1] = S.win, A = g.authors || {}, OUT = "\u0000outside";
+  const chats = {}, get = k => chats[k] ||= { made: [], pushes: 0, pushedN: 0, last: 0 };
+  for (const [sha, , t, , subj, gh] of g.commits) {
+    if (t * 1000 < t0 || t * 1000 > t1) continue;
+    const a = A[sha], c = get(a ? a.s : OUT);
+    c.made.push({ sha, t: t * 1000, subj, a, gh }); c.last = Math.max(c.last, t * 1000);
+  }
+  for (const e of g.sync || []) {
+    if (e.how !== "push" || e.failed || e.t * 1000 < t0 || e.t * 1000 > t1) continue;
+    const c = get(e.session || OUT); c.pushes++; c.pushedN += e.n; c.last = Math.max(c.last, e.t * 1000);
+  }
+  const keys = Object.keys(chats).sort((a, b) => (a === OUT) - (b === OUT) || chats[b].last - chats[a].last);
+  const exact = Object.values(A).filter(a => a.how === "exact" || a.how === "message").length;
+  sum.textContent = `${keys.filter(k => k !== OUT).length} chat(s) in view · ${exact} of ${Object.keys(A).length} attributed commits proven by sha or message`;
+  if (!keys.length) { list.append(el("div", "empty", "No commits or pushes in this time span.")); return; }
+  for (const k of keys) {
+    const c = chats[k], d = el("details", "ev chat"), sm = el("summary");
+    const title = el("span", "t", k === OUT ? "Outside agents (you, an IDE, GitHub)" : chatName(k));
+    if (k !== OUT) title.title = `session ${k}`;
+    sm.append(title, el("span", "m", k === OUT ? "" : shortSes(k)), el("span", null, `${c.made.length} commit${c.made.length === 1 ? "" : "s"} made`),
+      el("span", "c2", `${c.pushes} push${c.pushes === 1 ? "" : "es"} · ${c.pushedN} commits`), el("span", "m", hm(c.last)));
+    d.append(sm);
+    const ol = el("ol");
+    for (const m of c.made.sort((a, b) => b.t - a.t)) {
+      const li = el("li"), p = pushedMap(S.repo)[m.sha];
+      li.append(el("span", "sha", m.sha.slice(0, 8)), el("span", "subj", m.subj));
+      if (m.a && m.a.how !== "exact") li.append(el("span", "how", m.a.how === "ambiguous" ? `ambiguous (+${m.a.alt})` : HOW[m.a.how]));
+      if (m.gh) li.append(el("span", "how", "made on GitHub"));
+      li.append(el("span", "pushed" + (p ? "" : " no"), p ? `pushed by ${p.session === k ? "this chat" : who(p)} · ${hm(p.t * 1000)}` : "not pushed"));
+      ol.append(li);
+    }
+    if (!c.made.length) ol.append(el("li", "m", "Made no commits in view — only pushed others' work."));
+    d.append(ol); list.append(d);
+  }
+}
+
 function opRow(r) {
   const row = el("div", "op"); row.id = "op-" + r._i;
   const badge = el("span", "badge " + r.cat, r.sub); badge.style.background = CAT_VAR(r.cat);
@@ -544,7 +619,8 @@ function opRow(r) {
   const st = r.ok === false ? el("span", "st bad", "✗ failed") : r.ok ? el("span", "st", "✓") : el("span", "st", "?");
   if (r.ok == null) st.title = "exit status not recorded";
   const br = el("span", "br", r.branch || "—"); if (r.branch) br.title = r.branch;
-  row.append(el("time", null, hms(r._t)), el("span", "ses", shortSes(r.session)), badge, argv, br, st);
+  const ses = el("span", "ses", shortSes(r.session)); ses.title = chatName(r.session);
+  row.append(el("time", null, hms(r._t)), ses, badge, argv, br, st);
   if (r.cmd) row.title = r.cmd;
   return row;
 }
@@ -576,8 +652,8 @@ function renderDay(k, list, laneBox) {
   for (const s of sessions) {
     const mine = list.filter(r => r.session === s);
     const subs = new Set(mine.filter(r => r.agent).map(r => r.agent)).size;
-    const lab = el("div", "lab", `${shortSes(s)} · ${mine.length}${subs ? ` · ${subs} sub` : ""}`);
-    lab.title = `session ${s}` + (mine[0].worktree ? ` — worktree ${mine[0].worktree}` : "");
+    const lab = el("div", "lab", `${chatName(s)} · ${mine.length}${subs ? ` · ${subs} sub` : ""}`);
+    lab.title = `${chatName(s)}\nsession ${s}` + (mine[0].worktree ? ` — worktree ${mine[0].worktree}` : "");
     const strip = el("div", "strip"); strip.style.setProperty("--tick", tick);
     for (const r of mine) {
       const d = el("button", "dot" + (r.ok === false ? " failed" : "") + (r.cat === "destructive" ? " destructive" : ""));
@@ -631,14 +707,14 @@ function render() {
   renderRepos(); renderCats();
   const rows = base();
   renderStats(S.day ? rows.filter(r => r._d === S.day) : rows);
-  renderJourney(); renderSync(); renderDays(rows);
+  renderJourney(); renderSync(); renderChats(); renderDays(rows);
   const all = ROWS.filter(r => r.repo === S.repo);
   $("meta").textContent = `${ROWS.length.toLocaleString()} git ops across ${REPOS.length} repos` +
     (all.length ? ` · ${S.repo}: ${fmtDay(all[0]._d)} → ${fmtDay(all[all.length - 1]._d)}` : "") +
     (DATA && DATA.generated ? ` · built ${new Date(DATA.generated).toLocaleString()}` : "");
 }
 
-let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { renderJourney(); renderSync(); }, 150); });
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { renderJourney(); renderSync(); renderChats(); }, 150); });
 window.addEventListener("hashchange", () => { const r = repoFromHash(); if (r && r !== S.repo) { S.repo = r; S.day = null; S.shown = 5; render(); } });
 $("failed").onclick = () => { S.failed = !S.failed; render(); };
 let qt; $("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim().toLowerCase(); render(); }, 150); };

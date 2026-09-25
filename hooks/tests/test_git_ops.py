@@ -86,6 +86,13 @@ check("push --force is destructive", git_ops.category("push", ["--force"]) == "d
 check("--help on a destructive command is read", git_ops.category("filter-branch", ["--help"]) == "read")
 check("clean -fd is destructive", git_ops.category("clean", ["-fd"]) == "destructive")
 
+print("commits made")
+check("commit output names the sha", git_ops.made_commits("[main 351c0a9] git-ops: log it\n 9 files changed") == ["351c0a9"])
+check("root commit and detached HEAD forms", git_ops.made_commits(
+    "[main (root-commit) abc1234] init\n[detached HEAD 1234567f] wip") == ["abc1234", "1234567f"])
+check("push/fetch brackets are not commits", git_ops.made_commits(
+    " ! [rejected]        main -> main (fetch first)\n * [new branch]      x -> x") == [])
+
 # --- repo resolution ---------------------------------------------------------
 
 print("repo resolution")
@@ -135,6 +142,21 @@ fire({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id"
 last = json.loads(open(log).read().splitlines()[-1])
 check("failure rows are ok=false with the error", last["ok"] is False and last["error"].startswith("Exit code 1")
       and last["agent"] == "ag1", str(last))
+subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "quiet one"],
+               cwd=main, check=True)
+head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=main, capture_output=True, text=True).stdout.strip()
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_Q",
+      "tool_input": {"command": "git commit -q --allow-empty -m 'quiet one'"}, "tool_response": {"stdout": "", "stderr": ""}})
+last = json.loads(open(log).read().splitlines()[-1])
+check("a quiet commit is tied to the HEAD it made", last.get("made") and head.startswith(last["made"][0]), str(last))
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_L",
+      "tool_input": {"command": "git commit -m 'loud one'"}, "tool_response": {"stdout": "[trunk 89abcde] loud one\n", "stderr": ""}})
+last = json.loads(open(log).read().splitlines()[-1])
+check("a commit's printed sha is recorded", last.get("made") == ["89abcde"], str(last))
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_R",
+      "tool_input": {"command": "git status"}, "tool_response": {"stdout": "", "stderr": ""}})
+last = json.loads(open(log).read().splitlines()[-1])
+check("a read op records no commit", "made" not in last, str(last))
 before = len(open(log).read().splitlines())
 fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s1", "cwd": main,
       "tool_use_id": "toolu_C", "tool_input": {"command": "ls; echo 'git push'"}})
@@ -352,6 +374,58 @@ check("a push is credited to the nearest push op within the window", by_t[1_000_
 check("a fetch is never credited to a push op", "session" not in by_t[2_000_000], str(by_t[2_000_000]))
 check("a failed push becomes its own event", by_t.get(3_000_000, {}).get("failed") is True
       and by_t[3_000_000]["session"] == "failer", str(by_t.get(3_000_000)))
+
+# --- which chat made / pushed which commit ------------------------------------
+
+print("chat attribution")
+iso2 = lambda t: __import__("datetime").datetime.fromtimestamp(t, __import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+g = {"commits": [["aaaaaaaaaaaa", [], 1000, [], "exact one", 0], ["bbbbbbbbbbbb", [], 2000, [], "fix: the parser", 0],
+                 ["cccccccccccc", [], 3000, [], "lonely", 0], ["dddddddddddd", [], 4000, [], "crowded", 0],
+                 ["eeeeeeeeeeee", [], 5000, [], "Merge pull request #9", 1], ["ffffffffffff", [], 9000, [], "by hand", 0]]}
+ops = [{"ts": iso2(1010), "sub": "commit", "session": "S-exact", "argv": "git commit -q -F msg", "made": ["aaaaaaa"]},
+       {"ts": iso2(1005), "sub": "commit", "session": "S-decoy", "argv": "git commit -q -F msg"},
+       {"ts": iso2(2100), "sub": "commit", "session": "S-msg", "argv": "git commit -m 'fix: the parser'"},
+       {"ts": iso2(2001), "sub": "commit", "session": "S-near", "argv": "git commit -m 'something else'"},
+       {"ts": iso2(3030), "sub": "commit", "session": "S-time", "argv": "git commit -F m"},
+       {"ts": iso2(4010), "sub": "commit", "session": "S-a", "argv": "git commit -F m"},
+       {"ts": iso2(4020), "sub": "commit", "session": "S-b", "argv": "git commit -F m"},
+       {"ts": iso2(5001), "sub": "commit", "session": "S-gh", "argv": "git commit -F m"},
+       {"ts": iso2(9001), "sub": "commit", "session": "S-failed", "argv": "git commit -F m", "ok": False}]
+au = timeline.commit_authors(g, ops)
+check("printed/HEAD sha beats a closer-in-time op", au.get("aaaaaaaaaaaa", {}).get("s") == "S-exact"
+      and au["aaaaaaaaaaaa"]["how"] == "exact", str(au.get("aaaaaaaaaaaa")))
+check("a -m message matching the subject beats the nearest op", au.get("bbbbbbbbbbbb", {}).get("s") == "S-msg"
+      and au["bbbbbbbbbbbb"]["how"] == "message", str(au.get("bbbbbbbbbbbb")))
+check("one chat committing nearby is credited by time", au.get("cccccccccccc", {}).get("how") == "time"
+      and au["cccccccccccc"]["s"] == "S-time", str(au.get("cccccccccccc")))
+check("two chats committing nearby is flagged ambiguous", au.get("dddddddddddd", {}).get("how") == "ambiguous"
+      and au["dddddddddddd"]["alt"] == 1, str(au.get("dddddddddddd")))
+check("a commit GitHub made is never credited to a chat", "eeeeeeeeeeee" not in au, str(au.get("eeeeeeeeeeee")))
+check("a failed commit op credits nothing", "ffffffffffff" not in au, str(au.get("ffffffffffff")))
+check("-qm and --message= forms are read", timeline._msg_of("git commit -qm 'a b'") == "a b"
+      and timeline._msg_of("git commit --message='x y'") == "x y" and timeline._msg_of("git commit -F f") is None)
+
+tp = os.path.join(tmp, "titles", "-p")
+os.makedirs(os.path.join(tp, "s1", "subagents"))
+with open(os.path.join(tp, "s1.jsonl"), "w") as fh:
+    for d in ({"type": "ai-title", "aiTitle": "auto name", "sessionId": "s1"},
+              {"type": "custom-title", "customTitle": "old name", "sessionId": "s1"},
+              {"type": "custom-title", "customTitle": "renamed", "sessionId": "s1"}):
+        fh.write(json.dumps(d) + "\n")
+with open(os.path.join(tp, "s2.jsonl"), "w") as fh:
+    fh.write(json.dumps({"type": "last-prompt", "lastPrompt": "fix the login bug please", "sessionId": "s2"}) + "\n")
+    fh.write(json.dumps({"type": "ai-title", "aiTitle": "Fix login", "sessionId": "s2"}) + "\n")
+with open(os.path.join(tp, "s1", "subagents", "agent-x.jsonl"), "w") as fh:
+    fh.write(json.dumps({"type": "custom-title", "customTitle": "subagent noise", "sessionId": "s1"}) + "\n")
+ti = timeline.session_titles(os.path.dirname(tp))
+check("the latest custom title wins", ti.get("s1") == "renamed", str(ti))
+check("an ai title beats the last prompt", ti.get("s2") == "Fix login", str(ti))
+
+plog = os.path.join(tmp, "patch.jsonl")
+git_ops.append([{"id": "t1:0", "sub": "commit", "ts": "x"}], plog)
+git_ops.append([{"id": "t1:0", "patch": {"made": ["abc1234"]}}], plog)
+check("a patch line merges into its row", timeline.read_log(plog) == [{"id": "t1:0", "sub": "commit", "ts": "x",
+                                                                       "made": ["abc1234"]}], str(timeline.read_log(plog)))
 
 os.chmod(os.path.join(tmp, "ro"), 0o700)
 print(f"\n{len(FAILURES)} failure(s)")

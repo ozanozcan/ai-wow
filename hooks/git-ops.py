@@ -44,6 +44,33 @@ READ = {"status", "diff", "log", "show", "rev-parse", "ls-files", "ls-tree", "bl
         "whatchanged", "var", "help", "version", "range-diff", "difftool", "show-branch",
         "check-ref-format", "verify-commit", "fsck"}
 REMOTE = {"fetch", "pull", "push", "clone", "ls-remote"}
+# Subcommands that can create a commit. Their rows carry `made` — the shas they created — so the
+# timeline can say which chat made which commit without guessing from timestamps.
+CREATORS = {"commit", "merge", "cherry-pick", "revert", "pull", "am", "rebase"}
+MADE = re.compile(r"^\[[^\]\n]* ([0-9a-f]{7,40})\] ", re.M)
+
+
+def made_commits(text):
+    """Shas git reports creating: `[main 351c0a9] subject`, `[main (root-commit) abc1234] ...`."""
+    return MADE.findall(text or "")
+
+
+def head_if_fresh(d, within=20):
+    """HEAD of `d` when its newest reflog entry is a commit made in the last `within` seconds.
+
+    `git commit -q` prints nothing, so this is how a quiet commit gets its sha. The
+    worktree's own HEAD reflog, not the branch's: a peer committing in another
+    worktree of the same repo cannot answer for this one.
+    """
+    try:
+        p = subprocess.run(["git", "-C", d, "log", "-g", "-1", "--date=unix", "--format=%H%x1f%gd%x1f%gs", "HEAD"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3, env=_GIT_ENV)
+        sha, gd, gs = p.stdout.strip().split("\x1f")
+        t = int(re.search(r"@\{(\d+)\}$", gd).group(1))
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return None
+    fresh = datetime.datetime.now(datetime.timezone.utc).timestamp() - t <= within
+    return sha[:12] if fresh and gs.startswith(("commit", "merge", "cherry-pick", "revert", "pull")) else None
 
 
 def _strip_heredocs(cmd):
@@ -253,8 +280,9 @@ def resolve_repo(d):
     return res
 
 
-def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None):
-    """The log rows for one Bash call. `branch_hint` is the transcript's branch for `cwd`."""
+def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None, made=None):
+    """The log rows for one Bash call. `branch_hint` is the transcript's branch for `cwd`;
+    `made` the shas the call created, recorded on its commit-creating rows."""
     rows = []
     cwd_repo = resolve_repo(cwd)["repo"] if branch_hint else None
     for i, op in enumerate(parse_git_ops(command, cwd)):
@@ -268,6 +296,8 @@ def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hi
                      "dir": op["dir"], "sub": op["sub"], "cat": category(op["sub"], op["args"]),
                      "argv": op["argv"], "command": command[:1000], "ok": ok,
                      "error": (error or "")[:300] or None, "src": src})
+        if made and op["sub"] in CREATORS:
+            rows[-1]["made"] = made
     return rows
 
 
@@ -310,11 +340,19 @@ def main():
         error = payload.get("error") if failed else None
         if failed and payload.get("is_interrupt"):
             error = "interrupted" + (f": {error}" if error else "")
-        rows = rows_for(command, payload.get("cwd") or os.getcwd(),
+        cwd = payload.get("cwd") or os.getcwd()
+        resp = payload.get("tool_response")
+        out = (resp.get("stdout", "") + "\n" + resp.get("stderr", "")) if isinstance(resp, dict) else str(resp or "")
+        made = [] if failed else made_commits(out)
+        if not failed and not made:
+            ops = [o for o in parse_git_ops(command, cwd) if o["sub"] in CREATORS]
+            fresh = head_if_fresh(ops[-1]["dir"]) if ops else None
+            made = [fresh] if fresh else []
+        rows = rows_for(command, cwd,
                         rid=payload.get("tool_use_id") or f"{session}@{ts}", ts=ts, session=session,
                         agent=payload.get("agent_id"), ok=not failed,
                         error=error if isinstance(error, str) else (json.dumps(error) if error else None),
-                        src="hook")
+                        src="hook", made=made or None)
         append(rows)
     except Exception:
         pass                        # a logger must never fail the tool call
