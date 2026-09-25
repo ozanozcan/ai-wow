@@ -160,7 +160,8 @@ The tiles count git operations for the repo, or for the focused day once you hav
 clicked one. Click a tile to list what it counts, right under the tiles: *Failed*
 lists every failed command with the chat that ran it, its error, and the last commit
 that chat had made in the repo before it (what it was working on); *Destructive*,
-*Commits*, *Pushes* and *Git ops* work the same way, and *Sessions* lists the chats.
+*Commits*, *Pushes* and *Git ops* work the same way, *~Tokens* lists the most expensive
+git ops first, and *Sessions* lists the chats with their estimated tokens.
 Click a row to jump to that command in its day's table. The category chips and the
 search box filter the tiles, their lists, the session timeline and the command table;
 the Journey, Push & pull and Chats ignore them.
@@ -222,7 +223,19 @@ Commits GitHub made itself (merging a PR on the website) are never credited to a
 ### Command table
 
 Every git command for the focused day, newest first: time, chat, operation, the
-command itself, branch, and whether it succeeded. A `?` status means the result was
+command itself, branch, estimated tokens, and whether it succeeded.
+
+The **~Tokens** figure estimates what a command cost its chat in context: the
+characters the command printed plus the command itself, divided by four (about one
+token per four characters of English or code). Whatever a command prints stays in the
+chat and is read again on every later turn, so a large `git diff` or a long `git log`
+is the expensive habit, and `git status` is nearly free. When one Bash call runs
+several commands (`git status && git diff`, or `cat notes.md && git log`), it hands back
+one output for all of them. Each git row then shows its even share, marked `*`, split
+across every command in the call, git or not, so nothing is counted twice and a file's
+text is not charged to git; hover it for the whole call's total. Click the **~Tokens** tile for the most expensive git ops
+first. It is an estimate of context, not your bill: billing is per model reply, and
+a reply can run several commands. A `?` status means the result was
 never recorded: the chat was still running when its transcript was read, or it was
 stopped mid-command.
 
@@ -235,6 +248,7 @@ stopped mid-command.
 | Did anything force-push or reset? | click the *Destructive* tile |
 | Why did a push fail? | click the *Failed* tile and read the error under the command |
 | Is my work on GitHub yet? | Chats card: *not pushed* next to a commit |
+| What is costing my chats the most tokens? | click the *~Tokens* tile |
 | What's that worktree for? | hover its dashed box in the Journey |
 
 ## What it cannot tell you
@@ -246,6 +260,9 @@ stopped mid-command.
   (`cd $DIR && git commit -q …`), which only the shell can expand. Those are matched by
   message or time and labelled so.
 - **Who ran a push outside any chat.** It shows as *outside agents*.
+- **Exact token counts.** The ~Tokens figures are estimated from text length, and a
+  Bash call's output is shared evenly among all the commands it ran. Operations logged before
+  sizes were recorded, and ones whose transcript is gone, show `—`.
 - **Repos that have moved or been deleted**, or a folder given as a shell variable.
   Those operations are listed under *(no repo)* rather than guessed into the wrong repo,
   and a moved repo has no Journey.

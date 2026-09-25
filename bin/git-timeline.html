@@ -50,7 +50,9 @@ button { font: inherit; color: inherit; }
 .chip[aria-pressed="true"] .n { color: inherit; opacity: .7; }
 .chip.cat[aria-pressed="false"] { opacity: .45; }
 .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 14px 0; }
+.stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin: 14px 0; }
+.op .tk { color: var(--label); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.op.head > :nth-child(6) { text-align: right; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
   text-align: left; cursor: pointer; font: inherit; color: var(--text); }
 .stat:hover, .stat:focus-visible { border-color: var(--text); outline: none; }
@@ -62,7 +64,7 @@ button { font: inherit; color: inherit; }
 .tl-ops .argv small { display: block; color: var(--label); font-family: var(--sans); }
 .tl-ops .argv .err { color: var(--fail); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tl-ops .argv .after { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-chats { grid-template-columns: minmax(0, 1fr) 70px 70px 90px 80px 150px; }
+.tl-chats { grid-template-columns: minmax(0, 1fr) 70px 70px 90px 80px 80px 150px; }
 .tl-head { cursor: default; color: var(--label); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
 .tl-head:hover { background: none; }
 .tl-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,7 +146,7 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
 .dot:hover, .dot:focus-visible { transform: scale(1.6); z-index: 2; outline: none; }
 .dot.destructive:hover, .dot.destructive:focus-visible { transform: rotate(45deg) scale(1.6); }
 .ops { margin-top: 10px; border-top: 1px solid var(--line); }
-.op { display: grid; grid-template-columns: 64px 78px 96px minmax(0, 1fr) 120px 60px; gap: 10px; padding: 5px 2px;
+.op { display: grid; grid-template-columns: 64px 78px 96px minmax(0, 1fr) 120px 64px 60px; gap: 10px; padding: 5px 2px;
   border-bottom: 1px solid var(--line); align-items: baseline; font-size: 13px; }
 .op.flash { animation: flash 1.4s ease-out; }
 @keyframes flash { from { background: var(--chip); } to { background: transparent; } }
@@ -167,12 +169,12 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   .lanes .lab { margin-top: 4px; }
   .lanes .axis-lab { display: none; }
   .op { grid-template-columns: 52px 1fr auto; }
-  .op .ses, .op .br, .op.head { display: none; }
+  .op .ses, .op .br, .op .tk, .op.head { display: none; }
   .tl-ops { grid-template-columns: 1fr auto; }
   .tl-ops .t, .tl-head { display: none; }
   .tl-ops .argv { grid-column: 1 / -1; }
   .tl-chats { grid-template-columns: 1fr auto auto; }
-  .tl-chats > :nth-child(4), .tl-chats > :nth-child(5), .tl-chats > :nth-child(6) { display: none; }
+  .tl-chats > :nth-child(4), .tl-chats > :nth-child(5), .tl-chats > :nth-child(7) { display: none; }
   .ev > summary { grid-template-columns: 52px 1fr auto; }
   .ev > summary .ref, .ev > summary .by, .ev-head { display: none; }
   .ev ol { padding-left: 8px; }
@@ -230,6 +232,15 @@ const fmtDay = k => new Date(k + "T12:00:00").toLocaleDateString(undefined, { we
 const shortSes = s => (s || "unknown").slice(0, 8);
 let TITLES = {};
 const chatName = s => (s && TITLES[s]) || shortSes(s);
+// Estimated tokens a Bash call put into the chat: its output plus the command itself, ~4 characters
+// a token. One call prints one output for all its git commands, so each row carries the call's total
+// and sums use each row's even share. An estimate of context, not a bill.
+const callTok = r => r.out_chars == null ? null : Math.round(((r.out_chars || 0) + (r.cmd_chars || 0)) / 4);
+const shareTok = r => { const t = callTok(r); return t == null ? 0 : t / (r.calln || 1); };
+const fmtTok = n => n == null ? "—" : n < 1000 ? `~${Math.round(n)}` : `~${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+const tokTitle = r => r.out_chars == null ? "not measured (logged before sizes were recorded)" :
+  `~${callTok(r).toLocaleString()} tokens: output ${r.out_chars.toLocaleString()} + command ${(r.cmd_chars || 0).toLocaleString()} characters, ÷ 4` +
+  (r.calln > 1 ? `\none Bash call ran ${r.calln} commands and returned one output: ~${Math.round(shareTok(r)).toLocaleString()} each in totals` : "");
 
 let ROWS = [], REPOS = [];
 
@@ -282,7 +293,8 @@ function renderCats() {
 // Each tile is also a door: click it for the list behind the number.
 const TILES = [["ops", "Git ops", "Every git op", r => true], ["sessions", "Sessions", "Chats", r => true],
   ["commits", "Commits", "Commits", r => r.sub === "commit"], ["pushes", "Pushes", "Pushes", r => r.sub === "push"],
-  ["failed", "Failed", "Failed commands", r => r.ok === false], ["destructive", "Destructive", "Destructive commands", r => r.cat === "destructive"]];
+  ["failed", "Failed", "Failed commands", r => r.ok === false], ["destructive", "Destructive", "Destructive commands", r => r.cat === "destructive"],
+  ["tokens", "~Tokens", "Most expensive git ops", r => r.out_chars != null]];
 
 function renderStats(rows) {
   const box = $("stats"); box.replaceChildren();
@@ -290,7 +302,9 @@ function renderStats(rows) {
     const n = key === "sessions" ? new Set(rows.map(r => r.session)).size : rows.filter(keep).length;
     const t = el("button", "stat"); t.setAttribute("aria-pressed", String(S.tile === key));
     t.setAttribute("aria-controls", "tilelist");
-    t.append(el("b", null, n.toLocaleString()), el("span", null, label));
+    const shown = key === "tokens" ? fmtTok(rows.reduce((k, r) => k + shareTok(r), 0)) : n.toLocaleString();
+    if (key === "tokens") t.title = "Estimated tokens the git ops in view put into their chats' context (output + command, ÷ 4)";
+    t.append(el("b", null, shown), el("span", null, label));
     t.onclick = () => { S.tile = S.tile === key ? null : key; render();
       if (S.tile) $("tilelist").scrollIntoView({ block: "nearest", behavior: "smooth" }); };
     box.append(t);
@@ -331,24 +345,25 @@ function renderTileList(rows) {
   const sub = el("span", "sub", scope + " · "); sub.append(close);
   if (key === "sessions") {
     const by = {};
-    for (const r of rows) { const c = by[r.session] ||= { ops: 0, failed: 0, destructive: 0, commits: 0, last: 0 };
-      c.ops++; c.failed += r.ok === false; c.destructive += r.cat === "destructive"; c.commits += r.sub === "commit"; c.last = Math.max(c.last, r._t); }
+    for (const r of rows) { const c = by[r.session] ||= { ops: 0, failed: 0, destructive: 0, commits: 0, tok: 0, last: 0 };
+      c.ops++; c.failed += r.ok === false; c.destructive += r.cat === "destructive"; c.commits += r.sub === "commit";
+      c.tok += shareTok(r); c.last = Math.max(c.last, r._t); }
     const keys = Object.keys(by).sort((a, b) => by[b].last - by[a].last);
     head.append(el("h2", null, `${title} — ${keys.length}`), sub); box.append(head);
     const h = el("div", "tl-row tl-chats tl-head");
-    for (const t of ["Chat", "Git ops", "Failed", "Destructive", "Commits", "Last active"]) h.append(el("span", null, t));
+    for (const t of ["Chat", "Git ops", "Failed", "Destructive", "Commits", "~Tokens", "Last active"]) h.append(el("span", null, t));
     box.append(h);
     for (const k of keys) {
       const c = by[k], row = el("button", "tl-row tl-chats"), name = el("span", "t", chatName(k)); name.title = `session ${k}`;
       row.append(name, el("span", null, c.ops), el("span", c.failed ? "bad" : null, c.failed), el("span", null, c.destructive),
-        el("span", null, c.commits), el("span", "m", `${fmtDay(dayKey(c.last))} ${hm(c.last)}`));
+        el("span", null, c.commits), el("span", null, fmtTok(c.tok)), el("span", "m", `${fmtDay(dayKey(c.last))} ${hm(c.last)}`));
       row.title = "Show only this chat's git ops";
       row.onclick = () => { S.q = k.toLowerCase(); $("q").value = k; S.tile = null; render(); };
       box.append(row);
     }
     return;
   }
-  const list = rows.filter(keep).sort((a, b) => b._t - a._t);
+  const list = rows.filter(keep).sort(key === "tokens" ? (a, b) => shareTok(b) - shareTok(a) || b._t - a._t : (a, b) => b._t - a._t);
   head.append(el("h2", null, `${title} — ${list.length.toLocaleString()}`), sub); box.append(head);
   if (!list.length) { box.append(el("div", "empty", "None in view.")); return; }
   const h = el("div", "tl-row tl-ops tl-head");
@@ -363,6 +378,9 @@ function renderTileList(rows) {
     const c = afterCommit(r), after = el("small", "after", c ? `after ${c[1].slice(0, 8)} ${c[2]}` : "before this chat's first commit here");
     after.title = c ? `the last commit this chat had made in ${r.repo} before running this` : "this chat had made no commit in this repo yet";
     argv.append(after);
+    const tk = el("small", "tok", r.out_chars == null ? "tokens not measured" : `${fmtTok(shareTok(r))} tokens` +
+      (r.calln > 1 ? ` · its share of a ${fmtTok(callTok(r))} Bash call that ran ${r.calln} commands` : "")); tk.title = tokTitle(r);
+    argv.append(tk);
     row.append(when, chat, badge, argv);
     row.title = "Show it in that day's command table";
     row.onclick = () => jump(r);
@@ -760,14 +778,15 @@ function opRow(r) {
   if (r.ok == null) st.title = "exit status not recorded";
   const br = el("span", "br", r.branch || "—"); if (r.branch) br.title = r.branch;
   const ses = el("span", "ses", shortSes(r.session)); ses.title = chatName(r.session);
-  row.append(el("time", null, hms(r._t)), ses, badge, argv, br, st);
+  const tk = el("span", "tk", r.out_chars == null ? "—" : fmtTok(shareTok(r)) + (r.calln > 1 ? "*" : "")); tk.title = tokTitle(r);
+  row.append(el("time", null, hms(r._t)), ses, badge, argv, br, tk, st);
   if (r.cmd) row.title = r.cmd;
   return row;
 }
 
 function opHead() {
   const h = el("div", "op head");
-  for (const t of ["Time", "Session", "Op", "Command", "Branch", "Status"]) h.append(el("span", null, t));
+  for (const t of ["Time", "Session", "Op", "Command", "Branch", "~Tokens", "Status"]) h.append(el("span", null, t));
   h.lastChild.style.textAlign = "right";
   return h;
 }

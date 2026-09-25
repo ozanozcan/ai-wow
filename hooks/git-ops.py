@@ -120,6 +120,28 @@ def _join(base, path):
     return os.path.normpath(os.path.join(base, path))
 
 
+def command_count(cmd):
+    """How many commands a shell line runs, git or not.
+
+    A Bash call hands back one output for everything it ran, so `cat big.txt && git
+    status` must not charge the file's text to git: its output is shared by all of them.
+    """
+    toks = _tokens(_strip_heredocs(cmd))
+    n, at_start, i = 0, True, 0
+    while i < len(toks):
+        tok = toks[i]
+        if _is_punct(tok):
+            if tok[0] in "<>":
+                i += 2                          # redirection and its target
+                continue
+            at_start = True
+        elif at_start and not (ASSIGN.match(tok) or tok in PREFIXES or tok.startswith("$")):
+            n += 1
+            at_start = False
+        i += 1
+    return n
+
+
 def parse_git_ops(cmd, cwd):
     """Every git invocation in shell line `cmd`, run from `cwd`, in order."""
     if "git" not in cmd:
@@ -293,8 +315,14 @@ def resolve_repo(d):
     return res
 
 
-def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None, made=None, head_made=None):
+def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None, made=None, head_made=None,
+             out_chars=None):
     """The log rows for one Bash call. `branch_hint` is the transcript's branch for `cwd`.
+
+    `out_chars`: how much text the call returned into the chat (stdout + stderr, or the error),
+    kept with `cmd_chars` and `calln` (every command the call ran, git or not) so the page can
+    estimate what the call cost in context. It belongs to the whole call: one output for all of
+    its commands.
 
     `made`: shas git printed for the call. One per commit-making command maps in
     order; any other count cannot be split, so every such command carries them all
@@ -323,6 +351,9 @@ def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hi
                      "dir": op["dir"], "sub": op["sub"], "cat": category(op["sub"], op["args"]),
                      "argv": op["argv"], "command": command[:1000], "ok": ok,
                      "error": (error or "")[:300] or None, "src": src})
+        rows[-1].update(cmd_chars=len(command), calln=max(len(ops), command_count(command)))
+        if out_chars is not None:
+            rows[-1]["out_chars"] = out_chars
         if i in own:
             rows[-1]["made"] = own[i]
     return rows
@@ -370,6 +401,12 @@ def main():
         cwd = payload.get("cwd") or os.getcwd()
         resp = payload.get("tool_response")
         out = (resp.get("stdout", "") + "\n" + resp.get("stderr", "")) if isinstance(resp, dict) else str(resp or "")
+        if failed:
+            out_chars = len(payload.get("error") or "") if isinstance(payload.get("error"), str) else 0
+        elif isinstance(resp, dict):
+            out_chars = len(resp.get("stdout") or "") + len(resp.get("stderr") or "")
+        else:
+            out_chars = len(str(resp or ""))
         made = [] if failed else made_commits(out)
         head_made = None
         if not failed and not made:
@@ -380,7 +417,7 @@ def main():
                         rid=payload.get("tool_use_id") or f"{session}@{ts}", ts=ts, session=session,
                         agent=payload.get("agent_id"), ok=not failed,
                         error=error if isinstance(error, str) else (json.dumps(error) if error else None),
-                        src="hook", made=made or None, head_made=head_made)
+                        src="hook", made=made or None, head_made=head_made, out_chars=out_chars)
         append(rows)
     except Exception:
         pass                        # a logger must never fail the tool call

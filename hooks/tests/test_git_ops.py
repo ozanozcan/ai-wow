@@ -88,6 +88,13 @@ check("heredoc body lines are not ops",
       subs("cat > f <<'EOF'\ngit push --force\nEOF\ngit status") == [("status", "/base")],
       str(subs("cat > f <<'EOF'\ngit push --force\nEOF\ngit status")))
 
+check("every command in a line counts, not only git", git_ops.command_count("cat big.txt && git status | head -3") == 3
+      and git_ops.command_count("git add a && git commit -m 'x; y'") == 2
+      and git_ops.command_count("FOO=1 git status; echo \"git log\"") == 2
+      and git_ops.command_count("cat > f <<'EOF'\nls\nEOF\ngit status") == 2,
+      str([git_ops.command_count(c) for c in ("cat big.txt && git status | head -3", "git add a && git commit -m 'x; y'",
+                                                "FOO=1 git status; echo \"git log\"", "cat > f <<'EOF'\nls\nEOF\ngit status")]))
+
 print("categories")
 check("status is read", git_ops.category("status", []) == "read")
 check("push is remote", git_ops.category("push", []) == "remote")
@@ -194,6 +201,19 @@ fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2",
       "tool_input": {"command": "git status"}, "tool_response": {"stdout": "", "stderr": ""}})
 last = json.loads(open(log).read().splitlines()[-1])
 check("a read op records no commit", "made" not in last, str(last))
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s3", "cwd": main, "tool_use_id": "toolu_TOK",
+      "tool_input": {"command": "git status && git log -1"}, "tool_response": {"stdout": "x" * 400, "stderr": "yy"}})
+tok = [json.loads(l) for l in open(log).read().splitlines() if json.loads(l)["id"].startswith("toolu_TOK:")]
+check("each row records its call's output size, command size and command count",
+      [(r.get("out_chars"), r.get("cmd_chars"), r.get("calln")) for r in tok] == [(402, 24, 2)] * 2, str(tok))
+fire({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s3", "cwd": main,
+      "tool_use_id": "toolu_TOKF", "tool_input": {"command": "git push"}, "error": "e" * 50})
+tf = json.loads(open(log).read().splitlines()[-1])
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s3", "cwd": main, "tool_use_id": "toolu_MIX",
+      "tool_input": {"command": "cat notes.txt && ls && git status"}, "tool_response": {"stdout": "z" * 900, "stderr": ""}})
+mx = json.loads(open(log).read().splitlines()[-1])
+check("a call's output is shared by all its commands, not just the git ones", mx.get("calln") == 3, str(mx))
+check("a failed call counts its error text as its output", (tf.get("out_chars"), tf.get("calln")) == (50, 1), str(tf))
 before = len(open(log).read().splitlines())
 fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s1", "cwd": main,
       "tool_use_id": "toolu_C", "tool_input": {"command": "ls; echo 'git push'"}})
@@ -212,6 +232,8 @@ check("unwritable log never fails the tool", p.returncode == 0, p.stderr)
 # --- backfill + html ---------------------------------------------------------
 
 print("git-timeline")
+from importlib.machinery import SourceFileLoader
+timeline = SourceFileLoader("git_timeline", TIMELINE).load_module()
 projects = os.path.join(tmp, "projects", "-x")
 os.makedirs(os.path.join(projects, "sess1", "subagents"))
 
@@ -253,6 +275,10 @@ check("subagent transcripts are read, worktree resolved", s and s[0]["agent"] ==
 n = len(rows)
 tl("backfill")
 check("backfill is idempotent", len(open(log).read().splitlines()) == n)
+by_id = {r["id"]: r for r in timeline.read_log(log)}
+check("backfill records output size for its own rows", by_id["toolu_Z:0"].get("out_chars") == len("Exit code 1\n! [rejected]")
+      and by_id["toolu_Z:0"].get("calln") == 1, str(by_id["toolu_Z:0"]))
+check("rows the hook wrote before sizes existed get them by patch", by_id["toolu_A:0"].get("out_chars") == 2, str(by_id["toolu_A:0"]))
 
 out = os.path.join(tmp, "t.html")
 open(log, "a").write(json.dumps({**rows[0], "id": "evil:0", "argv": "git commit -m '</script><img src=x onerror=alert(1)>'"}) + "\n")
@@ -261,6 +287,7 @@ check("html builds", p.returncode == 0 and os.path.isfile(out), p.stderr)
 html = open(out).read()
 check("embedded data cannot close the script tag", "</script><img" not in html)
 check("default repo is baked in", '"proj"' in html)
+check("the page data keeps the token inputs", '"out_chars"' in html and '"calln"' in html)
 guide = os.path.join(os.path.dirname(out), "git-timeline-guide.html")
 check("the guide is written next to the page", os.path.isfile(guide) and "Reading the git timeline" in open(guide).read())
 check("the page links to the guide at the top and the bottom", html.count('href="git-timeline-guide.html"') >= 2)
@@ -354,6 +381,19 @@ packLanes(cs, 0, 100); console.log(JSON.stringify(cs.map(c => c.lane)));"""
     check("overlapping: the chain with commits in view sits nearer main than the idle one",
           out2.stdout.strip() == "[0,2,1]", out2.stdout + out2.stderr[-200:])
     check("lanes are reused once a branch has merged", res["lanes"] < len(res["chains"]) + 1, str(res["lanes"]))
+
+if node:
+    tok_js = r"""
+const src = require("fs").readFileSync(process.argv[1], "utf8");
+const pick = n => src.match(new RegExp("const " + n + " = [^\\n]*(?:\\n  [^\\n]*)*;"))[0];
+const { callTok, shareTok, fmtTok } = eval(["callTok", "shareTok", "fmtTok"].map(pick).join("\n") + "\n({ callTok, shareTok, fmtTok })");
+const r = { out_chars: 3996, cmd_chars: 4, calln: 4 };
+console.log(JSON.stringify([callTok(r), shareTok(r), fmtTok(999), fmtTok(1234), fmtTok(25400), fmtTok(null), callTok({}), shareTok({})]));"""
+    out = subprocess.run([node, "-e", tok_js, os.path.join(os.path.dirname(TIMELINE), "git-timeline.html")],
+                         capture_output=True, text=True, timeout=30)
+    check("page token math: (output + command) / 4, split across the call's commands, never counted twice",
+          out.stdout.strip() == json.dumps([1000, 250, "~999", "~1.2k", "~25k", "\u2014", None, 0], ensure_ascii=False).replace(" ", ""),
+          out.stdout + out.stderr[-200:])
 
 # --- push & pull report -----------------------------------------------------
 

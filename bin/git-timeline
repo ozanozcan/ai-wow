@@ -133,23 +133,29 @@ def backfill(args):
             ok = None if res is None else not res.get("is_error", False)
             err = _text(res.get("content")).strip() if res is not None and not ok else None
             agent = e.get("agentId") or (os.path.basename(path)[:-6].replace("agent-", "") if sub else None)
-            made = git_ops.made_commits(_text(res.get("content"))) if ok else []
+            text = _text(res.get("content")) if res is not None else None
+            made = git_ops.made_commits(text) if ok else []
             rows = git_ops.rows_for(b["input"]["command"], e.get("cwd") or "/", rid=b.get("id"),
                                     ts=e.get("timestamp"), session=e.get("sessionId"), agent=agent,
                                     ok=ok, error=err, src="backfill", branch_hint=e.get("gitBranch"),
-                                    made=made or None)
+                                    made=made or None, out_chars=len(text) if text is not None else None)
             for r in rows:
                 old = seen.get(r["id"])
                 if old is None:
                     seen[r["id"]] = r
                     new.append(r)
-                elif r.get("made") and not old.get("made"):
-                    old["made"] = r["made"]
-                    patches.append({"id": r["id"], "patch": {"made": r["made"]}})
+                    continue
+                # Fields an older row predates: the sha it made, and the sizes the token estimate needs.
+                patch = {k: r[k] for k in ("made", "out_chars", "cmd_chars", "calln") if r.get(k) is not None and old.get(k) is None}
+                if r.get("calln") is not None and old.get("calln") is not None and r["calln"] > old["calln"]:
+                    patch["calln"] = r["calln"]         # an earlier count saw only the git commands: only ever too low
+                if patch:
+                    old.update(patch)
+                    patches.append({"id": r["id"], "patch": patch})
     new.sort(key=lambda r: r["ts"] or "")
     git_ops.append(new + patches, args.log)
     if patches:
-        print(f"backfill: {len(patches)} earlier row(s) now name the commit they made")
+        print(f"backfill: {len(patches)} earlier row(s) patched with fields they predate")
     by_repo = Counter(r["repo"] for r in new)
     print(f"backfill: {len(new)} new git op(s) -> {args.log}")
     for repo, n in by_repo.most_common():
@@ -388,7 +394,8 @@ def attribute(events, rows, window=180):
     return events
 
 
-KEEP = ("ts", "session", "agent", "repo", "worktree", "branch", "sub", "cat", "argv", "ok", "error")
+KEEP = ("ts", "session", "agent", "repo", "worktree", "branch", "sub", "cat", "argv", "ok", "error",
+        "out_chars", "cmd_chars", "calln")
 
 
 PR_TTL = 600          # seconds a repo's PR list is reused by `serve`: GitHub is the slow part

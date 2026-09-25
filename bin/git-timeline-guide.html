@@ -832,7 +832,8 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
       <em>Failed</em> lists every failed command with the chat that ran it, its error, and the last
       commit that chat had made in the repo before it (what it was working on);
       <em>Destructive</em>, <em>Commits</em>, <em>Pushes</em> and <em>Git ops</em> work the same
-      way, and <em>Sessions</em> lists the chats. Click a row to jump to that command in its day's
+      way, <em>~Tokens</em> lists the most expensive git ops first, and <em>Sessions</em> lists the
+      chats with their estimated tokens. Click a row to jump to that command in its day's
       table. The category chips and the search box filter the tiles, their lists, the session
       timeline and the command table; the Journey, Push &amp; pull and Chats ignore them.</p>
     </div>
@@ -906,9 +907,22 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
     <div class="stack-tight">
       <h3>Command table</h3>
       <p class="prose">Every git command, newest first: time, chat, operation, the command itself,
-      branch, and whether it succeeded. A <code>?</code> status means the result was never
+      branch, estimated tokens, and whether it succeeded. A <code>?</code> status means the result was never
       recorded: the chat was still running when its transcript was read, or it was stopped
       mid-command.</p>
+      <p class="prose">The <strong>~Tokens</strong> figure estimates what a command cost its chat
+      in context: the characters the command printed plus the command itself, divided by four
+      (about one token per four characters of English or code). Whatever a command prints stays in
+      the chat and is read again on every later turn, so a large <code>git diff</code> or a long
+      <code>git log</code> is the expensive habit, and <code>git status</code> is nearly free. When
+      one Bash call runs several commands (<code>git status &amp;&amp; git diff</code>, or
+      <code>cat notes.md &amp;&amp; git log</code>), it hands back one output for all of them. Each
+      git row then shows its even share, marked <code>*</code>, split across every command in the
+      call, git or not, so nothing is counted twice and a file's text is not charged to git; hover
+      it for the whole call's total. Click the
+      <strong>~Tokens</strong> tile for the most expensive git ops first. It is an estimate of
+      context, not your bill: billing is per model reply, and a reply can run several
+      commands.</p>
     </div>
   </div>
 </section>
@@ -926,6 +940,7 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
           <tr><td>Did anything force-push or reset?</td><td>click the <em>Destructive</em> tile</td></tr>
           <tr><td>Why did a push fail?</td><td>click the <em>Failed</em> tile and read the error under the command</td></tr>
           <tr><td>Is my work on GitHub yet?</td><td>Chats card: <em>not pushed</em> next to a commit</td></tr>
+          <tr><td>What is costing my chats the most tokens?</td><td>click the <em>~Tokens</em> tile</td></tr>
           <tr><td>What's that worktree for?</td><td>hover its dashed box in the Journey</td></tr>
         </tbody>
       </table>
@@ -946,6 +961,9 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
       shell variable (<code>cd $DIR &amp;&amp; git commit -q …</code>), which only the shell can expand.
       Those are matched by message or time and labelled so.</li>
       <li><strong>Who ran a push outside any chat.</strong> It shows as <em>outside agents</em>.</li>
+      <li><strong>Exact token counts.</strong> The ~Tokens figures are estimated from text length,
+      and a Bash call's output is shared evenly among all the commands it ran. Operations logged before
+      sizes were recorded, and ones whose transcript is gone, show <code>—</code>.</li>
       <li><strong>Repos that have moved or been deleted</strong>, or a folder given as a shell
       variable. Those operations are listed under <em>(no repo)</em> rather than guessed into the
       wrong repo, and a moved repo has no Journey.</li>
