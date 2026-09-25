@@ -224,10 +224,13 @@ stopped mid-command.
 - **Anything older than about 90 days** in Push & pull (30 for history a force push
   replaced), because git clears the reflog. The operations log itself is kept forever.
 - **Exactly who made a commit** that was committed quietly (`git commit -q -F file`)
-  before the hook recorded shas. Those are matched by time and labelled so.
+  before the hook recorded shas, or from a folder named by a shell variable
+  (`cd $DIR && git commit -q …`), which only the shell can expand. Those are matched by
+  message or time and labelled so.
 - **Who ran a push outside any chat.** It shows as *outside agents*.
-- **Repos that have moved or been deleted.** Their operations are listed under
-  *(no repo)* and they have no Journey.
+- **Repos that have moved or been deleted**, or a folder given as a shell variable.
+  Those operations are listed under *(no repo)* rather than guessed into the wrong repo,
+  and a moved repo has no Journey.
 
 ## Sources
 

@@ -929,11 +929,13 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
       force push replaced), because git clears the reflog. The operations log itself is kept
       forever.</li>
       <li><strong>Exactly who made a commit</strong> that was committed quietly
-      (<code>git commit -q -F file</code>) before the hook recorded shas. Those are matched by time
-      and labelled so.</li>
+      (<code>git commit -q -F file</code>) before the hook recorded shas, or from a folder named by a
+      shell variable (<code>cd $DIR &amp;&amp; git commit -q …</code>), which only the shell can expand.
+      Those are matched by message or time and labelled so.</li>
       <li><strong>Who ran a push outside any chat.</strong> It shows as <em>outside agents</em>.</li>
-      <li><strong>Repos that have moved or been deleted.</strong> Their operations are listed under
-      <em>(no repo)</em> and they have no Journey.</li>
+      <li><strong>Repos that have moved or been deleted</strong>, or a folder given as a shell
+      variable. Those operations are listed under <em>(no repo)</em> rather than guessed into the
+      wrong repo, and a moved repo has no Journey.</li>
     </ul>
   </div>
 </section>

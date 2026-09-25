@@ -106,7 +106,18 @@ def _is_punct(tok):
 
 
 def _join(base, path):
-    return os.path.normpath(os.path.join(base, os.path.expanduser(path)))
+    """`path` resolved against `base`; None when the shell alone knows the answer.
+
+    A variable or command substitution (`cd $M`, `-C "$WT"`, `` cd `pwd` ``) names a
+    folder only the shell can expand. Guessing the cwd instead pinned such commits
+    to the wrong repo and read the wrong HEAD. None stays None until an absolute cd.
+    """
+    if "$" in path or "`" in path:
+        return None
+    path = os.path.expanduser(path)
+    if base is None:
+        return os.path.normpath(path) if os.path.isabs(path) else None
+    return os.path.normpath(os.path.join(base, path))
 
 
 def parse_git_ops(cmd, cwd):
@@ -248,6 +259,8 @@ def resolve_repo(d):
     has since been deleted (old worktrees, mostly) is resolved through its
     nearest surviving ancestor and the `.claude/worktrees/<name>` in its path.
     """
+    if d is None:
+        return {"repo": "(no repo)", "root": None, "worktree": None, "branch": None}
     if d in _REPO_CACHE:
         return _REPO_CACHE[d]
     m = WORKTREE_IN_PATH.match(d)
@@ -280,12 +293,26 @@ def resolve_repo(d):
     return res
 
 
-def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None, made=None):
-    """The log rows for one Bash call. `branch_hint` is the transcript's branch for `cwd`;
-    `made` the shas the call created, recorded on its commit-creating rows."""
+def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hint=None, made=None, head_made=None):
+    """The log rows for one Bash call. `branch_hint` is the transcript's branch for `cwd`.
+
+    `made`: shas git printed for the call. One per commit-making command maps in
+    order; any other count cannot be split, so every such command carries them all
+    (they are still this call's, so the chat is right either way). `head_made`: the
+    sha read from HEAD after the call, which only the last commit-making command can own.
+    """
     rows = []
     cwd_repo = resolve_repo(cwd)["repo"] if branch_hint else None
-    for i, op in enumerate(parse_git_ops(command, cwd)):
+    ops = parse_git_ops(command, cwd)
+    creators = [i for i, op in enumerate(ops) if op["sub"] in CREATORS]
+    own = {}
+    if made and len(made) == len(creators):
+        own = {i: [sha] for i, sha in zip(creators, made)}
+    elif made:
+        own = {i: list(made) for i in creators}
+    elif head_made and creators:
+        own = {creators[-1]: list(head_made)}
+    for i, op in enumerate(ops):
         r = resolve_repo(op["dir"])
         branch = r["branch"]
         if src == "backfill":
@@ -296,8 +323,8 @@ def rows_for(command, cwd, *, rid, ts, session, agent, ok, error, src, branch_hi
                      "dir": op["dir"], "sub": op["sub"], "cat": category(op["sub"], op["args"]),
                      "argv": op["argv"], "command": command[:1000], "ok": ok,
                      "error": (error or "")[:300] or None, "src": src})
-        if made and op["sub"] in CREATORS:
-            rows[-1]["made"] = made
+        if i in own:
+            rows[-1]["made"] = own[i]
     return rows
 
 
@@ -344,15 +371,16 @@ def main():
         resp = payload.get("tool_response")
         out = (resp.get("stdout", "") + "\n" + resp.get("stderr", "")) if isinstance(resp, dict) else str(resp or "")
         made = [] if failed else made_commits(out)
+        head_made = None
         if not failed and not made:
             ops = [o for o in parse_git_ops(command, cwd) if o["sub"] in CREATORS]
-            fresh = head_if_fresh(ops[-1]["dir"]) if ops else None
-            made = [fresh] if fresh else []
+            fresh = head_if_fresh(ops[-1]["dir"]) if ops and ops[-1]["dir"] else None
+            head_made = [fresh] if fresh else None
         rows = rows_for(command, cwd,
                         rid=payload.get("tool_use_id") or f"{session}@{ts}", ts=ts, session=session,
                         agent=payload.get("agent_id"), ok=not failed,
                         error=error if isinstance(error, str) else (json.dumps(error) if error else None),
-                        src="hook", made=made or None)
+                        src="hook", made=made or None, head_made=head_made)
         append(rows)
     except Exception:
         pass                        # a logger must never fail the tool call

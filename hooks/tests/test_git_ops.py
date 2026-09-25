@@ -73,6 +73,13 @@ check("subshell cd does not leak", subs("(cd /x && git pull); git push") ==
 check("fd-number redirection is not an arg",
       [o["argv"] for o in git_ops.parse_git_ops("git check-ignore -v x 2>/dev/null", "/b")] == ["git check-ignore -v x"],
       str([o["argv"] for o in git_ops.parse_git_ops("git check-ignore -v x 2>/dev/null", "/b")]))
+check("cd to a shell variable leaves the directory unknown, not the cwd",
+      subs("cd $M && git commit -q -F msg") == [("commit", None)], str(subs("cd $M && git commit -q -F msg")))
+check("a quoted variable path is unknown too", subs('cd "$S/mirror" && git status') == [("status", None)])
+check("-C with a variable is unknown", subs('git -C "$WT" log -1') == [("log", None)])
+check("a relative cd after an unknown one stays unknown", subs("cd $X && cd sub && git diff") == [("diff", None)])
+check("an absolute cd resolves again", subs("cd $X; cd /repo && git status") == [("status", "/repo")])
+check("backtick substitution is unknown", subs("cd `pwd`/x && git status") == [("status", None)])
 check("unbalanced quotes do not raise", isinstance(subs("git commit -m \"oops"), list))
 check("no git at all is fast-empty", subs("ls -la && pwd") == [])
 check("path-qualified git binary", subs("/usr/bin/git status") == [("status", "/base")])
@@ -162,6 +169,27 @@ fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2",
       "tool_input": {"command": "git commit -m 'loud one'"}, "tool_response": {"stdout": "[trunk 89abcde] loud one\n", "stderr": ""}})
 last = json.loads(open(log).read().splitlines()[-1])
 check("a commit's printed sha is recorded", last.get("made") == ["89abcde"], str(last))
+# One call, two commit-making commands, both quiet: only the last one's HEAD can be read.
+subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first"], cwd=main, check=True)
+subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "second"], cwd=main, check=True)
+head2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=main, capture_output=True, text=True).stdout.strip()
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_TWO",
+      "tool_input": {"command": "git commit -q --allow-empty -m first && git commit -q --allow-empty -m second"},
+      "tool_response": {"stdout": "", "stderr": ""}})
+two = [json.loads(l) for l in open(log).read().splitlines() if json.loads(l)["id"].startswith("toolu_TWO:")]
+check("a HEAD reading is attached only to the last commit of the call",
+      [r.get("made") for r in two] == [None, [head2[:12]]], str([(r["id"], r.get("made")) for r in two]))
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_PR",
+      "tool_input": {"command": "git commit -m a && git commit -m b"},
+      "tool_response": {"stdout": "[trunk 1111111] a\n[trunk 2222222] b\n", "stderr": ""}})
+pr2 = [json.loads(l) for l in open(log).read().splitlines() if json.loads(l)["id"].startswith("toolu_PR:")]
+check("printed shas go to their own commands, in order",
+      [r.get("made") for r in pr2] == [["1111111"], ["2222222"]], str([(r["id"], r.get("made")) for r in pr2]))
+fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_VAR",
+      "tool_input": {"command": "cd $M && git commit -q --allow-empty -m 'var dir'"}, "tool_response": {"stdout": "", "stderr": ""}})
+vr = [json.loads(l) for l in open(log).read().splitlines() if json.loads(l)["id"].startswith("toolu_VAR:")]
+check("a commit in an unknown folder is not pinned to the cwd's repo or its HEAD",
+      vr and vr[0]["repo"] == "(no repo)" and vr[0]["dir"] is None and "made" not in vr[0], str(vr))
 fire({"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "s2", "cwd": main, "tool_use_id": "toolu_R",
       "tool_input": {"command": "git status"}, "tool_response": {"stdout": "", "stderr": ""}})
 last = json.loads(open(log).read().splitlines()[-1])
