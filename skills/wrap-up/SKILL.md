@@ -291,6 +291,16 @@ start_sha: <anchor sha>
 
 Rules: reference artifacts by path; redact secrets; bullets not essays; omit empty optional sections.
 
+### 5.5 Diary entry (only when `docs/diary/` exists)
+
+The session report is for agents; the diary is for the operator, in their voice. If the project
+root has `docs/diary/`, read its `INDEX.md` (the project's diary convention) and add this chat's
+section to today's file, `docs/diary/<YYYY-MM-DD>.md` by **local** date, creating the file from the
+convention when it doesn't exist yet. Several chats write the same day: re-read the file just before
+editing, add only what isn't there yet, and never rewrite another chat's section. Skip, and say so
+in step 7, when the chat did nothing a person would want to remember (a lookup, a one-line answer).
+Include the diary file in step 6's commit offer. No `docs/diary/` → skip silently.
+
 ### 6. Offer commit (never auto-run)
 
 If `git status` shows a dirty tree (modified / untracked / staged), **ask** before ending wrap-up:
@@ -306,7 +316,7 @@ If `git status` shows a dirty tree (modified / untracked / staged), **ask** befo
 
 Report path + summary of taskman commands run (including retroactive-sweep, forward-capture, and leftover task ids) + the checkpoint created in step 4 (slug + its Next task), + whether commit was offered/run.
 
-**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync incl. the retroactive chat sweep and forward capture) ran, step 3 (action report) ran when a plan shipped this session, step 4 ran (existing checkpoints reconciled — done/updated/untouched; every leftover has a high-priority task; a checkpoint bundling them exists whenever any were created), and step 6 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
+**Safe-to-end verdict (required, mechanical — not open-ended judgment):** "safe to end" only if step 0 exited 0, step 2 (taskman sync incl. the retroactive chat sweep and forward capture) ran, step 3 (action report) ran when a plan shipped this session, step 5.5 (diary) ran or was skipped with a reason when `docs/diary/` exists, step 4 ran (existing checkpoints reconciled — done/updated/untouched; every leftover has a high-priority task; a checkpoint bundling them exists whenever any were created), and step 6 (commit) was offered and the tree isn't left dirty with no decision made. If **any** of those was skipped, declined, or left unresolved, say "not safe to end" and name that specific step.
 
 **Resume pointer (skip only if nothing durable was written this session):** a short, copy-pasteable line naming exactly which files a fresh session should load — the session report path always; the active checkpoint path if one exists; the plan + dispatch path if this session's work ties to `docs/plans/<stem>/`.
 
