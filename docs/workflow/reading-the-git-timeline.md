@@ -34,8 +34,21 @@ source; change it first, then the view.
 
 ## Opening and refreshing the page
 
-The page is a snapshot. It shows the log as it was when you last built it, so
-rebuild it from the ai-wow checkout whenever you want the latest:
+There are two ways to open it, both from the ai-wow checkout. The live one serves
+the page on your machine and refreshes its data every 30 seconds, so new git ops,
+commits and pushes appear while you watch:
+
+```bash
+python3 bin/git-timeline serve --open
+```
+
+It answers at `http://127.0.0.1:8390/git-timeline.html` (the next free port up to
+8399 if that one is taken; running it twice reuses the first). It only listens on
+your own machine and serves nothing but the page, its data and this guide. Stop it
+with Ctrl-C.
+
+The other is a snapshot file that works with no server at all, and shows the log as
+it was when you built it:
 
 ```bash
 python3 bin/git-timeline html --open
@@ -144,8 +157,13 @@ one you clicked; the command table lists days newest first, five at a time.
 ### Stat tiles and filters
 
 The tiles count git operations for the repo, or for the focused day once you have
-clicked one. The category chips and the search box filter the tiles, the session
-timeline and the command table; the Journey, Push & pull and Chats ignore them.
+clicked one. Click a tile to list what it counts, right under the tiles: *Failed*
+lists every failed command with the chat that ran it, its error, and the last commit
+that chat had made in the repo before it (what it was working on); *Destructive*,
+*Commits*, *Pushes* and *Git ops* work the same way, and *Sessions* lists the chats.
+Click a row to jump to that command in its day's table. The category chips and the
+search box filter the tiles, their lists, the session timeline and the command table;
+the Journey, Push & pull and Chats ignore them.
 
 | Category | Colour | Examples | Changes anything? |
 |---|---|---|---|
@@ -214,8 +232,8 @@ stopped mid-command.
 |---|---|
 | Who pushed this commit? | hover it in the Journey, or find it in Push & pull |
 | What did one chat change today? | Chats card → expand the chat |
-| Did anything force-push or reset? | turn off every chip but *Destructive*; look for diamonds |
-| Why did a push fail? | *Failed only* chip, then read the error under the command |
+| Did anything force-push or reset? | click the *Destructive* tile |
+| Why did a push fail? | click the *Failed* tile and read the error under the command |
 | Is my work on GitHub yet? | Chats card: *not pushed* next to a commit |
 | What's that worktree for? | hover its dashed box in the Journey |
 

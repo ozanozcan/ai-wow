@@ -621,8 +621,16 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
 <section class="sec" id="opening-and-refreshing-the-page">
   <div class="sechead"><h2>Opening and refreshing the page</h2></div>
   <div class="stack">
-    <p class="prose">The page is a snapshot. It shows the log as it was when you last built it,
-    so rebuild it from the ai-wow checkout whenever you want the latest:</p>
+    <p class="prose">There are two ways to open it, both from the ai-wow checkout. The live one
+    serves the page on your machine and refreshes its data every 30 seconds, so new git ops,
+    commits and pushes appear while you watch:</p>
+    <pre><code>python3 bin/git-timeline serve --open</code></pre>
+    <p class="prose">It answers at <code>http://127.0.0.1:8390/git-timeline.html</code> (the next
+    free port up to 8399 if that one is taken; running it twice reuses the first). It only
+    listens on your own machine and serves nothing but the page, its data and this guide. Stop
+    it with Ctrl-C.</p>
+    <p class="prose">The other is a snapshot file that works with no server at all, and shows the
+    log as it was when you built it:</p>
     <pre><code>python3 bin/git-timeline html --open</code></pre>
     <p class="prose">The hook keeps logging on its own while agents work. Two commands you'll want
     occasionally: <code>git-timeline backfill</code> imports git calls from old chat transcripts
@@ -820,7 +828,12 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
     <div class="stack-tight">
       <h3>Stat tiles and filters</h3>
       <p class="prose">The tiles count git operations for the repo, or for the focused day once you
-      have clicked one. The category chips and the search box filter the tiles, the session
+      have clicked one. Click a tile to list what it counts, right under the tiles:
+      <em>Failed</em> lists every failed command with the chat that ran it, its error, and the last
+      commit that chat had made in the repo before it (what it was working on);
+      <em>Destructive</em>, <em>Commits</em>, <em>Pushes</em> and <em>Git ops</em> work the same
+      way, and <em>Sessions</em> lists the chats. Click a row to jump to that command in its day's
+      table. The category chips and the search box filter the tiles, their lists, the session
       timeline and the command table; the Journey, Push &amp; pull and Chats ignore them.</p>
     </div>
     <div class="tablewrap">
@@ -910,8 +923,8 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
         <tbody>
           <tr><td>Who pushed this commit?</td><td>hover it in the Journey, or find it in Push &amp; pull</td></tr>
           <tr><td>What did one chat change today?</td><td>Chats card → expand the chat</td></tr>
-          <tr><td>Did anything force-push or reset?</td><td>turn off every chip but <em>Destructive</em>; look for diamonds</td></tr>
-          <tr><td>Why did a push fail?</td><td><em>Failed only</em> chip, then read the error under the command</td></tr>
+          <tr><td>Did anything force-push or reset?</td><td>click the <em>Destructive</em> tile</td></tr>
+          <tr><td>Why did a push fail?</td><td>click the <em>Failed</em> tile and read the error under the command</td></tr>
           <tr><td>Is my work on GitHub yet?</td><td>Chats card: <em>not pushed</em> next to a commit</td></tr>
           <tr><td>What's that worktree for?</td><td>hover its dashed box in the Journey</td></tr>
         </tbody>

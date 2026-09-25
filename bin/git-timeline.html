@@ -51,7 +51,23 @@ button { font: inherit; color: inherit; }
 .chip.cat[aria-pressed="false"] { opacity: .45; }
 .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 14px 0; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  text-align: left; cursor: pointer; font: inherit; color: var(--text); }
+.stat:hover, .stat:focus-visible { border-color: var(--text); outline: none; }
+.stat[aria-pressed="true"] { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.tl-row { display: grid; gap: 10px; padding: 6px 2px; border: 0; border-bottom: 1px solid var(--line); background: none;
+  font: inherit; color: var(--text); text-align: left; width: 100%; align-items: baseline; font-size: 13px; cursor: pointer; }
+.tl-row:hover { background: var(--chip); }
+.tl-ops { grid-template-columns: 124px minmax(0, 190px) 92px minmax(0, 1fr); }
+.tl-ops .argv small { display: block; color: var(--label); font-family: var(--sans); }
+.tl-ops .argv .err { color: var(--fail); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tl-ops .argv .after { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-chats { grid-template-columns: minmax(0, 1fr) 70px 70px 90px 80px 150px; }
+.tl-head { cursor: default; color: var(--label); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+.tl-head:hover { background: none; }
+.tl-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-row .m { color: var(--label); font-size: 12px; }
+.tl-row .bad { color: var(--fail); font-weight: 700; }
 .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
 .stat span { color: var(--label); font-size: 12px; }
 .controls { margin: 4px 0 14px; }
@@ -152,6 +168,11 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   .lanes .axis-lab { display: none; }
   .op { grid-template-columns: 52px 1fr auto; }
   .op .ses, .op .br, .op.head { display: none; }
+  .tl-ops { grid-template-columns: 1fr auto; }
+  .tl-ops .t, .tl-head { display: none; }
+  .tl-ops .argv { grid-column: 1 / -1; }
+  .tl-chats { grid-template-columns: 1fr auto auto; }
+  .tl-chats > :nth-child(4), .tl-chats > :nth-child(5), .tl-chats > :nth-child(6) { display: none; }
   .ev > summary { grid-template-columns: 52px 1fr auto; }
   .ev > summary .ref, .ev > summary .by, .ev-head { display: none; }
   .ev ol { padding-left: 8px; }
@@ -168,6 +189,7 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   <div class="sub" id="meta"></div>
   <div class="repos" id="repos" role="toolbar" aria-label="Repository"></div>
   <div class="stats" id="stats"></div>
+  <div class="card" id="tilelist" hidden></div>
   <div class="row controls">
     <div class="row" id="cats"></div>
     <button class="chip" id="failed" aria-pressed="false">Failed only</button>
@@ -194,7 +216,8 @@ input[type=search] { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line
   <div class="pagefoot"><a class="guide" href="git-timeline-guide.html">New to git, or to this page? Read the guide →</a></div>
 </div>
 <script>
-const DATA = /*__DATA__*/null;
+let DATA = /*__DATA__*/null;
+const LIVE = /*__LIVE__*/false;    // true when `git-timeline serve` hands out the page
 const CATS = [["read", "Read"], ["write", "Local write"], ["remote", "Remote"], ["destructive", "Destructive"]];
 const CAT_VAR = c => `var(--${c})`;
 const $ = id => document.getElementById(id);
@@ -205,20 +228,28 @@ const hm = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.ge
 const hms = t => { const d = new Date(t); return `${hm(t)}:${pad(d.getSeconds())}`; };
 const fmtDay = k => new Date(k + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const shortSes = s => (s || "unknown").slice(0, 8);
-const TITLES = (DATA && DATA.titles) || {};
+let TITLES = {};
 const chatName = s => (s && TITLES[s]) || shortSes(s);
 
-const ROWS = (DATA && DATA.rows || []).map((r, i) => Object.assign(r, { _i: i, _t: Date.parse(r.ts), _d: dayKey(Date.parse(r.ts)),
-  _hay: [r.sub, r.argv, r.cmd, r.branch, r.worktree, r.error, r.session].filter(Boolean).join(" ").toLowerCase() }));
-const REPOS = Object.entries(ROWS.reduce((m, r) => (m[r.repo] = (m[r.repo] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
+let ROWS = [], REPOS = [];
+
+// Load a payload: the embedded one once, or a fresh one from data.json every refresh in live mode.
+function ingest(d) {
+  DATA = d; TITLES = d.titles || {}; GRAPHS = d.graphs || {};
+  ROWS = (d.rows || []).map((r, i) => Object.assign(r, { _i: i, _t: Date.parse(r.ts), _d: dayKey(Date.parse(r.ts)),
+    _hay: [r.sub, r.argv, r.cmd, r.branch, r.worktree, r.error, r.session].filter(Boolean).join(" ").toLowerCase() }));
+  REPOS = Object.entries(ROWS.reduce((m, r) => (m[r.repo] = (m[r.repo] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
+  for (const cache of [JCACHE, PUSHED, CHATCOMMITS]) for (const k in cache) delete cache[k];
+}
 
 function load(k, d) { try { const v = localStorage.getItem("gt:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem("gt:" + k, JSON.stringify(v)); } catch (e) {} }
 
 const repoFromHash = () => { const h = decodeURIComponent((location.hash.match(/repo=([^&]+)/) || [])[1] || ""); return REPOS.some(([r]) => r === h) ? h : null; };
 const S = {
-  repo: repoFromHash() || (DATA && DATA.defaultRepo) || (REPOS[0] || [])[0],
+  repo: null,                       // set by start(), once the data is in
   cats: new Set(load("cats", CATS.map(c => c[0]))), failed: false, q: "", day: null, shown: 5,
+  tile: null, expand: null,
   zoom: ["24h", "7d", "30d", "All"].includes(load("zoom", "7d")) ? load("zoom", "7d") : "7d",
 };
 
@@ -248,13 +279,101 @@ function renderCats() {
   $("failed").setAttribute("aria-pressed", String(S.failed));
 }
 
+// Each tile is also a door: click it for the list behind the number.
+const TILES = [["ops", "Git ops", "Every git op", r => true], ["sessions", "Sessions", "Chats", r => true],
+  ["commits", "Commits", "Commits", r => r.sub === "commit"], ["pushes", "Pushes", "Pushes", r => r.sub === "push"],
+  ["failed", "Failed", "Failed commands", r => r.ok === false], ["destructive", "Destructive", "Destructive commands", r => r.cat === "destructive"]];
+
 function renderStats(rows) {
   const box = $("stats"); box.replaceChildren();
-  const sessions = new Set(rows.map(r => r.session)).size;
-  const tiles = [["Git ops", rows.length], ["Sessions", sessions], ["Commits", rows.filter(r => r.sub === "commit").length],
-    ["Pushes", rows.filter(r => r.sub === "push").length], ["Failed", rows.filter(r => r.ok === false).length],
-    ["Destructive", rows.filter(r => r.cat === "destructive").length]];
-  for (const [label, n] of tiles) { const t = el("div", "stat"); t.append(el("b", null, n.toLocaleString()), el("span", null, label)); box.append(t); }
+  for (const [key, label, , keep] of TILES) {
+    const n = key === "sessions" ? new Set(rows.map(r => r.session)).size : rows.filter(keep).length;
+    const t = el("button", "stat"); t.setAttribute("aria-pressed", String(S.tile === key));
+    t.setAttribute("aria-controls", "tilelist");
+    t.append(el("b", null, n.toLocaleString()), el("span", null, label));
+    t.onclick = () => { S.tile = S.tile === key ? null : key; render();
+      if (S.tile) $("tilelist").scrollIntoView({ block: "nearest", behavior: "smooth" }); };
+    box.append(t);
+  }
+  renderTileList(rows);
+}
+
+// The commits each chat made in a repo, oldest first: [ms, sha, subject].
+const CHATCOMMITS = {};
+function chatCommits(repo, session) {
+  const key = repo + "\u0000" + session;
+  if (CHATCOMMITS[key]) return CHATCOMMITS[key];
+  const g = GRAPHS[repo], A = (g && g.authors) || {};
+  return (CHATCOMMITS[key] = ((g && g.commits) || []).filter(c => A[c[0]] && A[c[0]].s === session)
+    .map(c => [c[2] * 1000, c[0], c[4]]).sort((a, b) => a[0] - b[0]));
+}
+// What a chat was working on when it ran `r`: its last commit in that repo before it.
+function afterCommit(r) {
+  let hit = null;
+  for (const c of chatCommits(r.repo, r.session)) { if (c[0] <= r._t) hit = c; else break; }
+  return hit;
+}
+
+// Jump from a list row to the command itself, in that day's table.
+function jump(r) {
+  S.day = r._d; S.expand = r._d; render();
+  requestAnimationFrame(() => { const row = document.getElementById("op-" + r._i); if (!row) return;
+    row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); row.scrollIntoView({ block: "center", behavior: "smooth" }); });
+}
+
+function renderTileList(rows) {
+  const box = $("tilelist"); box.replaceChildren(); box.hidden = !S.tile;
+  if (!S.tile) return;
+  const [key, , title, keep] = TILES.find(t => t[0] === S.tile);
+  const head = el("div", "dayhead"), close = el("button", "textbtn", "close");
+  close.onclick = () => { S.tile = null; render(); };
+  const scope = `${S.repo}${S.day ? " · " + fmtDay(S.day) : ""}${S.q || S.cats.size < CATS.length || S.failed ? " · filtered" : ""}`;
+  const sub = el("span", "sub", scope + " · "); sub.append(close);
+  if (key === "sessions") {
+    const by = {};
+    for (const r of rows) { const c = by[r.session] ||= { ops: 0, failed: 0, destructive: 0, commits: 0, last: 0 };
+      c.ops++; c.failed += r.ok === false; c.destructive += r.cat === "destructive"; c.commits += r.sub === "commit"; c.last = Math.max(c.last, r._t); }
+    const keys = Object.keys(by).sort((a, b) => by[b].last - by[a].last);
+    head.append(el("h2", null, `${title} — ${keys.length}`), sub); box.append(head);
+    const h = el("div", "tl-row tl-chats tl-head");
+    for (const t of ["Chat", "Git ops", "Failed", "Destructive", "Commits", "Last active"]) h.append(el("span", null, t));
+    box.append(h);
+    for (const k of keys) {
+      const c = by[k], row = el("button", "tl-row tl-chats"), name = el("span", "t", chatName(k)); name.title = `session ${k}`;
+      row.append(name, el("span", null, c.ops), el("span", c.failed ? "bad" : null, c.failed), el("span", null, c.destructive),
+        el("span", null, c.commits), el("span", "m", `${fmtDay(dayKey(c.last))} ${hm(c.last)}`));
+      row.title = "Show only this chat's git ops";
+      row.onclick = () => { S.q = k.toLowerCase(); $("q").value = k; S.tile = null; render(); };
+      box.append(row);
+    }
+    return;
+  }
+  const list = rows.filter(keep).sort((a, b) => b._t - a._t);
+  head.append(el("h2", null, `${title} — ${list.length.toLocaleString()}`), sub); box.append(head);
+  if (!list.length) { box.append(el("div", "empty", "None in view.")); return; }
+  const h = el("div", "tl-row tl-ops tl-head");
+  for (const t of ["When", "Chat", "Op", "Command"]) h.append(el("span", null, t));
+  box.append(h);
+  const LIMIT = 100, rowOf = r => {
+    const row = el("button", "tl-row tl-ops"), when = el("span", "m", `${new Date(r._t).toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hms(r._t)}`);
+    const chat = el("span", "t", chatName(r.session)); chat.title = `session ${r.session}${r.agent ? " · subagent " + r.agent : ""}`;
+    const badge = el("span", "badge " + r.cat, r.sub); badge.style.background = CAT_VAR(r.cat);
+    const argv = el("span", "argv", r.argv);
+    if (r.ok === false && r.error) { const e = el("small", "err", r.error.split("\n").slice(0, 2).join(" — ")); e.title = r.error; argv.append(e); }
+    const c = afterCommit(r), after = el("small", "after", c ? `after ${c[1].slice(0, 8)} ${c[2]}` : "before this chat's first commit here");
+    after.title = c ? `the last commit this chat had made in ${r.repo} before running this` : "this chat had made no commit in this repo yet";
+    argv.append(after);
+    row.append(when, chat, badge, argv);
+    row.title = "Show it in that day's command table";
+    row.onclick = () => jump(r);
+    return row;
+  };
+  list.slice(0, LIMIT).forEach(r => box.append(rowOf(r)));
+  if (list.length > LIMIT) {
+    const b = el("button", "linkbtn more", `Show all ${list.length.toLocaleString()}`);
+    b.onclick = () => { b.remove(); list.slice(LIMIT).forEach(r => box.append(rowOf(r))); };
+    box.append(b);
+  }
 }
 
 // <journey-layout> — pure functions; hooks/tests/test_git_ops.py runs them through node.
@@ -360,7 +479,7 @@ function packLanes(chains, t0, t1) {
 }
 // </journey-layout>
 
-const GRAPHS = (DATA && DATA.graphs) || {};
+let GRAPHS = {};
 const SPANS = [["24h", 864e5], ["7d", 7 * 864e5], ["30d", 30 * 864e5], ["All", Infinity]];
 const NS = "http://www.w3.org/2000/svg";
 const sv = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag);
@@ -445,6 +564,7 @@ function renderJourney() {
   timeAxis(svg, x, t0, t1, W, TOP, H);
   const plot = sv("g", { "clip-path": "url(#jclip)" }, svg);
   const gBand = sv("g", {}, plot), gLine = sv("g", {}, plot), gDot = sv("g", {}, plot), gLab = sv("g", {}, plot);
+  const labelEnd = {};                 // per lane: where the last drawn label ends
   const curve = (xa, ya, xb, yb) => { const dx = Math.max(6, Math.min(26, (xb - xa) / 2));
     return `M${xa},${ya} C${xa + dx},${ya} ${xb - dx},${yb} ${xb},${yb}`; };
   const laneOf = c => c && c.chain && c.chain.lane;
@@ -481,9 +601,15 @@ function renderJourney() {
     const name = ch.name.length > 34 ? ch.name.slice(0, 33) + "…" : ch.name;
     const label = sv("text", { x: Math.max(x(a), padL) + 2, y: Y - 7, class: "jlab" + (main ? " main" : "") }, gLab);
     label.textContent = name + (prTag ? "  " + prTag : "");
-    if (Math.max(x(a), padL) + 2 + label.textContent.length * 6 > W - padR) {   // would run off the right: hang it from the edge
-      label.setAttribute("x", W - padR); label.setAttribute("text-anchor", "end");
+    const width = label.textContent.length * 6;
+    let lx = Math.max(x(a), padL) + 2;
+    if (lx + width > W - padR) {   // would run off the right: hang it from the edge
+      lx = W - padR - width; label.setAttribute("x", W - padR); label.setAttribute("text-anchor", "end");
     }
+    // Several short lanes in a row reuse one lane; their names would stack into a smear.
+    // Keep the first, drop the rest; the line's own tooltip still names each one.
+    if (lx < (labelEnd[ch.lane] ?? -Infinity) + 8) label.remove();
+    else labelEnd[ch.lane] = lx + width;
   }
   host.append(svg);
 }
@@ -662,7 +788,7 @@ function renderDay(k, list, laneBox) {
   for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) { const s = el("span", null, hm(t)); s.style.left = x(t) + "%"; axis.append(s); }
   lanes.append(el("div", "lab axis-lab", ""), axis);
   const tick = (step / (t1 - t0) * 100) + "%";
-  const ops = el("div", "ops"), LIMIT = 40;
+  const ops = el("div", "ops"), LIMIT = S.expand === k ? Infinity : 40;
   for (const s of sessions) {
     const mine = list.filter(r => r.session === s);
     const subs = new Set(mine.filter(r => r.agent).map(r => r.agent)).size;
@@ -725,15 +851,30 @@ function render() {
   const all = ROWS.filter(r => r.repo === S.repo);
   $("meta").textContent = `${ROWS.length.toLocaleString()} git ops across ${REPOS.length} repos` +
     (all.length ? ` · ${S.repo}: ${fmtDay(all[0]._d)} → ${fmtDay(all[all.length - 1]._d)}` : "") +
-    (DATA && DATA.generated ? ` · built ${new Date(DATA.generated).toLocaleString()}` : "");
+    (DATA && DATA.generated ? (LIVE ? ` · live, updated ${new Date(DATA.generated).toLocaleTimeString()}` : ` · built ${new Date(DATA.generated).toLocaleString()}`) : "");
 }
 
 let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { renderJourney(); renderSync(); renderChats(); }, 150); });
 window.addEventListener("hashchange", () => { const r = repoFromHash(); if (r && r !== S.repo) { S.repo = r; S.day = null; S.shown = 5; render(); } });
 $("failed").onclick = () => { S.failed = !S.failed; render(); };
 let qt; $("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim().toLowerCase(); render(); }, 150); };
-renderZoom(); renderLegend();
-render();
+function start() {
+  S.repo = repoFromHash() || DATA.defaultRepo || (REPOS[0] || [])[0];
+  renderZoom(); renderLegend(); render();
+}
+if (DATA) { ingest(DATA); start(); }
+else if (LIVE) {
+  $("meta").textContent = "Loading live data… (the first load asks GitHub for pull requests and takes a few seconds)";
+  // Live: pull data.json now and every 30 s. Repo, zoom, filters, open list and scroll survive a refresh.
+  const pull = first => fetch("data.json", { cache: "no-store" }).then(r => r.json()).then(d => {
+    const y = window.scrollY;
+    ingest(d);
+    if (first) return start();
+    if (!REPOS.some(([r]) => r === S.repo)) S.repo = (REPOS[0] || [])[0];
+    render(); window.scrollTo(0, y);
+  }).catch(() => { $("meta").textContent = "Live data unavailable: is `git-timeline serve` still running?"; });
+  pull(true); setInterval(() => pull(false), 30000);
+}
 </script>
 </body>
 </html>

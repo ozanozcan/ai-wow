@@ -236,7 +236,9 @@ with open(os.path.join(projects, "sess1", "subagents", "agent-q.jsonl"), "w") as
                                   "input": {"command": "cd " + wt + " && git commit -qm wip"}}],
                    "2026-09-01T12:00:00Z", agentId="q") + "\n")
 
-tl = lambda *a: subprocess.run([sys.executable, TIMELINE, *a, "--log", log, "--projects", os.path.dirname(projects)],
+TEST_CACHE = os.path.join(tmp, "timeline-cache.json")     # never the real ~/.claude one
+tl = lambda *a: subprocess.run([sys.executable, TIMELINE, *a, "--log", log, "--projects", os.path.dirname(projects),
+                                "--cache", TEST_CACHE],
                                capture_output=True, text=True, timeout=60)
 p = tl("backfill")
 check("backfill runs", p.returncode == 0, p.stderr)
@@ -469,6 +471,137 @@ git_ops.append([{"id": "t1:0", "sub": "commit", "ts": "x"}], plog)
 git_ops.append([{"id": "t1:0", "patch": {"made": ["abc1234"]}}], plog)
 check("a patch line merges into its row", timeline.read_log(plog) == [{"id": "t1:0", "sub": "commit", "ts": "x",
                                                                        "made": ["abc1234"]}], str(timeline.read_log(plog)))
+
+# --- live server caching --------------------------------------------------------
+
+print("serve caching")
+calls = []
+memo = {}
+f = lambda: calls.append(1) or len(calls)
+check("a memo computes once per fingerprint", timeline._cached(memo, "k", "fp1", f) == 1
+      and timeline._cached(memo, "k", "fp1", f) == 1 and len(calls) == 1)
+check("a new fingerprint recomputes", timeline._cached(memo, "k", "fp2", f) == 2 and len(calls) == 2)
+check("no memo means no caching", timeline._cached(None, "k", "fp2", f) == 3)
+fp0 = timeline._refs_fingerprint(a_dir)
+sg(a_dir, "commit", "-q", "--allow-empty", "-m", "moves a ref")
+fp1 = timeline._refs_fingerprint(a_dir)
+sg(b_dir, "commit", "-q", "--allow-empty", "-m", "from b")
+sg(b_dir, "push", "-q", "origin", "HEAD:refs/heads/from-b")
+sg(a_dir, "fetch", "-q")
+fp2 = timeline._refs_fingerprint(a_dir)
+check("a commit changes the refs fingerprint", fp0 != fp1)
+check("a fetch changes the refs fingerprint", fp1 != fp2)
+check("nothing moving leaves it alone", timeline._refs_fingerprint(a_dir) == fp2)
+fp_other = subprocess.run([sys.executable, "-c", f"""
+from importlib.machinery import SourceFileLoader
+print(SourceFileLoader('t', {TIMELINE!r}).load_module()._refs_fingerprint({a_dir!r}))"""],
+                          capture_output=True, text=True).stdout.strip()
+check("the fingerprint is the same in another process (it is stored on disk)", fp_other == str(fp2), f"{fp_other} vs {fp2}")
+cache_file = os.path.join(tmp, "cache.json")
+m1 = timeline.load_memo(cache_file)
+calls.clear()
+timeline._cached(m1, ("graph", "/r"), "fpA", lambda: calls.append(1) or {"commits": [1]})
+timeline.save_memo(m1, cache_file)
+m2 = timeline.load_memo(cache_file)
+got = timeline._cached(m2, ("graph", "/r"), "fpA", lambda: calls.append(1) or {"commits": [2]})
+check("a saved memo is reused by the next process", got == {"commits": [1]} and len(calls) == 1, str((got, calls)))
+open(cache_file, "w").write("{not json")
+check("a corrupt cache file is just an empty memo", timeline.load_memo(cache_file) == {})
+
+# --- live server ---------------------------------------------------------------
+
+print("serve")
+import socket
+import time
+import urllib.error
+import urllib.request
+
+
+def free_port():
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        return so.getsockname()[1]
+
+
+def get(port, path):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=30) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+    except (urllib.error.URLError, OSError):
+        return 0, ""
+
+
+port = free_port()
+srv = subprocess.Popen([sys.executable, TIMELINE, "serve", "--port", str(port), "--log", log,
+                        "--projects", os.path.dirname(projects), "--no-prs", "--cache", TEST_CACHE],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+try:
+    who = None
+    for _ in range(100):
+        try:
+            who = json.loads(get(port, "/whoami")[1])
+            break
+        except (OSError, ValueError):
+            time.sleep(0.2)
+    check("serve answers /whoami as git-timeline", who and who.get("app") == "git-timeline", str(who))
+    code, body = get(port, "/data.json")
+    check("serve returns the log as data.json", code == 200 and json.loads(body)["rows"], body[:200])
+    code, body = get(port, "/git-timeline.html")
+    check("the served page fetches its data instead of embedding it",
+          code == 200 and "/*__LIVE__*/true" in body and "/*__DATA__*/null" in body, body[:120])
+    check("the guide is served beside it", get(port, "/git-timeline-guide.html")[0] == 200)
+    check("nothing else is served: no directory, no config, no traversal",
+          [get(port, pth)[0] for pth in ("/settings.json", "/../settings.json", "/git-ops.jsonl", "/hooks/")] == [404] * 4)
+    try:                                      # the address other machines would use to reach this one
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+            u.connect(("10.255.255.255", 1))     # UDP connect sends nothing; it only picks a route
+            lan = u.getsockname()[0]
+    except OSError:
+        lan = None
+    if lan and not lan.startswith("127."):
+        try:
+            socket.create_connection((lan, port), timeout=2).close()
+            reachable = True
+        except OSError:
+            reachable = False
+        check("the server cannot be reached from this machine's network address", not reachable, lan)
+    else:
+        print("  SKIP  network-address check (no non-loopback address)")
+    again = subprocess.run([sys.executable, TIMELINE, "serve", "--port", str(port), "--log", log, "--no-prs",
+                            "--cache", TEST_CACHE],
+                           capture_output=True, text=True, timeout=30)
+    check("a second serve reuses the running one instead of starting another",
+          again.returncode == 0 and "already serving" in again.stdout, again.stdout + again.stderr)
+finally:
+    srv.terminate()
+    out = srv.communicate(timeout=10)[0]
+check("serve binds to 127.0.0.1 only", "127.0.0.1" in out and "0.0.0.0" not in out, out)
+
+# A port the last server just released sits in TIME_WAIT for a while. HTTPServer may rebind it
+# (allow_reuse_address), so a restart right after Ctrl-C must not be told "no free port".
+lst = socket.socket()
+lst.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+lst.bind(("127.0.0.1", 0))
+lst.listen(1)
+tw_port = lst.getsockname()[1]
+cli = socket.create_connection(("127.0.0.1", tw_port))
+conn, _ = lst.accept()
+conn.close()                                 # the server side closes first: its port enters TIME_WAIT
+lst.close()
+time.sleep(0.2)
+cli.close()
+check("a port left in TIME_WAIT by a stopped server counts as free",
+      timeline.pick_port(tw_port, span=1, timeout=0.5) == (tw_port, "serve"))
+
+held = socket.socket()
+held.bind(("127.0.0.1", 0))
+held.listen(1)                               # a stranger on the home port: accepts, never answers
+base = held.getsockname()[1]
+picked = timeline.pick_port(base, span=3, timeout=0.5)
+held.close()
+check("a port held by something else is stepped over, never taken", picked[0] != base and picked[1] == "serve", str(picked))
 
 os.chmod(os.path.join(tmp, "ro"), 0o700)
 print(f"\n{len(FAILURES)} failure(s)")
