@@ -17,6 +17,15 @@ import subprocess
 import sys
 import tempfile
 
+# A git hook exports GIT_DIR (absolute, inside a worktree) to everything it runs. Inherited,
+# it makes every `git` below — init, commit, branch, worktree add — act on the repo being
+# pushed instead of the throwaway ones: a pre-push run from a dotfiles-ai worktree left
+# that repo `core.bare = true` with test branches and commits in it. Nothing here may see
+# the caller's repository.
+for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+             "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX"):
+    os.environ.pop(_var, None)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "git-ops.py")
 TIMELINE = os.path.join(HERE, "..", "..", "bin", "git-timeline")
