@@ -224,7 +224,10 @@ check("embedded data cannot close the script tag", "</script><img" not in html)
 check("default repo is baked in", '"proj"' in html)
 guide = os.path.join(os.path.dirname(out), "git-timeline-guide.html")
 check("the guide is written next to the page", os.path.isfile(guide) and "Reading the git timeline" in open(guide).read())
-check("the page links to the guide by a relative path", 'href="git-timeline-guide.html"' in html)
+check("the page links to the guide at the top and the bottom", html.count('href="git-timeline-guide.html"') >= 2)
+g_html = open(guide).read()
+check("the guide links back to the page from the top, the always-visible rail, and the end",
+      g_html.count('href="git-timeline.html"') >= 3 and 'class="backlink"' in g_html and 'class="toc-back"' in g_html)
 
 # --- journey: commit graph + lane layout -------------------------------------
 

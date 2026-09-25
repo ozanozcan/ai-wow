@@ -555,6 +555,10 @@ td.num{font-family:var(--mono);font-size:var(--t-small);font-variant-numeric:tab
 code, pre, .mono, td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 h1, h2, h3, strong, .svg-t { font-weight: 700; }
 .toc-link[aria-current], .state { font-weight: 500; }
+.backlink, .toc-back { display: inline-block; font-size: 14px; font-weight: 500; color: var(--ink);
+  text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; margin-bottom: 18px; }
+.backlink:hover, .toc-back:hover, .backlink:focus-visible, .toc-back:focus-visible { border-color: var(--ink); }
+.toc-back { margin: 0 0 14px; }
 pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px solid var(--line); border-radius: 3px; }
 </style>
 </head>
@@ -576,6 +580,7 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
   </div>
 
   <div class="toc-panel" id="toc-panel">
+    <a class="toc-back" href="git-timeline.html">← Timeline</a>
     <p class="toc-title">Contents</p>
     <div class="toc-track">
       <i aria-hidden="true"></i>
@@ -599,6 +604,7 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
 <main class="doc" id="doc">
 
 <header class="masthead">
+  <a class="backlink" href="git-timeline.html">← Back to the timeline</a>
   <span class="eyebrow">Guide · git timeline</span>
   <h1>Reading the git timeline</h1>
   <p class="standfirst">The handful of git ideas the timeline page is built on, then the page itself,
@@ -944,6 +950,7 @@ pre { overflow-x: auto; padding: 12px 14px; background: var(--fig); border: 1px 
   </ul>
   <p>This page is a view of <code>docs/workflow/reading-the-git-timeline.md</code> in ai-wow; that
   file is the source, and changes go there first.</p>
+  <p><a class="backlink" href="git-timeline.html">← Back to the timeline</a></p>
 </footer>
 
 </main>
