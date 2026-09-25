@@ -27,6 +27,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -417,6 +418,9 @@ def html(args):
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
+    # The page links its guide by a relative path, so the guide goes wherever the page goes.
+    shutil.copyfile(os.path.join(HERE, "git-timeline-guide.html"),
+                    os.path.join(os.path.dirname(os.path.abspath(args.out)), "git-timeline-guide.html"))
     print(f"html: {len(rows)} op(s) across {len(repos)} repo(s), {len(graphs)} commit graph(s), "
           f"{sum(len(g['prs']) for g in graphs.values())} PR(s), "
           f"{sum(len(g['sync']) for g in graphs.values())} push/pull event(s), opens on {default} -> {args.out}")

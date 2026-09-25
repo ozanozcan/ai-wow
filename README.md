@@ -189,7 +189,7 @@ before fan-out, not discovered afterwards.
 | `docs/workflow/` | Work-loop, dispatch bridge, compact template |
 | `templates/` | Bootstrap checklist for adopting the harness in a new repo, plus per-repo starting points (protocols, `ui-designer`, Copilot instructions) |
 | `bin/ai-sync` | The sync tool |
-| `bin/git-timeline` | Backfills and renders the agent git-operation log (`hooks/git-ops.py`) as a local timeline page |
+| `bin/git-timeline` | Backfills and renders the agent git-operation log (`hooks/git-ops.py`) as a local timeline page; [how to read it](docs/workflow/reading-the-git-timeline.md) |
 | `local.config.example.json` | Copy to `local.config.json` (gitignored) for machine paths |
 
 Machine-specific configuration lives only in `local.config.json`, which is

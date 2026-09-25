@@ -222,6 +222,9 @@ check("html builds", p.returncode == 0 and os.path.isfile(out), p.stderr)
 html = open(out).read()
 check("embedded data cannot close the script tag", "</script><img" not in html)
 check("default repo is baked in", '"proj"' in html)
+guide = os.path.join(os.path.dirname(out), "git-timeline-guide.html")
+check("the guide is written next to the page", os.path.isfile(guide) and "Reading the git timeline" in open(guide).read())
+check("the page links to the guide by a relative path", 'href="git-timeline-guide.html"' in html)
 
 # --- journey: commit graph + lane layout -------------------------------------
 
